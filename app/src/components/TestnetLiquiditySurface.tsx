@@ -241,6 +241,8 @@ export function TestnetLiquiditySurface() {
   const amount1Desired = parseAmount(amount1Text, token1Decimals);
   const slippageBps = Math.round(Number(slippageText) * 100);
   const slippageValid = Number.isFinite(slippageBps) && slippageBps >= 1 && slippageBps <= 2_000;
+  const poolDetailsLoaded = actualToken0 !== undefined && actualToken1 !== undefined
+    && actualFee !== undefined && slot0 !== undefined && tickSpacing !== undefined;
   const poolVerified = Boolean(
     poolAddress && token0 && token1 && actualToken0 && actualToken1
       && isAddressEqual(token0, actualToken0) && isAddressEqual(token1, actualToken1)
@@ -385,13 +387,13 @@ export function TestnetLiquiditySurface() {
             <div><span>Selected market</span><strong>{marketLabel}</strong></div>
             <div><span>Pool</span><strong>{poolLoading ? <LoaderCircle className="createAssetSpinner" size={15} aria-label="Please wait" /> : shortAddress(poolAddress)}</strong></div>
             <div><span>Fee tier</span><strong>{fee !== undefined ? `${(fee / 10_000).toFixed(2)}%` : "—"}</strong></div>
-            <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity && poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
+            <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity === undefined ? (poolAddress || poolLoading ? "Loading…" : "—") : poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
           </div>
           {poolAddress ? <a className="liquidityExplorerLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${poolAddress}`} target="_blank" rel="noreferrer">Inspect pool contract <ExternalLink size={12} /></a> : null}
           {isOtfMarket && otfAddress && !validOtfAddress ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Invalid OTF address</strong><span>Enter a valid EVM contract address.</span></div></div> : null}
           {assetAddress && !poolLoading && !poolReadError && !poolAddress ? <div className="validationSummary"><AlertTriangle size={15} /><div><strong>Pool not found</strong><span>No initialized USDG pool exists for this address and fee tier.</span></div></div> : null}
           {poolReadError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool lookup unavailable</strong><span>Check the Robinhood Testnet connection and try again.</span></div></div> : null}
-          {!poolVerified && poolAddress && !poolLoading ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool verification failed</strong><span>The pool does not match the canonical factory pair, fee, or initialized state.</span></div></div> : null}
+          {!poolVerified && poolAddress && !poolLoading && poolDetailsLoaded ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool verification failed</strong><span>The pool does not match the canonical factory pair, fee, or initialized state.</span></div></div> : null}
         </aside>
 
         <section className="liquidityActionPanel">

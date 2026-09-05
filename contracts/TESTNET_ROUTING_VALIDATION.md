@@ -2,7 +2,7 @@
 
 All six pools and the complete fresh protocol are live on chain 46630. The previous V3 adapter
 is revoked, and application routing uses the new contracts. Live receipts, local checks, and
-fork simulations are recorded below. No Git commit was created.
+fork simulations are recorded below. This task created no Git commit.
 
 ## Dependency authentication
 
@@ -106,7 +106,6 @@ the same venue checks. Testnet liquidity links open the application's own /liqui
 
 Exact command output is under test-results/v3-auth. Liquidity simulation receipts include each
 pool address, position ID, actual amounts, active liquidity, quotes, and local transaction hashes.
-Deployment simulation and live operations must remain identified separately in the final report.
 
 ## Commands
 
@@ -178,3 +177,8 @@ A fresh fork of the actual live deployment passed the five real-asset flow check
 Final commands include `node scripts/verify-live-uniswap-v3-testnet.mjs`, `FLOW_DEPLOYMENT_FILE=app/src/config/robinhood-testnet.json node scripts/validate-uniswap-v3-testnet-flows.mjs` on the local fork, and `corepack pnpm --filter @onchaintradedfunds/app build`. The application production build passed.
 
 The CREATE2 launch-manager deployer is `0x4017f98bD801fDEE082d2190432a2cB5c3AFf150`, deployed in [this receipt](https://explorer.testnet.chain.robinhood.com/tx/0x9e4e867f63c305d5ab94a031b537db531174923757ecb2ab7692385b17bba732). It is recorded separately under deploymentTools in the application manifest.
+
+The in-app browser confirmed active WETH/USDG and TSLA/USDG liquidity at the configured pool
+addresses. Pool switching now waits for the selected pool's details before displaying a verification
+failure. The documentation production build and Pagefind index also passed with
+`corepack pnpm --filter @onchaintradedfunds/docs build`.
