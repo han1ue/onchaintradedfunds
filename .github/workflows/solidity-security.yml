@@ -34,6 +34,12 @@ on:
       - "scripts/fixtures/**"
       - "packages/generated/**"
   workflow_dispatch:
+    inputs:
+      run_testnet_routing:
+        description: "Run live testnet runtime and fork checks"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -117,6 +123,7 @@ jobs:
         run: node --test scripts/lib/testnet-routing.test.mjs
 
       - name: Validate actual testnet routing runtimes
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_testnet_routing }}
         run: corepack pnpm contracts:validate:testnet-routing
 
       - name: Run V4 launch invariant suite
