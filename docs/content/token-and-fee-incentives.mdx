@@ -7,7 +7,7 @@ import { RewardsUnlockChart, TeamUnlockChart } from "../components/TokenUnlockCh
 
 # OTF token economics
 
-The contracts implement the token allocation and claim mechanics described here. The emission schedule is a publisher policy rather than an onchain restriction. The current architecture is unaudited and has not been deployed; earlier testnet contracts are incompatible.
+The contracts implement the token allocation and claim mechanics described here. The emission schedule is a publisher policy rather than an onchain restriction. The current architecture is unaudited and deployed only on Robinhood Chain Testnet. The active September 5 deployment uses the 15/135 ETH launch curve; the former September 4 deployment remains recorded separately with its original 20/180 ETH parameters.
 
 ## Supply and allocation
 
@@ -23,28 +23,28 @@ The contracts implement the token allocation and claim mechanics described here.
 
 ## Canonical V4 launch
 
-The launch manager creates one OTF/WETH Uniswap V4 pool with a static 0% LP fee and tick spacing 1. It initializes at exactly `0.00000002 WETH` per OTF, which is a 20 ETH reference FDV against the original one-billion-token supply.
+The launch manager creates one OTF/WETH Uniswap V4 pool with a static 0% LP fee and tick spacing 1. It initializes at exactly `0.000000015 WETH` per OTF, which is a 15 ETH reference FDV against the original one-billion-token supply.
 
 The pool price is exact at initialization, while each liquidity boundary comes from V4 `TickMath`:
 
 | OTF/WETH ordering | Exact initialization `sqrtPriceX96` | Bootstrap start tick and boundary | Final tick and boundary |
 | --- | ---: | ---: | ---: |
-| OTF is currency0 | 11204554194957227983746388 | -177284 / 11204665816975040385623596 | -155311 / 33613418706697289737079801 |
-| OTF is currency1 | 560227709747861399187319382274581 | 177284 / 560222128702570272483239940334470 | 155311 / 186743924804530596371038112052313 |
+| OTF is currency0 | 9703428570912459262669889 | -180161 / 9703508046175219238931631 | -158188 / 29110022932210076965716350 |
+| OTF is currency1 | 646895238060830617511325894307352 | 180161 / 646889939753375374376401562675059 | 158188 / 215633692560272871859121182412411 |
 
-The exact initialization price sits just outside the starting position boundary. It produces Slot0 tick `-177285` when OTF is currency0 and `177284` when OTF is currency1. The final tick represents approximately `0.000000179997388091105356396 WETH` per OTF, or `179.997388091105356396 ETH` reference FDV. The next tick would exceed the nominal 180 ETH target.
+The exact initialization price sits just outside the starting position boundary. It produces Slot0 tick `-180162` when OTF is currency0 and `180161` when OTF is currency1. The final tick represents approximately `0.000000134997562702653186573 WETH` per OTF, or `134.997562702653186573 ETH` reference FDV. It is `0.002437297346813427 ETH` below the nominal 135 ETH target. The next price-direction tick represents `135.011062458923451891 ETH`, which exceeds the target.
 
-Bootstrap liquidity is fixed at `31819848221821239732818`; it is not calculated from the 150 million OTF cap. V4 add-liquidity rounding consumes `149997417396300392474813256` raw OTF when OTF is currency0 and `149997417396300392474813274` when it is currency1. Removing that completed position returns a principal of `8999869404555266670` raw WETH in either ordering.
+Permanent liquidity is fixed at `18371007233046122951295`, the greatest integer liquidity whose V4 round-up OTF requirement stays within the 50 million cap. It requires `49999999999999999999997973` raw OTF when OTF is currency0 and `49999999999999999999997974` when OTF is currency1, leaving 2,027 or 2,026 raw units below the cap. Increasing liquidity by one would require `50000000000000000000000695` or `50000000000000000000000696` raw OTF, exceeding the cap by 695 or 696 units. Either ordering requires `6749878135132658333` raw WETH.
 
-Permanent liquidity is fixed at `21213049526830492717974`. At the final price, V4 round-up math requires `49999999999999999999998809` raw OTF and the same `8999869404555266670` raw WETH released as bootstrap principal. The position is 1,191 raw OTF units below the 50 million cap because liquidity is integer-valued. Increasing permanent liquidity by one would require `50000000000000000000001166` raw OTF, exceeding the cap by 1,166 units.
+Bootstrap liquidity is fixed at `27556748080852150400017`, the smallest integer liquidity whose V4 round-down removal returns the permanent position's full `6749878135132658333` raw WETH principal. One less unit of bootstrap liquidity returns one less raw WETH unit. V4 add-liquidity rounding consumes `149997417396300389512897535` raw OTF when OTF is currency0 and `149997417396300389512897549` when it is currency1. Those amounts leave `2582603699610487102465` or `2582603699610487102451` raw OTF units below the 150 million cap. Swap-step round-up across tick-bitmap words makes a boundary purchase consume `6749878135132658377` raw WETH in the currency0 ordering or `6749878135132658378` in the currency1 ordering, 44 or 45 units more than the principal later returned by position removal.
 
-The `afterSwap` hook enforces the full bootstrap corridor using exact sqrt prices. It marks `GraduationReady` only when the pool lands exactly on the final boundary; the inverse ordering reports tick `155310` at the `TickMath(155311)` boundary, so tick equality is not a valid graduation test. Swaps attempted while ready revert.
+The `afterSwap` hook enforces the full bootstrap corridor using exact sqrt prices. It marks `GraduationReady` only when the pool lands exactly on the final boundary; the inverse ordering reports tick `158187` at the `TickMath(158188)` boundary, so tick equality is not a valid graduation test. Swaps attempted while ready revert.
 
 `OTFLaunchRouter` is the supported bootstrap route. It sets the appropriate boundary price, partially fills an oversized buy or sell, settles only consumed input, leaves unused WETH in the buyer's wallet, and refunds unused native ETH. After the PoolManager returns control, a boundary purchase calls permissionless finalization in the same outer transaction. Any finalization failure reverts the purchase as well.
 
 Ordinary Uniswap UI trades can succeed while they remain inside the corridor. A standard router order that would cross either boundary reverts in full because it cannot supply the required limit. Adding a `beforeSwap` hook would reduce some wasted gas but could not make that order partially fill, so the permanent hook path contains only `beforeInitialize` and `afterSwap`. After graduation, normal Uniswap trading resumes.
 
-Finalization removes the bootstrap position, measures both returned tokens, and supplies only the derived principal to the permanent full-range position. Donated or unsolicited WETH cannot enlarge it and remains visible as locked dust. Once the permanent mint succeeds, the manager burns its entire OTF balance in one call, including unsolicited OTF. The ordinary burn is `2582603699607525187935` raw OTF in the currency0 ordering and `2582603699607525187917` in the currency1 ordering. The permanent NFT remains owned by the manager, which has no withdrawal or replacement function.
+Finalization removes the bootstrap position, measures both returned tokens, and supplies only the derived principal to the permanent full-range position. Donated or unsolicited WETH cannot enlarge it and remains visible as locked dust. Once the permanent mint succeeds, the manager burns its entire OTF balance in one call, including unsolicited OTF. The ordinary burn is `2582603699610487104492` raw OTF in the currency0 ordering and `2582603699610487104477` in the currency1 ordering. The permanent NFT remains owned by the manager, which has no withdrawal or replacement function.
 
 `MAX_SUPPLY` exists only in `OTFToken` and records the original issuance. Launch reference-FDV displays use that value rather than live supply, which falls as OTF is burned.
 

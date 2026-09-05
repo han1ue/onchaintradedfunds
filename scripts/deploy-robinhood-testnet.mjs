@@ -349,14 +349,14 @@ const [
   readLaunch("derivedLaunchAmounts"),
 ]);
 const expectedOtfIsCurrency0 = BigInt(otfToken.address) < BigInt(weth);
-const expectedInitialTick = expectedOtfIsCurrency0 ? -177_284 : 177_284;
-const expectedFinalTick = expectedOtfIsCurrency0 ? -155_311 : 155_311;
+const expectedInitialTick = expectedOtfIsCurrency0 ? -180_161 : 180_161;
+const expectedFinalTick = expectedOtfIsCurrency0 ? -158_188 : 158_188;
 const expectedInitialSqrtPriceX96 = expectedOtfIsCurrency0
-  ? 11_204_554_194_957_227_983_746_388n
-  : 560_227_709_747_861_399_187_319_382_274_581n;
+  ? 9_703_428_570_912_459_262_669_889n
+  : 646_895_238_060_830_617_511_325_894_307_352n;
 const expectedFinalSqrtPriceX96 = expectedOtfIsCurrency0
-  ? 33_613_418_706_697_289_737_079_801n
-  : 186_743_924_804_530_596_371_038_112_052_313n;
+  ? 29_110_022_932_210_076_965_716_350n
+  : 215_633_692_560_272_871_859_121_182_412_411n;
 const requireLaunchValue = (name, actual, expected) => {
   if (actual !== expected) {
     throw new Error(`Launch ${name} mismatch: expected ${expected}, received ${actual}`);
@@ -365,8 +365,8 @@ const requireLaunchValue = (name, actual, expected) => {
 requireLaunchValue("MAX_BOOTSTRAP_BUDGET", maxBootstrapBudget, 150_000_000n * 10n ** 18n);
 requireLaunchValue("PERMANENT_OTF_CAP", permanentOtfCap, 50_000_000n * 10n ** 18n);
 requireLaunchValue("REQUIRED_OTF_BALANCE", requiredLaunchBalance, 200_000_000n * 10n ** 18n);
-requireLaunchValue("BOOTSTRAP_LIQUIDITY", bootstrapLiquidity, 31_819_848_221_821_239_732_818n);
-requireLaunchValue("PERMANENT_LIQUIDITY", permanentLiquidity, 21_213_049_526_830_492_717_974n);
+requireLaunchValue("BOOTSTRAP_LIQUIDITY", bootstrapLiquidity, 27_556_748_080_852_150_400_017n);
+requireLaunchValue("PERMANENT_LIQUIDITY", permanentLiquidity, 18_371_007_233_046_122_951_295n);
 requireLaunchValue("LP_FEE", poolFee, 0);
 requireLaunchValue("TICK_SPACING", tickSpacing, 1);
 requireLaunchValue("otfIsCurrency0", otfIsCurrency0, expectedOtfIsCurrency0);
@@ -374,8 +374,8 @@ requireLaunchValue("initialTick", initialTick, expectedInitialTick);
 requireLaunchValue("finalTick", finalTick, expectedFinalTick);
 requireLaunchValue("initialSqrtPriceX96", initialSqrtPriceX96, expectedInitialSqrtPriceX96);
 requireLaunchValue("finalSqrtPriceX96", finalSqrtPriceX96, expectedFinalSqrtPriceX96);
-requireLaunchValue("initialOtfPriceWethWad", initialOtfPriceWethWad, 20_000_000_000n);
-requireLaunchValue("finalOtfPriceWethWad", finalOtfPriceWethWad, 179_997_388_091n);
+requireLaunchValue("initialOtfPriceWethWad", initialOtfPriceWethWad, 15_000_000_000n);
+requireLaunchValue("finalOtfPriceWethWad", finalOtfPriceWethWad, 134_997_562_702n);
 requireLaunchValue(
   "tick distance",
   initialTick > finalTick ? initialTick - finalTick : finalTick - initialTick,
@@ -384,26 +384,29 @@ requireLaunchValue(
 
 const [derivedBootstrapOtf, derivedBootstrapWeth, derivedPermanentOtf, derivedPermanentWeth] = derivedLaunchAmounts;
 const expectedBootstrapOtf = expectedOtfIsCurrency0
-  ? 149_997_417_396_300_392_474_813_256n
-  : 149_997_417_396_300_392_474_813_274n;
+  ? 149_997_417_396_300_389_512_897_535n
+  : 149_997_417_396_300_389_512_897_549n;
+const expectedPermanentOtf = expectedOtfIsCurrency0
+  ? 49_999_999_999_999_999_999_997_973n
+  : 49_999_999_999_999_999_999_997_974n;
 requireLaunchValue("derived bootstrap OTF", derivedBootstrapOtf, expectedBootstrapOtf);
-requireLaunchValue("derived bootstrap WETH", derivedBootstrapWeth, 8_999_869_404_555_266_670n);
-requireLaunchValue("derived permanent OTF", derivedPermanentOtf, 49_999_999_999_999_999_999_998_809n);
-requireLaunchValue("derived permanent WETH", derivedPermanentWeth, 8_999_869_404_555_266_670n);
+requireLaunchValue("derived bootstrap WETH", derivedBootstrapWeth, 6_749_878_135_132_658_333n);
+requireLaunchValue("derived permanent OTF", derivedPermanentOtf, expectedPermanentOtf);
+requireLaunchValue("derived permanent WETH", derivedPermanentWeth, 6_749_878_135_132_658_333n);
 requireLaunchValue("bootstrap/permanent WETH equality", derivedBootstrapWeth, derivedPermanentWeth);
 if (derivedBootstrapOtf > maxBootstrapBudget || derivedPermanentOtf > permanentOtfCap) {
   throw new Error("Derived launch amounts exceed their OTF safety caps");
 }
 const expectedBootstrapBounds = expectedOtfIsCurrency0
-  ? [11_204_665_816_975_040_385_623_596n, expectedFinalSqrtPriceX96]
-  : [expectedFinalSqrtPriceX96, 560_222_128_702_570_272_483_239_940_334_470n];
+  ? [9_703_508_046_175_219_238_931_631n, expectedFinalSqrtPriceX96]
+  : [expectedFinalSqrtPriceX96, 646_889_939_753_375_374_376_401_562_675_059n];
 requireLaunchValue("bootstrap lower sqrt boundary", bootstrapSqrtPriceBounds[0], expectedBootstrapBounds[0]);
 requireLaunchValue("bootstrap upper sqrt boundary", bootstrapSqrtPriceBounds[1], expectedBootstrapBounds[1]);
 const q96 = 1n << 96n;
 const actualFinalReferenceFdvWei = otfIsCurrency0
   ? finalSqrtPriceX96 * finalSqrtPriceX96 * 10n ** 27n / (q96 * q96)
   : q96 * q96 * 10n ** 27n / (finalSqrtPriceX96 * finalSqrtPriceX96);
-requireLaunchValue("actualFinalReferenceFdvWei", actualFinalReferenceFdvWei, 179_997_388_091_105_356_396n);
+requireLaunchValue("actualFinalReferenceFdvWei", actualFinalReferenceFdvWei, 134_997_562_702_653_186_573n);
 
 const launchRouter = await deploy("OTFLaunchRouter", [launchManager.address]);
 const buybackCollector = await deploy("BuybackCollector", [
@@ -440,6 +443,12 @@ const merkleRewardsDistributor = await deploy("MerkleRewardsDistributor", [
   otfToken.address,
   protocolMultisig,
 ]);
+const rewardsDeploymentBlock = await publicClient.getBlock({
+  blockNumber: merkleRewardsDistributor.blockNumber,
+});
+merkleRewardsDistributor.blockTimestamp = new Date(
+  Number(rewardsDeploymentBlock.timestamp) * 1_000,
+).toISOString();
 
 const setupTransactions = {};
 setupTransactions.collectorFactory = await transact(
@@ -502,7 +511,7 @@ const [actualBootstrapOtf, initializedPoolState, bootstrapPositionLiquidity] = a
 ]);
 requireLaunchValue("actual bootstrap OTF debit", actualBootstrapOtf, expectedBootstrapOtf);
 requireLaunchValue("initialized pool sqrt price", initializedPoolState[0], expectedInitialSqrtPriceX96);
-requireLaunchValue("initialized pool tick", initializedPoolState[1], expectedOtfIsCurrency0 ? -177_285 : 177_284);
+requireLaunchValue("initialized pool tick", initializedPoolState[1], expectedOtfIsCurrency0 ? -180_162 : 180_161);
 requireLaunchValue("initialized bootstrap liquidity", bootstrapPositionLiquidity, bootstrapLiquidity);
 
 const tokenBalance = (holder) => publicClient.readContract({
@@ -616,8 +625,8 @@ const deployment = {
     derivedBootstrapWethPrincipalWei: derivedBootstrapWeth,
     derivedPermanentOtf,
     derivedPermanentWeth: derivedPermanentWeth,
-    exactInitializationReferenceFdvWei: 20n * 10n ** 18n,
-    nominalTargetReferenceFdvWei: 180n * 10n ** 18n,
+    exactInitializationReferenceFdvWei: 15n * 10n ** 18n,
+    nominalTargetReferenceFdvWei: 135n * 10n ** 18n,
     actualFinalReferenceFdvWei,
     initialOtfPriceWethWad,
     finalOtfPriceWethWad,

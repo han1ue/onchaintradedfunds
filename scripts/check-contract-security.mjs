@@ -110,6 +110,8 @@ assert(JSON.stringify(vaultLayout.storage.map((entry) => entry.label)) === JSON.
 const vaultStorageSource = readFileSync(join(contracts, "src", "ManagedOTFVaultStorage.sol"), "utf8");
 const vaultSource = readFileSync(join(contracts, "src", "ManagedOTFVault.sol"), "utf8");
 const otfTokenSource = readFileSync(join(contracts, "src", "OTFToken.sol"), "utf8");
+const otfMetadataSource = readFileSync(join(contracts, "src", "libraries", "OTFMetadata.sol"), "utf8");
+const squareIconSource = readFileSync(join(root, "packages", "brand", "assets", "otf-icon.svg"), "utf8");
 assert(!existsSync(join(contracts, "src", "ERC20Base.sol")), "hand-written ERC20Base remains in production sources");
 assert(/ManagedOTFVaultStorage is ERC20Upgradeable/u.test(vaultStorageSource), "vault shares do not use OpenZeppelin ERC20Upgradeable");
 assert(
@@ -131,6 +133,15 @@ assert(
   "OTFToken does not inherit OpenZeppelin ERC20Burnable directly",
 );
 assert(!/function\s+burn(?:From)?\s*\(/u.test(otfTokenSource), "OTFToken hand-writes a burn function");
+for (const fragment of [
+  'viewBox="0 0 256 256"', 'fill="#090909"', 'stroke="#ccff00"',
+  'stroke-width="12"', 'font-weight="700"',
+]) {
+  assert(otfMetadataSource.includes(fragment), `onchain OTF metadata is missing ${fragment}`);
+  assert(squareIconSource.includes(fragment), `square brand SVG is missing ${fragment}`);
+}
+assert(/Base64\.encode\(bytes\(SQUARE_ICON_SVG\)\)/u.test(otfMetadataSource), "onchain OTF image is not SVG base64");
+assert(/OTFMetadata\.protocolTokenURI\(\)/u.test(otfTokenSource), "OTFToken does not use canonical onchain metadata");
 
 const expectedConstructors = {
   ManagedOTFVault: [],
@@ -191,6 +202,8 @@ const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "ut
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
 assert(!/registerVault/u.test(factorySource), "factory retains collector vault registration");
+assert(/OTFMetadata\.shareTokenURI\(\)/u.test(factorySource), "vault shares do not use canonical onchain metadata");
+assert(/IOTFFactoryTokenPolicy\(_factory\)\.otfTokenURI\(\)/u.test(vaultSource), "vault tokenURI does not resolve factory metadata");
 const routerConfigurationSource = factorySource.match(
   /function\s+configureEntryExitRouter[\s\S]*?\n\s*function\s+vaultCount/u,
 )?.[0] ?? "";
@@ -321,12 +334,12 @@ assert(!/LAUNCH_REFERENCE_FDV_WEI|TARGET_REFERENCE_FDV_WEI/u.test(launchSource),
 assert(/MAX_BOOTSTRAP_BUDGET\s*=\s*150_000_000 ether/u.test(launchSource), "bootstrap safety cap changed");
 assert(/PERMANENT_OTF_CAP\s*=\s*50_000_000 ether/u.test(launchSource), "permanent OTF cap changed");
 assert(/REQUIRED_OTF_BALANCE\s*=\s*200_000_000 ether/u.test(launchSource), "launch funding requirement changed");
-assert(/BOOTSTRAP_LIQUIDITY\s*=\s*31_819_848_221_821_239_732_818/u.test(launchSource), "bootstrap liquidity changed");
-assert(/PERMANENT_LIQUIDITY\s*=\s*21_213_049_526_830_492_717_974/u.test(launchSource), "permanent liquidity changed");
+assert(/BOOTSTRAP_LIQUIDITY\s*=\s*27_556_748_080_852_150_400_017/u.test(launchSource), "bootstrap liquidity changed");
+assert(/PERMANENT_LIQUIDITY\s*=\s*18_371_007_233_046_122_951_295/u.test(launchSource), "permanent liquidity changed");
 for (const constant of [
-  "-177_284", "-155_311", "11_204_554_194_957_227_983_746_388",
-  "177_284", "155_311",
-  "560_227_709_747_861_399_187_319_382_274_581",
+  "-180_161", "-158_188", "9_703_428_570_912_459_262_669_889",
+  "180_161", "158_188",
+  "646_895_238_060_830_617_511_325_894_307_352",
 ]) {
   assert(launchSource.includes(constant), `launch manager is missing derived curve constant ${constant}`);
 }
@@ -368,20 +381,28 @@ assert(testnetConfig.status === "not-deployed" || testnetConfig.status === "depl
 if (testnetConfig.status === "not-deployed") {
   assert(Object.keys(testnetConfig.contracts).length === 0, "undeployed testnet configuration contains protocol addresses");
 } else {
-  assert(testnetConfig.launch.exactInitializationReferenceFdvWei === "20000000000000000000", "deployed testnet launch reference FDV mismatch");
-  assert(testnetConfig.launch.nominalTargetReferenceFdvWei === "180000000000000000000", "deployed testnet target reference FDV mismatch");
+  assert(testnetConfig.launch.exactInitializationReferenceFdvWei === "15000000000000000000", "deployed testnet launch reference FDV mismatch");
+  assert(testnetConfig.launch.nominalTargetReferenceFdvWei === "135000000000000000000", "deployed testnet target reference FDV mismatch");
 }
 if (testnetConfig.status === "not-deployed") {
-  assert(testnetConfig.launch.directDerivedBootstrapOtf === "149997417396300392474813256", "testnet direct bootstrap vector mismatch");
-  assert(testnetConfig.launch.inverseDerivedBootstrapOtf === "149997417396300392474813274", "testnet inverse bootstrap vector mismatch");
+  assert(testnetConfig.launch.directDerivedBootstrapOtf === "149997417396300389512897535", "testnet direct bootstrap vector mismatch");
+  assert(testnetConfig.launch.inverseDerivedBootstrapOtf === "149997417396300389512897549", "testnet inverse bootstrap vector mismatch");
+  assert(testnetConfig.launch.directDerivedPermanentOtf === "49999999999999999999997973", "testnet direct permanent vector mismatch");
+  assert(testnetConfig.launch.inverseDerivedPermanentOtf === "49999999999999999999997974", "testnet inverse permanent vector mismatch");
+  assert(testnetConfig.launch.derivedBootstrapWethPrincipalWei === "6749878135132658333", "testnet bootstrap WETH principal mismatch");
+  assert(testnetConfig.launch.derivedPermanentWeth === "6749878135132658333", "testnet permanent WETH amount mismatch");
 } else {
   const expectedBootstrapOtf = testnetConfig.launch.otfIsCurrency0
-    ? "149997417396300392474813256"
-    : "149997417396300392474813274";
+    ? "149997417396300389512897535"
+    : "149997417396300389512897549";
+  const expectedPermanentOtf = testnetConfig.launch.otfIsCurrency0
+    ? "49999999999999999999997973"
+    : "49999999999999999999997974";
   assert(testnetConfig.launch.derivedBootstrapOtf === expectedBootstrapOtf, "deployed bootstrap vector mismatch");
+  assert(testnetConfig.launch.derivedBootstrapWethPrincipalWei === "6749878135132658333", "deployed bootstrap WETH principal mismatch");
+  assert(testnetConfig.launch.derivedPermanentOtf === expectedPermanentOtf, "deployed permanent OTF amount mismatch");
+  assert(testnetConfig.launch.derivedPermanentWeth === "6749878135132658333", "deployed permanent WETH amount mismatch");
 }
-assert(testnetConfig.launch.derivedBootstrapWethPrincipalWei === "8999869404555266670", "testnet bootstrap WETH principal mismatch");
-assert(testnetConfig.launch.derivedPermanentOtf === "49999999999999999999998809", "testnet permanent OTF amount mismatch");
 const mainnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-mainnet.json"), "utf8"));
 assert(!("architecture" in mainnetConfig), "mainnet configuration must not use an architecture version gate");
 assert(/type\(OTFLaunchManager\)|bytecode\("OTFLaunchManager"\)/u.test(deploySource), "deployment does not construct OTFLaunchManager initcode");

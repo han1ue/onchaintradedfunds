@@ -88,9 +88,9 @@ export function SplashPage() {
 
       <section className="splashCopy" aria-labelledby="splash-title">
         <h1 id="splash-title">
-          <span>onchain</span>
-          <span>traded</span>
-          <span>funds</span>
+          <span><span className="splashInitial">O</span>nchain</span>
+          <span><span className="splashInitial">T</span>raded</span>
+          <span><span className="splashInitial">F</span>unds</span>
         </h1>
         <p>the standard for the new era</p>
       </section>

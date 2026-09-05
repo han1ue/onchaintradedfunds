@@ -57,11 +57,11 @@ describe("$OTF page wiring", () => {
 
   it("renders four semantic launch phases with a textual current step and no countdown", () => {
     for (const text of ["Not initialized", "Bootstrap active", "Graduation ready", "Graduated"]) expect(component).toContain(text);
-    expect(component).toContain("Exact 20 ETH launch reference valuation.");
-    expect(component).toContain("20 ETH to approximately 179.997388091105356396 ETH reference valuation.");
+    expect(component).toContain("Exact 15 ETH launch reference valuation.");
+    expect(component).toContain("15 ETH to approximately 134.997562702653186573 ETH reference valuation.");
     expect(component).toContain("corrected boundary-aware launch contracts");
     expect(component).toContain("approximately 149,997,417.3963 OTF");
-    expect(component).toContain("50 million OTF minus 1,191 raw units");
+    expect(component).toContain("50 million OTF minus 2,026 raw units");
     expect(component).toContain('functionName: "MAX_SUPPLY"');
     expect(component).not.toContain("const MAX_SUPPLY =");
     expect(component).toContain('<ol className="launchLifecycle"');

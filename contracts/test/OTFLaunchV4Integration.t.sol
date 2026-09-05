@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../src/OTFLaunchManagerDeployer.sol";
 import { OTFLaunchRouter } from "../src/OTFLaunchRouter.sol";
@@ -118,7 +119,7 @@ contract BoundaryMultiSwap {
                 zeroForOne: otfIsCurrency0,
                 amountSpecified: -int256(1 ether),
                 sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(
-                    otfIsCurrency0 ? int24(-177_284) : int24(177_284)
+                    otfIsCurrency0 ? int24(-180_161) : int24(180_161)
                 )
             }),
             bytes("")
@@ -132,14 +133,15 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     uint160 private constant REQUIRED_HOOK_FLAGS = (1 << 13) | (1 << 6);
     address private constant BUYER = address(0xB0B);
 
-    uint256 private constant DIRECT_BOOTSTRAP_OTF = 149_997_417_396_300_392_474_813_256;
-    uint256 private constant INVERSE_BOOTSTRAP_OTF = 149_997_417_396_300_392_474_813_274;
-    uint256 private constant PERMANENT_WETH = 8_999_869_404_555_266_670;
-    uint256 private constant DIRECT_BOUNDARY_WETH_INPUT = 8_999_869_404_555_266_707;
-    uint256 private constant INVERSE_BOUNDARY_WETH_INPUT = 8_999_869_404_555_266_711;
-    uint256 private constant PERMANENT_OTF = 49_999_999_999_999_999_999_998_809;
-    uint256 private constant DIRECT_FINAL_BURN = 2_582_603_699_607_525_187_935;
-    uint256 private constant INVERSE_FINAL_BURN = 2_582_603_699_607_525_187_917;
+    uint256 private constant DIRECT_BOOTSTRAP_OTF = 149_997_417_396_300_389_512_897_535;
+    uint256 private constant INVERSE_BOOTSTRAP_OTF = 149_997_417_396_300_389_512_897_549;
+    uint256 private constant PERMANENT_WETH = 6_749_878_135_132_658_333;
+    uint256 private constant DIRECT_BOUNDARY_WETH_INPUT = 6_749_878_135_132_658_377;
+    uint256 private constant INVERSE_BOUNDARY_WETH_INPUT = 6_749_878_135_132_658_378;
+    uint256 private constant DIRECT_PERMANENT_OTF = 49_999_999_999_999_999_999_997_973;
+    uint256 private constant INVERSE_PERMANENT_OTF = 49_999_999_999_999_999_999_997_974;
+    uint256 private constant DIRECT_FINAL_BURN = 2_582_603_699_610_487_104_492;
+    uint256 private constant INVERSE_FINAL_BURN = 2_582_603_699_610_487_104_477;
 
     struct Setup {
         IntegrationOTF otf;
@@ -566,7 +568,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         vm.prank(BUYER);
         setup.router.buyOtfWithWeth(20 ether, 1, BUYER, block.timestamp + 1);
 
-        assertEq(setup.launch.permanentOtfLiquidity(), PERMANENT_OTF);
+        assertEq(setup.launch.permanentOtfLiquidity(), DIRECT_PERMANENT_OTF);
         assertEq(setup.launch.permanentWethLiquidity(), PERMANENT_WETH);
         assertEq(setup.launch.bootstrapOtfReturned(), 999);
         assertEq(setup.launch.bootstrapWethProceeds(), PERMANENT_WETH + 999);
@@ -621,7 +623,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
         assertEq(setup.launch.bootstrapWethProceeds(), PERMANENT_WETH);
         assertEq(setup.launch.bootstrapWethPrincipal(), PERMANENT_WETH);
-        assertEq(setup.launch.permanentOtfLiquidity(), PERMANENT_OTF);
+        assertEq(setup.launch.permanentOtfLiquidity(), DIRECT_PERMANENT_OTF);
         assertEq(setup.launch.permanentWethLiquidity(), PERMANENT_WETH);
     }
 
@@ -793,7 +795,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         setup.weth.mint(BUYER, 30 ether);
         vm.startPrank(BUYER);
         setup.weth.approve(address(setup.router), type(uint256).max);
-        setup.router.buyOtfWithWeth(8.99 ether, 1, BUYER, block.timestamp + 1);
+        setup.router.buyOtfWithWeth(6.74 ether, 1, BUYER, block.timestamp + 1);
         vm.stopPrank();
 
         int24 bridgeLower = setup.launch.finalTick() - 32;
@@ -999,7 +1001,10 @@ contract OTFLaunchV4IntegrationTest is TestBase {
                 ) = abi.decode(logs[i].data, (uint64, uint256, uint256, uint256, uint128));
                 assertEq(timestamp, graduatedTimestamp);
                 assertEq(tokenId, setup.launch.permanentPositionTokenId());
-                assertEq(otfLocked, PERMANENT_OTF);
+                assertEq(
+                    otfLocked,
+                    setup.launch.otfIsCurrency0() ? DIRECT_PERMANENT_OTF : INVERSE_PERMANENT_OTF
+                );
                 assertEq(wethLocked, PERMANENT_WETH);
                 assertEq(liquidity, setup.launch.PERMANENT_LIQUIDITY());
             }
@@ -1012,38 +1017,60 @@ contract OTFLaunchV4IntegrationTest is TestBase {
     function _assertInitializationVectors(Setup memory setup, bool direct) private view {
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
         assertEq(uint256(uint160(address(setup.launch)) & ALL_HOOK_MASK), REQUIRED_HOOK_FLAGS);
-        assertEq(setup.launch.BOOTSTRAP_LIQUIDITY(), 31_819_848_221_821_239_732_818);
-        assertEq(setup.launch.PERMANENT_LIQUIDITY(), 21_213_049_526_830_492_717_974);
+        assertEq(setup.launch.BOOTSTRAP_LIQUIDITY(), 27_556_748_080_852_150_400_017);
+        assertEq(setup.launch.PERMANENT_LIQUIDITY(), 18_371_007_233_046_122_951_295);
         assertEq(setup.launch.bootstrapLiquidity(), setup.launch.BOOTSTRAP_LIQUIDITY());
+        assertTrue(setup.launch.initialTick() == (direct ? int24(-180_161) : int24(180_161)));
+        assertTrue(setup.launch.finalTick() == (direct ? int24(-158_188) : int24(158_188)));
+        assertEq(
+            uint256(setup.launch.initialSqrtPriceX96()),
+            direct ? 9_703_428_570_912_459_262_669_889 : 646_895_238_060_830_617_511_325_894_307_352
+        );
+        assertEq(
+            uint256(setup.launch.finalSqrtPriceX96()),
+            direct
+                ? 29_110_022_932_210_076_965_716_350
+                : 215_633_692_560_272_871_859_121_182_412_411
+        );
+        assertEq(setup.launch.initialOtfPriceWethWad(), 15_000_000_000);
+        assertEq(setup.launch.finalOtfPriceWethWad(), 134_997_562_702);
+        assertEq(
+            _referenceFdv(setup.launch.finalSqrtPriceX96(), direct), 134_997_562_702_653_186_573
+        );
+        assertEq(
+            _referenceFdv(
+                TickMath.getSqrtPriceAtTick(setup.launch.finalTick() + (direct ? int24(1) : -1)),
+                direct
+            ),
+            135_011_062_458_923_451_891
+        );
         assertEq(
             setup.launch.bootstrapOtfDeposited(),
             direct ? DIRECT_BOOTSTRAP_OTF : INVERSE_BOOTSTRAP_OTF
         );
         assertEq(
             setup.launch.MAX_BOOTSTRAP_BUDGET() - setup.launch.bootstrapOtfDeposited(),
-            direct ? 2_582_603_699_607_525_186_744 : 2_582_603_699_607_525_186_726
+            direct ? 2_582_603_699_610_487_102_465 : 2_582_603_699_610_487_102_451
         );
 
         (uint256 bootstrapOtf, uint256 bootstrapWeth, uint256 permanentOtf, uint256 permanentWeth) =
             setup.launch.derivedLaunchAmounts();
         assertEq(bootstrapOtf, direct ? DIRECT_BOOTSTRAP_OTF : INVERSE_BOOTSTRAP_OTF);
         assertEq(bootstrapWeth, PERMANENT_WETH);
-        assertEq(permanentOtf, PERMANENT_OTF);
+        assertEq(permanentOtf, direct ? DIRECT_PERMANENT_OTF : INVERSE_PERMANENT_OTF);
         assertEq(permanentWeth, PERMANENT_WETH);
-        assertEq(setup.launch.PERMANENT_OTF_CAP() - permanentOtf, 1_191);
+        assertEq(setup.launch.PERMANENT_OTF_CAP() - permanentOtf, direct ? 2_027 : 2_026);
 
         (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();
         assertEq(
             uint256(lower),
-            direct
-                ? 11_204_665_816_975_040_385_623_596
-                : 186_743_924_804_530_596_371_038_112_052_313
+            direct ? 9_703_508_046_175_219_238_931_631 : 215_633_692_560_272_871_859_121_182_412_411
         );
         assertEq(
             uint256(upper),
             direct
-                ? 33_613_418_706_697_289_737_079_801
-                : 560_222_128_702_570_272_483_239_940_334_470
+                ? 29_110_022_932_210_076_965_716_350
+                : 646_889_939_753_375_374_376_401_562_675_059
         );
         assertEq(uint256(TickMath.getSqrtPriceAtTick(-887_272)), 4_295_128_739);
         assertEq(
@@ -1053,7 +1080,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         (uint160 sqrtPriceX96, int24 tick,,) =
             setup.stateView.getSlot0(PoolId.wrap(setup.launch.poolId()));
         assertEq(uint256(sqrtPriceX96), uint256(setup.launch.initialSqrtPriceX96()));
-        assertTrue(tick == (direct ? int24(-177_285) : int24(177_284)));
+        assertTrue(tick == (direct ? int24(-180_162) : int24(180_161)));
 
         uint160 fullLower = TickMath.getSqrtPriceAtTick(-887_272);
         uint160 fullUpper = TickMath.getSqrtPriceAtTick(887_272);
@@ -1065,8 +1092,17 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             : SqrtPriceMath.getAmount1Delta(
                 fullLower, setup.launch.finalSqrtPriceX96(), plusOne, true
             );
-        assertEq(plusOneOtf, 50_000_000_000_000_000_000_001_166);
+        assertEq(
+            plusOneOtf,
+            direct ? 50_000_000_000_000_000_000_000_695 : 50_000_000_000_000_000_000_000_696
+        );
         assertGt(plusOneOtf, setup.launch.PERMANENT_OTF_CAP());
+
+        uint128 bootstrapMinusOne = setup.launch.BOOTSTRAP_LIQUIDITY() - 1;
+        uint256 underfundedWeth = direct
+            ? SqrtPriceMath.getAmount1Delta(lower, upper, bootstrapMinusOne, false)
+            : SqrtPriceMath.getAmount0Delta(lower, upper, bootstrapMinusOne, false);
+        assertEq(underfundedWeth, PERMANENT_WETH - 1);
         _assertAllowancesCleared(setup);
     }
 
@@ -1152,7 +1188,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         (uint160 initialPrice,) = setup.launch.currentPoolState();
         bool direct = setup.launch.otfIsCurrency0();
         uint160 buyLimit =
-            direct ? TickMath.getSqrtPriceAtTick(-155_310) : TickMath.getSqrtPriceAtTick(155_310);
+            direct ? TickMath.getSqrtPriceAtTick(-158_187) : TickMath.getSqrtPriceAtTick(158_187);
         vm.expectRevert(
             _wrappedHookRevert(
                 setup,
@@ -1180,7 +1216,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         setup.otf.approve(address(swapper), otfBalance);
         (uint160 beforeSellPrice,) = setup.launch.currentPoolState();
         uint160 sellLimit =
-            direct ? TickMath.getSqrtPriceAtTick(-177_285) : TickMath.getSqrtPriceAtTick(177_285);
+            direct ? TickMath.getSqrtPriceAtTick(-180_162) : TickMath.getSqrtPriceAtTick(180_162);
         vm.expectRevert(
             _wrappedHookRevert(
                 setup,
@@ -1209,7 +1245,10 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.Graduated));
         assertEq(setup.launch.bootstrapWethProceeds(), PERMANENT_WETH);
         assertEq(setup.launch.permanentLiquidity(), setup.launch.PERMANENT_LIQUIDITY());
-        assertEq(setup.launch.permanentOtfLiquidity(), PERMANENT_OTF);
+        assertEq(
+            setup.launch.permanentOtfLiquidity(),
+            setup.launch.otfIsCurrency0() ? DIRECT_PERMANENT_OTF : INVERSE_PERMANENT_OTF
+        );
         assertEq(setup.launch.permanentWethLiquidity(), PERMANENT_WETH);
         assertEq(setup.launch.finalOtfBurned(), expectedBurn);
         assertEq(setup.otf.balanceOf(address(setup.launch)), 0);
@@ -1263,6 +1302,17 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             .allowance(address(setup.launch), address(setup.weth), address(setup.positionManager));
         assertEq(uint256(otfAmount), 0);
         assertEq(uint256(wethAmount), 0);
+    }
+
+    function _referenceFdv(uint160 sqrtPriceX96, bool direct) private pure returns (uint256) {
+        uint256 q96 = 1 << 96;
+        if (direct) {
+            return Math.mulDiv(
+                uint256(sqrtPriceX96), uint256(sqrtPriceX96) * 1_000_000_000 ether, q96 * q96
+            );
+        }
+        uint256 inverseTimesSqrt = Math.mulDiv(q96, q96 * 1_000_000_000 ether, sqrtPriceX96);
+        return inverseTimesSqrt / sqrtPriceX96;
     }
 
     function _deploy(bool direct) private returns (Setup memory setup) {

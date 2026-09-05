@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { ManagedOTFVault } from "./ManagedOTFVault.sol";
+import { OTFMetadata } from "./libraries/OTFMetadata.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { VaultCreationParams } from "./VaultTypes.sol";
 
@@ -122,6 +123,6 @@ contract OTFFactory {
     }
 
     function otfTokenURI() external pure returns (string memory) {
-        return "data:application/json,{\"name\":\"Onchain Traded Fund\",\"symbol\":\"OTF\"}";
+        return OTFMetadata.shareTokenURI();
     }
 }

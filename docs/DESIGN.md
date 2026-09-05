@@ -6,7 +6,7 @@ The Nextra site adapts the main application's visual system for long-form techni
 
 - Dark mode uses deep slate and blue-black surfaces. Light mode maps the same roles to cool near-white surfaces.
 - Teal is limited to links, active navigation, focus, selection, and confirmed interaction.
-- Inter and system sans-serif fallbacks provide the text stack. Articles use a maximum measure of 74 characters; code disables ligatures so addresses and identifiers remain exact.
+- Self-hosted Instrument Sans with system sans-serif fallbacks provides the text stack. Articles use a maximum measure of 74 characters; code disables ligatures so addresses and identifiers remain exact.
 - Thin rules and adjacent surface tones establish hierarchy. The site avoids decorative shadows and grids of custom cards.
 - The compact OTF mark and 7 to 8 px radii connect the site to the application.
 

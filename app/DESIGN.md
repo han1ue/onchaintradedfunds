@@ -1,12 +1,12 @@
 ---
 name: Onchain Traded Funds
-description: A dark Robinhood-native finance interface for transparent onchain fund operations.
+description: A Robinhood-native finance interface with light and charcoal-dark appearances.
 colors:
-  background: "#050505"
-  nav: "#111405"
-  card: "#101010"
-  card-raised: "#151515"
-  border: "#2c2c2c"
+  background: "#0d0f0c"
+  nav: "#12150e"
+  card: "#151814"
+  card-raised: "#1b1e18"
+  border: "#343a30"
   text: "#f7f7f5"
   text-muted: "#999991"
   lime: "#ccff00"
@@ -19,13 +19,13 @@ colors:
   splash-entry-ink: "#090909"
 typography:
   display:
-    fontFamily: "Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: 'Instrument Sans, "Segoe UI", ui-sans-serif, system-ui, sans-serif'
     fontSize: "clamp(1.75rem, 5vw, 2.35rem)"
     fontWeight: 640
     lineHeight: 1.15
     letterSpacing: "-0.035em"
   splash-display:
-    fontFamily: 'Instrument Sans, Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif'
+    fontFamily: 'Instrument Sans, "Segoe UI", ui-sans-serif, system-ui, sans-serif'
     fontSize: "clamp(4.25rem, 8.1vw, 6rem)"
     fontWeight: 560
     lineHeight: 0.82
@@ -33,7 +33,7 @@ typography:
     fontFeature: '"ss02" 1'
     fontVariation: '"wdth" 91, "wght" 560'
   body:
-    fontFamily: "Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: 'Instrument Sans, "Segoe UI", ui-sans-serif, system-ui, sans-serif'
     fontSize: "0.9rem"
     fontWeight: 400
     lineHeight: 1.6
@@ -66,11 +66,11 @@ components:
 
 ## Design principles
 
-The application presents financial state with compact controls, clear hierarchy, and a single dark Robinhood palette. Swap stays focused on one exchange task; creation, fund detail, and liquidity pages can use denser layouts where the workflow requires them.
+The application presents financial state with compact controls, clear hierarchy, and one Robinhood palette across light and dark appearances. Swap stays focused on one exchange task; creation, fund detail, and liquidity pages can use denser layouts where the workflow requires them.
 
 Robinhood lime identifies an available action, active selection, keyboard focus, or confirmed state. Gold marks caution or unavailable behavior, and rose marks validation or transaction failure. Adjacent black surface tones and thin borders provide most visual separation.
 
-The splash screen is a separate entry surface. Its large Instrument Sans title, convergence field, and pale entry control end when the user enters the application. Interior routes use the compact Inter-based system.
+The splash screen is a separate entry surface. Its large Instrument Sans title, convergence field, and pale entry control end when the user enters the application. Interior routes use the same family at a compact operational scale.
 
 ## Color
 
@@ -80,13 +80,13 @@ The splash screen is a separate entry surface. Its large Instrument Sans title, 
 - `danger` is reserved for errors and failed transactions.
 - Splash colors apply only to the entry screen.
 
-The app has no theme selector or alternate palette. Robinhood dark is the sole visual system.
+The appearance selector offers Browser, Light, and Dark. Both appearances use the Robinhood palette; there is no alternate brand theme. Dark uses olive-charcoal surfaces rather than pitch black, while Light uses warm off-white surfaces and a darker olive accent for readable text and focus states.
 
 ## Typography
 
-Interior routes use Inter with system sans-serif fallbacks. Large text identifies the current route or fund; operational headings remain modest so values and controls dominate. Labels are compact and medium weight. Numeric content should remain easy to compare.
+All interface text uses self-hosted Instrument Sans with system sans-serif fallbacks. Large text identifies the current route or fund; operational headings remain modest so values and controls dominate. Labels are compact and medium weight. Numeric content should remain easy to compare.
 
-The splash title uses self-hosted Instrument Sans with the specified width, weight, line height, and tracking. Do not use that face or scale inside the application.
+The splash title uses the specified Instrument Sans width, weight, line height, and tracking. Its display scale remains exclusive to the splash.
 
 ## Layout
 

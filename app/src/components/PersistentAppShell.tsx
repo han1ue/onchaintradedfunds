@@ -1,8 +1,8 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { OtfBrandMark } from "@onchaintradedfunds/brand";
-import { Check, LoaderCircle, Settings, Wallet, Zap } from "lucide-react";
+import { OtfTokenIcon } from "@onchaintradedfunds/brand";
+import { Check, LoaderCircle, Monitor, Settings, Sun, Wallet, Zap } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -10,6 +10,9 @@ import { useChainId, useSwitchChain } from "wagmi";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import { navigationItemForPath } from "@/lib/operate-navigation";
+
+type AppearancePreference = "default" | "light" | "dark";
+type ResolvedAppearance = Exclude<AppearancePreference, "default">;
 
 const OPERATE_FLOW_LINES = Array.from({ length: 12 }, (_, index) => {
   const startY = 38 + index * 78;
@@ -65,7 +68,10 @@ function HeaderWalletControl({ active }: { active: boolean }) {
   );
 }
 
-function OperateNav() {
+function OperateNav({ theme, onThemeChange }: {
+  theme: AppearancePreference;
+  onThemeChange: (theme: AppearancePreference) => void;
+}) {
   const pathname = usePathname();
   const current = navigationItemForPath(pathname);
   const [networkOpen, setNetworkOpen] = useState(false);
@@ -101,7 +107,7 @@ function OperateNav() {
     <header className="topNav">
       <div className="topNavInner">
         <Link className="logoGroup" href="/" aria-label="Onchain Traded Funds">
-          <OtfBrandMark />
+          <OtfTokenIcon className="headerBrandMark" size={30} />
           <span className="brandText"><strong>Onchain Traded Funds</strong></span>
         </Link>
         <nav className="navTabs" aria-label="Primary navigation">
@@ -182,6 +188,22 @@ function OperateNav() {
                     <span className={`themeSwitch ${testnetMode ? "active" : ""}`} aria-hidden="true"><span /></span>
                   </button>
                 </div>
+                <div className="settingsGroup">
+                  <span className="settingsLabel">Appearance</span>
+                  <div className="settingsThemeHeading">
+                    <span className="settingsOptionIcon"><Sun size={15} /></span>
+                    <span className="settingsOptionText"><strong>Mode</strong><small>Follow your browser or choose a mode.</small></span>
+                  </div>
+                  <div className="settingsThemeChoices" role="radiogroup" aria-label="Application appearance">
+                    {(["default", "light", "dark"] as const).map((value) => (
+                      <button className={`settingsThemeChoice ${theme === value ? "selected" : ""}`} key={value} type="button" role="radio" aria-checked={theme === value} onClick={() => onThemeChange(value)}>
+                        {value === "default" ? <Monitor className="settingsSystemIcon" size={13} /> : <span className={`settingsThemeSwatch appearance-${value}`} aria-hidden="true" />}
+                        <span>{value === "default" ? "Browser" : value[0].toUpperCase() + value.slice(1)}</span>
+                        {theme === value ? <Check size={12} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -194,12 +216,39 @@ function OperateNav() {
 export function PersistentAppShell({ children, showOnRoot }: { children: ReactNode; showOnRoot: boolean }) {
   const pathname = usePathname();
   const showHeader = pathname !== "/" || showOnRoot;
+  const [theme, setTheme] = useState<AppearancePreference>("default");
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedAppearance>("dark");
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("otf-theme");
+    setTheme(savedTheme === "light" || savedTheme === "dark" ? savedTheme : "default");
+  }, []);
+
+  useEffect(() => {
+    const browserPreference = window.matchMedia("(prefers-color-scheme: light)");
+    const applyTheme = () => {
+      const nextTheme: ResolvedAppearance = theme === "default"
+        ? browserPreference.matches ? "light" : "dark"
+        : theme;
+      setResolvedTheme(nextTheme);
+      document.documentElement.dataset.theme = nextTheme;
+    };
+    applyTheme();
+    if (theme !== "default") return;
+    browserPreference.addEventListener("change", applyTheme);
+    return () => browserPreference.removeEventListener("change", applyTheme);
+  }, [theme]);
+
+  function changeTheme(nextTheme: AppearancePreference) {
+    setTheme(nextTheme);
+    window.localStorage.setItem("otf-theme", nextTheme);
+  }
 
   return (
-    <Providers>
+    <Providers appearance={resolvedTheme}>
       <div className={showHeader ? "operateShell" : undefined}>
         {showHeader ? <OperateAmbientField /> : null}
-        {showHeader ? <OperateNav /> : null}
+        {showHeader ? <OperateNav theme={theme} onThemeChange={changeTheme} /> : null}
         {children}
       </div>
     </Providers>

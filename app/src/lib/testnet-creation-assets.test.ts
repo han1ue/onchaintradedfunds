@@ -66,14 +66,14 @@ describe("configured Robinhood testnet creation assets", () => {
 
   it("builds the protocol OTF constituent from current onchain values", () => {
     expect(protocolOtfCreationAsset({
-      address: getAddress("0xdaB5d0511bf6e6E7D53047C321FF7cCDD030B5EA"),
-      priceWethWad: 20_000_000_000n,
+      address: getAddress("0x568133FA261D979e0E24C2e81bdE2fAC9b8A3842"),
+      priceWethWad: 15_000_000_000n,
       ethUsdAnswer: 350_000_000_000n,
       totalSupply: 1_000_000_000n * 10n ** 18n,
     })).toEqual(expect.objectContaining({
       symbol: "OTF",
-      priceUsd: "0.00007",
-      marketCapUsd: "70000",
+      priceUsd: "0.0000525",
+      marketCapUsd: "52500",
       decimals: 18,
       verified: true,
     }));

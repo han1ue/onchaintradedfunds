@@ -1,12 +1,11 @@
 # OTF brand package
 
-`@onchaintradedfunds/brand` contains the marks shared by the main and launch applications.
+`@onchaintradedfunds/brand` contains the marks shared by the applications and social profiles.
 
-- `OtfBrandMark` renders the square navigation mark.
 - `OtfTokenIcon` renders the ticker-aware token mark for three- and four-letter symbols.
-- `OTF_FAVICON_DATA_URL` supplies the canonical favicon through Next.js metadata.
-- `styles.css` defines mark geometry and theme-aware colors.
-- `assets/otf-icon.png` is a 256 px transparent export of the standard token mark.
-- `assets/otf-favicon.png` is a 64 px transparent export for external integrations.
+- `assets/otf-icon.svg` is the square app mark.
+- `assets/otf-favicon.png` is the favicon used by the app and documentation.
+- `assets/otf-circular-icon.png` and `assets/otf-circular-icon.svg` are the Twitter profile mark.
+- `assets/otf-twitter-header.png` is the Twitter header.
 
-Applications may add navigation behavior around these components. They should not duplicate the marks' geometry or typography.
+Applications may add navigation behavior around these marks. They should not duplicate their geometry or typography.

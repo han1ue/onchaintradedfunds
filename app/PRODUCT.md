@@ -73,6 +73,6 @@ Only the immutable beneficiary sees the fee-claim interface. It compares a sale 
 
 ## Current limits
 
-The corrected 20-to-approximately-179.997388091105356396-ETH launch architecture is deployed on Robinhood Chain Testnet. The application reads the manager, launch router, derived amounts, and approved adapters from the deployment manifest.
+The active Robinhood Chain Testnet deployment uses the 15-to-approximately-134.997562702653186573-ETH launch curve. The application reads the deployed manager, launch router, derived amounts, and approved adapters from the deployment manifest.
 
 Native basket execution is enabled on testnet through the canonical-WETH entry router. Robinhood Mainnet direct quotes remain unavailable without the server API key. The application does not infer or fabricate missing addresses.

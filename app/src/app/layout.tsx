@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { OTF_FAVICON_DATA_URL } from "@onchaintradedfunds/brand";
-import "@onchaintradedfunds/brand/styles.css";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.png";
 import "./globals.css";
 import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
@@ -12,7 +11,7 @@ import { headers } from "next/headers";
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
   description: "Managed onchain traded funds with enforceable portfolio safety limits.",
-  icons: { icon: OTF_FAVICON_DATA_URL },
+  icons: { icon: otfFavicon.src },
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -22,6 +21,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
+        <Script
+          id="appearance-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: "try{const saved=localStorage.getItem('otf-theme');const theme=saved==='light'||saved==='dark'?saved:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.theme=theme}catch{}",
+          }}
+        />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-7VY28DHL52"
           strategy="afterInteractive"

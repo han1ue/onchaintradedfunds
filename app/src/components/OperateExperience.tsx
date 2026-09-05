@@ -262,7 +262,7 @@ function AssetLogo({ symbol }: { symbol: string }) {
 function AssetMark({ asset }: { asset: SwapAsset }) {
   let mark: ReactNode = undefined;
   if (asset.kind === "otf") mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker={isUnselectedOtf(asset) ? "OTF" : asset.symbol} />;
-  if (asset.isProtocolToken) mark = <OtfTokenIcon className="swapAssetBrandMark" size={30} ticker="OTF" />;
+  if (asset.isProtocolToken) mark = <OtfTokenIcon className="swapAssetImage squareOtfAsset" size={30} />;
   const tokenIcon = asset.kind === "native"
     ? "/assets/tokens/eth.png"
     : asset.symbol.toUpperCase() === "WETH"

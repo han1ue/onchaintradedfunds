@@ -31,22 +31,22 @@ contract OTFLaunchManager {
     uint256 public constant MAX_BOOTSTRAP_BUDGET = 150_000_000 ether;
     uint256 public constant PERMANENT_OTF_CAP = 50_000_000 ether;
     uint256 public constant REQUIRED_OTF_BALANCE = 200_000_000 ether;
-    uint128 public constant BOOTSTRAP_LIQUIDITY = 31_819_848_221_821_239_732_818;
-    uint128 public constant PERMANENT_LIQUIDITY = 21_213_049_526_830_492_717_974;
+    uint128 public constant BOOTSTRAP_LIQUIDITY = 27_556_748_080_852_150_400_017;
+    uint128 public constant PERMANENT_LIQUIDITY = 18_371_007_233_046_122_951_295;
     uint24 public constant LP_FEE = 0;
     int24 public constant TICK_SPACING = 1;
     int24 public constant FULL_RANGE_LOWER_TICK = -887_272;
     int24 public constant FULL_RANGE_UPPER_TICK = 887_272;
 
-    // The pool initializes at the exact 20 ETH reference-FDV price. The one-sided position starts at
+    // The pool initializes at the exact 15 ETH reference-FDV price. The one-sided position starts at
     // the adjacent spacing-1 boundary; all position endpoints are derived from TickMath.
-    int24 private constant DIRECT_INITIAL_TICK = -177_284;
-    int24 private constant DIRECT_FINAL_TICK = -155_311;
-    uint160 private constant DIRECT_INITIAL_SQRT_PRICE_X96 = 11_204_554_194_957_227_983_746_388;
-    int24 private constant INVERSE_INITIAL_TICK = 177_284;
-    int24 private constant INVERSE_FINAL_TICK = 155_311;
+    int24 private constant DIRECT_INITIAL_TICK = -180_161;
+    int24 private constant DIRECT_FINAL_TICK = -158_188;
+    uint160 private constant DIRECT_INITIAL_SQRT_PRICE_X96 = 9_703_428_570_912_459_262_669_889;
+    int24 private constant INVERSE_INITIAL_TICK = 180_161;
+    int24 private constant INVERSE_FINAL_TICK = 158_188;
     uint160 private constant INVERSE_INITIAL_SQRT_PRICE_X96 =
-        560_227_709_747_861_399_187_319_382_274_581;
+        646_895_238_060_830_617_511_325_894_307_352;
 
     uint160 private constant ALL_HOOK_MASK = (1 << 14) - 1;
     uint160 private constant BEFORE_INITIALIZE_FLAG = 1 << 13;

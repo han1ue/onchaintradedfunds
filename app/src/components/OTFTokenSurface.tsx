@@ -156,10 +156,10 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><OtfTokenIcon className="tokenMarketTokenIcon" size={44} /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "$OTF deployment unavailable" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The Robinhood Testnet deployment configuration is incomplete or invalid." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
 
   const phases = [
-    { title: "Not initialized", copy: ["Exact 20 ETH launch reference valuation.", "Initialization deposits approximately 149,997,417.3963 OTF within the 150 million OTF safety cap."] },
-    { title: "Bootstrap active", copy: ["20 ETH to approximately 179.997388091105356396 ETH reference valuation.", "The launch router partially fills an order at either bootstrap boundary and leaves unused input with the buyer."] },
+    { title: "Not initialized", copy: ["Exact 15 ETH launch reference valuation.", "Initialization deposits approximately 149,997,417.3963 OTF within the 150 million OTF safety cap."] },
+    { title: "Bootstrap active", copy: ["15 ETH to approximately 134.997562702653186573 ETH reference valuation.", "The launch router partially fills an order at either bootstrap boundary and leaves unused input with the buyer."] },
     { title: "Graduation ready", copy: ["The pool landed on the exact graduation sqrt price.", "Swaps pause until anyone finalizes the completed bootstrap position."] },
-    { title: "Graduated", copy: ["Derived WETH and 50 million OTF minus 1,191 raw units are locked as full-range liquidity.", "The manager burns its remaining OTF once; unrelated WETH stays isolated."] },
+    { title: "Graduated", copy: ["Derived WETH and 50 million OTF minus 2,026 raw units are locked as full-range liquidity.", "The manager burns its remaining OTF once; unrelated WETH stays isolated."] },
   ] as const;
 
   return <div className="appView tokenView tokenMarketView">

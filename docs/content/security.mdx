@@ -55,7 +55,7 @@ Application support for native basket execution is enabled on testnet through th
 
 ## Launch and market assumptions
 
-The canonical pool initializes at exactly 20 ETH reference FDV. Its fixed final tick represents approximately `179.997388091105356396 ETH`; the next tick would exceed the nominal 180 ETH target. Fixed bootstrap liquidity consumes approximately `149,997,417.3963 OTF` and returns exactly `8.999869404555266670 WETH` of principal at the final boundary. That principal funds the permanent position with 50 million OTF minus 1,191 raw units.
+The canonical pool initializes at exactly 15 ETH reference FDV. Its fixed final tick represents approximately `134.997562702653186573 ETH`; the next price-direction tick represents `135.011062458923451891 ETH` and exceeds the nominal 135 ETH target. Fixed bootstrap liquidity consumes approximately `149,997,417.3963 OTF` and returns exactly `6.749878135132658333 WETH` of principal at the final boundary. That principal funds the permanent position with 50 million OTF minus 2,027 raw units when OTF is currency0 or 2,026 raw units when it is currency1.
 
 The hook rejects a swap that finishes outside either bootstrap boundary. It records `GraduationReady` only at exact final `sqrtPriceX96` equality and blocks further swaps until finalization. The dedicated launch router supplies the boundary limit, partially fills oversized input, and normally finalizes after the PoolManager returns control in the same outer transaction. Anyone can also finalize separately after another router lands exactly on the boundary.
 

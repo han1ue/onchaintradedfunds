@@ -2,15 +2,15 @@
 
 import "@rainbow-me/rainbowkit/styles.css";
 
-import { darkTheme, RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { darkTheme, lightTheme, RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, appearance }: { children: ReactNode; appearance: "light" | "dark" }) {
   const [queryClient] = useState(() => new QueryClient());
-  const walletTheme = darkTheme({
+  const walletTheme = (appearance === "light" ? lightTheme : darkTheme)({
     accentColor: "#ccff00",
     accentColorForeground: "#090909",
     borderRadius: "small",
