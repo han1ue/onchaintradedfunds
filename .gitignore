@@ -21,9 +21,6 @@ lovable-project-*.zip
 .env.local
 .env.deploy.local
 
-# Local marketing films, source assets, and render tools
-/marketing/
-
 # Generated prose-lint reports
 .slopless/findings/
 
