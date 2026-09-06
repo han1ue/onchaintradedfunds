@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
-import { testnetOtfSeedConfiguration } from "./lib/testnet-otf-seeds.mjs";
+import { testnetOtfSeedConfiguration, testnetSeedMarketSnapshot } from "./lib/testnet-otf-seeds.mjs";
 import { assertTestnetDeploymentEncoding, verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -273,15 +273,21 @@ if (existingJournal && (existingJournal.chainId !== chainId || existingJournal.s
 let totalGas = BigInt(existingJournal?.totalGas ?? 0);
 let gasSpend = BigInt(existingJournal?.gasSpend ?? 0);
 const transactions = existingJournal?.transactions ?? [];
+let seedMarketSnapshot = existingJournal?.seedMarketSnapshot;
+if (!seedMarketSnapshot && transactions.some((entry) => entry.functionName === "createVault")) {
+  throw new Error("Cannot resume seeded vault creation without its market snapshot; use a fresh deployment");
+}
 const saveJournal = () => {
   mkdirSync(dirname(journalPath), { recursive: true });
-  writeFileSync(journalPath, json({ chainId, simulation, transactions, totalGas, gasSpend }) + "\n");
+  writeFileSync(journalPath, json({ chainId, simulation, transactions, totalGas, gasSpend, seedMarketSnapshot }) + "\n");
 };
 const fundingBudget = !simulation && process.env.LIQUIDITY_BUDGET_FILE
   ? JSON.parse(readFileSync(resolve(root, process.env.LIQUIDITY_BUDGET_FILE), "utf8")) : undefined;
 if (!simulation && (!fundingBudget || fundingBudget.chainId !== 46630 || fundingBudget.authorized !== true)) {
   throw new Error("An explicitly authorized testnet funding budget is required for the fresh deployment");
 }
+seedMarketSnapshot ??= await testnetSeedMarketSnapshot(assetCatalog);
+saveJournal();
 const transactionGasPrice = async () => simulation
   ? BigInt(JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-v3.json"), "utf8")).gasPriceWei)
   : publicClient.getGasPrice();
@@ -586,7 +592,25 @@ setupTransactions.v4AdapterApproval = await transact(
 );
 
 const sampleOtfs = [];
-const sampleOtfConfiguration = testnetOtfSeedConfiguration(assetCatalog, protocolMultisig);
+if (!seedMarketSnapshot.otfToken) {
+  const oracleRound = await publicClient.readContract({
+    address: fakeEthUsdOracle.address,
+    abi: artifact("FakeETHUSDOracle").abi,
+    functionName: "latestRoundData",
+  });
+  // FakeETHUSDOracle has eight decimals; the launch price is WETH per OTF in WAD.
+  seedMarketSnapshot.otfToken = {
+    address: otfToken.address,
+    priceUsdWad: (initialOtfPriceWethWad * oracleRound[1] / 10n ** 8n).toString(),
+  };
+  saveJournal();
+}
+if (getAddress(seedMarketSnapshot.otfToken.address) !== otfToken.address) {
+  throw new Error("Seed snapshot does not match the deployed OTF token");
+}
+const sampleOtfConfiguration = testnetOtfSeedConfiguration(
+  assetCatalog, protocolMultisig, seedMarketSnapshot, seedMarketSnapshot.otfToken,
+);
 for (const configuration of sampleOtfConfiguration) {
   const transaction = await transact(
     { ...factory, name: "OTFFactory" },
@@ -842,6 +866,7 @@ const deployment = {
     maxLegs: 40,
   },
   sampleOtfs,
+  seedMarketSnapshot,
   setupTransactions,
   ...appOwnedIntegrations,
   note: "Protocol contracts are deployed.",
