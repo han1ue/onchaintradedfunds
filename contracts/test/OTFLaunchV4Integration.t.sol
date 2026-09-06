@@ -215,9 +215,88 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         _assertPartialBuyAndSell(_deploy(false));
     }
 
+    function testNativeSellPaysExactOutputForBothCurrencyOrderings() public {
+        _assertNativeSell(_deploy(true), false);
+        _assertNativeSell(_deploy(false), false);
+    }
+
+    function testNativeSellPartiallyFillsAtBoundaryForBothCurrencyOrderings() public {
+        _assertNativeSell(_deploy(true), true);
+        _assertNativeSell(_deploy(false), true);
+    }
+
+    function testNativeSellRejectsInvalidRequestsWithoutChangingPool() public {
+        Setup memory setup = _deploy(true);
+        uint256 boughtOtf = _buyForNativeSell(setup);
+        (uint160 priceBefore,) = setup.launch.currentPoolState();
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(setup.router), boughtOtf);
+        vm.expectPartialRevert(OTFLaunchRouter.DeadlinePassed.selector);
+        setup.router.sellOtfForEth(boughtOtf, 1, BUYER, block.timestamp - 1);
+        vm.expectRevert(OTFLaunchRouter.ZeroAddress.selector);
+        setup.router.sellOtfForEth(boughtOtf, 1, address(0), block.timestamp);
+        vm.expectRevert(OTFLaunchRouter.InvalidAmount.selector);
+        setup.router.sellOtfForEth(0, 1, BUYER, block.timestamp);
+        vm.expectPartialRevert(OTFLaunchRouter.MinimumOutputNotMet.selector);
+        setup.router.sellOtfForEth(boughtOtf / 2, 2 ether, BUYER, block.timestamp);
+        vm.stopPrank();
+        (uint160 priceAfter,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfter), uint256(priceBefore));
+        assertEq(setup.otf.balanceOf(BUYER), boughtOtf);
+        assertEq(BUYER.balance, 0);
+        assertEq(address(setup.router).balance, 0);
+        assertEq(setup.weth.balanceOf(address(setup.router)), 0);
+    }
+
+    function testNativeSellRejectedPaymentRollsBackAndPaymentReentrancyIsBlocked() public {
+        Setup memory setup = _deploy(false);
+        uint256 boughtOtf = _buyForNativeSell(setup);
+        RejectingRefundBuyer rejecting = new RejectingRefundBuyer(setup.router);
+        (uint160 priceBefore,) = setup.launch.currentPoolState();
+        uint256 wethBackingBefore = address(setup.weth).balance;
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(setup.router), boughtOtf);
+        vm.expectPartialRevert(OTFLaunchRouter.NativeTransferFailed.selector);
+        setup.router.sellOtfForEth(boughtOtf / 2, 1, address(rejecting), block.timestamp);
+        vm.stopPrank();
+        (uint160 priceAfter,) = setup.launch.currentPoolState();
+        assertEq(uint256(priceAfter), uint256(priceBefore));
+        assertEq(setup.otf.balanceOf(BUYER), boughtOtf);
+        assertEq(address(setup.weth).balance, wethBackingBefore);
+        assertEq(setup.weth.balanceOf(address(setup.router)), 0);
+        assertEq(address(setup.router).balance, 0);
+
+        ReentrantRefundBuyer recipient = new ReentrantRefundBuyer(setup.router);
+        vm.prank(BUYER);
+        (, uint256 amountOut) =
+            setup.router.sellOtfForEth(boughtOtf / 2, 1, address(recipient), block.timestamp);
+        assertEq(address(recipient).balance, amountOut);
+        assertEq(
+            uint256(uint32(recipient.reentrySelector())),
+            uint256(uint32(OTFLaunchRouter.Reentrancy.selector))
+        );
+    }
+
+    function testLaunchRouterRejectsUnexpectedNativeSender() public {
+        Setup memory setup = _deploy(true);
+        vm.deal(address(this), 1 ether);
+        (bool success, bytes memory reason) = address(setup.router).call{ value: 1 ether }("");
+        assertFalse(success);
+        assertEq(
+            keccak256(reason),
+            keccak256(
+                abi.encodeWithSelector(
+                    OTFLaunchRouter.UnexpectedNativeSender.selector, address(this)
+                )
+            )
+        );
+        assertEq(address(setup.router).balance, 0);
+    }
+
     function testFuzzRouterBuysSellsAndBoundaryRefunds(
         bool direct,
         bool nativeInput,
+        bool nativeOutput,
         uint96 buySeed,
         uint96 sellSeed,
         uint96 surplusSeed
@@ -243,14 +322,18 @@ contract OTFLaunchV4IntegrationTest is TestBase {
 
         uint256 sellAmount = bound(uint256(sellSeed), 1e12, boughtOtf);
         uint256 wethBeforeSell = setup.weth.balanceOf(BUYER);
+        uint256 ethBeforeSell = BUYER.balance;
+        vm.deal(address(setup.weth), 100 ether);
         vm.startPrank(BUYER);
         setup.otf.approve(address(setup.router), sellAmount);
-        (uint256 soldOtf, uint256 wethOut) =
-            setup.router.sellOtfForWeth(sellAmount, 1, BUYER, block.timestamp + 1);
+        (uint256 soldOtf, uint256 wethOut) = nativeOutput
+            ? setup.router.sellOtfForEth(sellAmount, 1, BUYER, block.timestamp + 1)
+            : setup.router.sellOtfForWeth(sellAmount, 1, BUYER, block.timestamp + 1);
         vm.stopPrank();
         assertEq(soldOtf, sellAmount);
         assertEq(setup.otf.balanceOf(BUYER), boughtOtf - soldOtf);
-        assertEq(setup.weth.balanceOf(BUYER), wethBeforeSell + wethOut);
+        assertEq(setup.weth.balanceOf(BUYER), wethBeforeSell + (nativeOutput ? 0 : wethOut));
+        assertEq(BUYER.balance, ethBeforeSell + (nativeOutput ? wethOut : 0));
 
         uint256 boundaryInput = direct ? DIRECT_BOUNDARY_WETH_INPUT : INVERSE_BOUNDARY_WETH_INPUT;
         uint256 surplus = bound(uint256(surplusSeed), 1, 20 ether);
@@ -1179,6 +1262,47 @@ contract OTFLaunchV4IntegrationTest is TestBase {
             : SqrtPriceMath.getAmount0Delta(lower, upper, bootstrapMinusOne, false);
         assertEq(underfundedWeth, PERMANENT_WETH - 1);
         _assertAllowancesCleared(setup);
+    }
+
+    function _buyForNativeSell(Setup memory setup) private returns (uint256 boughtOtf) {
+        vm.deal(BUYER, 1 ether);
+        vm.prank(BUYER);
+        (, boughtOtf) = setup.router.buyOtfWithEth{ value: 1 ether }(1, BUYER, block.timestamp);
+    }
+
+    function _assertNativeSell(Setup memory setup, bool partialFill) private {
+        uint256 boughtOtf = _buyForNativeSell(setup);
+        uint256 maximum = partialFill ? boughtOtf * 2 : boughtOtf / 2;
+        if (partialFill) setup.otf.mint(BUYER, boughtOtf);
+        uint256 otfBefore = setup.otf.balanceOf(BUYER);
+        address recipient = address(0xCAFE);
+        uint256 recipientBefore = recipient.balance;
+        // Unsolicited balances must not be included in the current sale's payout.
+        vm.deal(address(setup.router), 2 ether);
+        setup.weth.mint(address(setup.router), 3 ether);
+        vm.deal(address(setup.weth), 10 ether);
+        vm.startPrank(BUYER);
+        setup.otf.approve(address(setup.router), maximum);
+        (uint256 amountIn, uint256 amountOut) =
+            setup.router.sellOtfForEth(maximum, 1, recipient, block.timestamp);
+        vm.stopPrank();
+        assertGt(amountIn, 0);
+        assertGt(amountOut, 0);
+        if (partialFill) assertLt(amountIn, maximum);
+        else assertEq(amountIn, maximum);
+        assertEq(setup.otf.balanceOf(BUYER), otfBefore - amountIn);
+        assertEq(recipient.balance - recipientBefore, amountOut);
+        assertEq(setup.weth.balanceOf(recipient), 0);
+        assertEq(BUYER.balance, 0);
+        assertEq(address(setup.router).balance, 2 ether);
+        assertEq(setup.weth.balanceOf(address(setup.router)), 3 ether);
+        (uint160 price,) = setup.launch.currentPoolState();
+        (uint160 lower, uint160 upper) = setup.launch.bootstrapSqrtPriceBounds();
+        assertTrue(price >= lower && price <= upper);
+        if (partialFill) {
+            assertEq(uint256(price), uint256(setup.launch.otfIsCurrency0() ? lower : upper));
+        }
+        assertEq(uint256(setup.launch.phase()), uint256(OTFLaunchManager.Phase.BootstrapActive));
     }
 
     function _assertPartialBuyAndSell(Setup memory setup) private {

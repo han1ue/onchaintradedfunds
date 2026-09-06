@@ -72,6 +72,10 @@ boundary. It MUST settle only consumed input, preserve unused WETH, refund unuse
 minimum output and deadline. It MUST call permissionless finalization only after the PoolManager
 returns control. Finalization failure MUST revert the complete boundary purchase.
 
+Native-output sells MUST unwrap only the current swap's WETH output after settlement and send that
+ETH to the specified recipient under the reentrancy guard. A rejected payout MUST revert the sale.
+The launch router MUST accept callback ETH only from WETH and preserve pre-existing ETH and WETH.
+
 Finalization MUST recompute amounts, remove the bootstrap position, and measure both returned tokens.
 The fixed full-range permanent position MUST receive only the derived WETH principal and at most
 50 million OTF. Extra WETH MUST stay locked without changing position size.

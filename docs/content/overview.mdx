@@ -120,7 +120,7 @@ ETH and WETH appear separately in the asset selector. ETH needs no token approva
 
 Before submission, the application simulates the exact transaction with `eth_call` and estimates gas. If the output vault has zero supply, its guaranteed minimum output must be at least `0.01` shares. Later mints have no bootstrap minimum.
 
-During the protocol-token launch, `OTFLaunchRouter` handles OTF/WETH trades. At a range boundary it takes only the input used and refunds unused native ETH. After graduation, the application uses the ordinary Uniswap route.
+During the protocol-token launch, `OTFLaunchRouter` handles OTF/WETH trades, with ETH wrapping for buys and unwrapping for sells. At a range boundary it takes only the input used, leaves unused tokens in the wallet, and refunds unused native ETH. After graduation, the application uses the ordinary Uniswap route.
 
 ## Verification
 

@@ -28,6 +28,8 @@ Chain ID: 46630. Deployment completed at 2026-09-05T18:14:18.372Z.
 
 The launch manager includes the liquidity-capacity correction and uses hook mask `0x2840`. The deployed V4 adapter and collector use the testnet Universal Router's four-field tuple and clear ERC-20 and Permit2 allowances after execution. Current source targets a five-field tuple; see [deployment controls](/security#deployment-controls) before redeploying.
 
+The listed launch router does not include the new `sellOtfForEth` entry point. Enabling ETH output during launch requires deploying the updated router with the existing launch manager address and updating the application's router address and deployment records. The token and pool can remain in place.
+
 The previous V3 adapter was [revoked](https://explorer.testnet.chain.robinhood.com/tx/0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a). Old launch positions remain onchain.
 
 The deployment manifest, `app/src/config/robinhood-testnet.json`, records contract addresses, code hashes, receipts, launch parameters, and configuration transactions. It marks routing as ready for these deployed contracts. The protocol administrator and team beneficiary are both `0xc340D7085E321B82CF550904310EE44bae9e4CD2`.

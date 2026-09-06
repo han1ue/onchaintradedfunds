@@ -646,11 +646,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     query: { enabled: canonicalOtfPair && Boolean(launchManager), refetchInterval: 12_000 },
   });
   const canonicalPhase = Number(canonicalPoolReads?.[0]?.result ?? 0);
-  useEffect(() => {
-    if (canonicalOtfPair && canonicalPhase === 1 && output.kind === "native" && configuredWeth) {
-      setOutput(configuredWeth);
-    }
-  }, [canonicalOtfPair, canonicalPhase, output.kind, configuredWeth]);
   const canonicalAmountRaw = amountValid ? decimalAmount(amount, input.decimals) : undefined;
   const canonicalQuote = useMemo(() => {
     const poolState = canonicalPoolReads?.[1]?.result;
@@ -684,7 +679,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const canonicalQuoteUsable = Boolean(
     canonicalQuote
       && canonicalQuote.amountOut > 0n
-      && (canonicalPhase === 1 ? output.kind !== "native" : canonicalPhase === 3 && canonicalQuote.fullyFilled),
+      && (canonicalPhase === 1 || (canonicalPhase === 3 && canonicalQuote.fullyFilled)),
   );
   const usableQuote = nativeWrapPair ? amountValid : canonicalOtfPair ? canonicalQuoteUsable : Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
@@ -873,7 +868,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   function reverse() {
     setInput(output);
-    setOutput(canonicalOtfPair && canonicalPhase === 1 && input.kind === "native" && configuredWeth ? configuredWeth : input);
+    setOutput(input);
     setActiveQuote(undefined);
     setExecution("idle");
     setExecutionMessage(undefined);
@@ -1034,10 +1029,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         }
         let data: Hex;
         let value = 0n;
-        let launchFunction: "buyOtfWithEth" | "buyOtfWithWeth" | "sellOtfForWeth" | undefined;
+        let launchFunction: "buyOtfWithEth" | "buyOtfWithWeth" | "sellOtfForWeth" | "sellOtfForEth" | undefined;
         if (bootstrap) {
           launchFunction = input.isProtocolToken
-            ? "sellOtfForWeth"
+            ? output.kind === "native" ? "sellOtfForEth" : "sellOtfForWeth"
             : input.kind === "native" ? "buyOtfWithEth" : "buyOtfWithWeth";
           const args = launchFunction === "buyOtfWithEth"
             ? [canonicalQuote.minimumReceived, address, deadline]
@@ -1345,8 +1340,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                 </div>
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
-              {canonicalOtfPair && canonicalPhase === 1 && input.isProtocolToken ? <p className="swapPreflight">During launch, OTF sells return WETH. You can unwrap WETH to ETH at 1:1 on the Swap page.</p> : null}
-              {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This maximum crosses the launch boundary. The launch router will consume only the required input; unused WETH stays in your wallet and unused ETH is refunded.</p> : null}
+              {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This amount crosses a launch price limit. Only the input needed to reach that limit will be used; unused {input.symbol} {input.kind === "native" ? "is refunded" : "stays in your wallet"}.</p> : null}
               {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
               {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
               {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
@@ -1357,10 +1351,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   );
   const pickerAsset = picker === "input" ? input : output;
   const pickerCounterpart = picker === "input" ? output : input;
-  const pickerAssets = picker === "output" && canonicalOtfPair && canonicalPhase === 1 && input.isProtocolToken
-    ? configuredAssets.filter((asset) => asset.kind !== "native")
-    : configuredAssets;
-  const pickerDialog = picker && !(pinnedAsset && sameAsset(pickerAsset, pinnedAsset)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={pickerCounterpart} routeFund={routeFund} configuredAssets={pickerAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
+  const pickerDialog = picker && !(pinnedAsset && sameAsset(pickerAsset, pinnedAsset)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={pickerCounterpart} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
 
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 

@@ -67,6 +67,8 @@ After graduation, anyone can add their own liquidity. They cannot withdraw or tr
 
 During bootstrap, swaps must finish inside the price boundaries. Reaching the exact final price sets `GraduationReady` and pauses swaps until finalization. The launch router partially fills orders that would cross a boundary and normally finalizes a boundary buy in the same transaction, after the PoolManager returns control. Anyone can also finalize separately once the boundary is reached.
 
+For ETH output, `sellOtfForEth` takes WETH into the launch router, unwraps only the sale's output after pool settlement, and sends ETH to the recipient. The reentrancy guard covers the payout; a rejected payment reverts the sale. The router accepts ETH only from its configured WETH contract and leaves pre-existing ETH and WETH untouched.
+
 Swaps through the standard router can succeed inside the corridor. An order that crosses a boundary reverts because that router does not expose the required price limit.
 
 Finalization derives permanent liquidity amounts from pinned V4 math. Extra WETH stays locked; extra OTF joins the final burn. Any finalization failure also reverts a boundary purchase that invoked it. Zero LP fees do not remove transaction-ordering, slippage, liquidity, or price-impact risk.

@@ -41,6 +41,7 @@ contract OTFLaunchRouter {
         uint256 amountOutMinimum;
         bool buyOtf;
         bool nativeInput;
+        bool nativeOutput;
     }
 
     error ZeroAddress();
@@ -51,6 +52,8 @@ contract OTFLaunchRouter {
     error UnauthorizedPoolManager(address caller);
     error MinimumOutputNotMet(uint256 minimum, uint256 actual);
     error RefundFailed();
+    error UnexpectedNativeSender(address sender);
+    error NativeTransferFailed(address recipient, uint256 amount);
     error Reentrancy();
 
     event BootstrapSwap(
@@ -102,6 +105,10 @@ contract OTFLaunchRouter {
         _entered = false;
     }
 
+    receive() external payable {
+        if (msg.sender != weth) revert UnexpectedNativeSender(msg.sender);
+    }
+
     function buyOtfWithWeth(
         uint256 amountInMaximum,
         uint256 amountOutMinimum,
@@ -109,7 +116,9 @@ contract OTFLaunchRouter {
         uint256 deadline
     ) external nonReentrant returns (uint256 amountIn, uint256 amountOut) {
         (amountIn, amountOut) = _swap(
-            CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, true, false),
+            CallbackData(
+                msg.sender, recipient, amountInMaximum, amountOutMinimum, true, false, false
+            ),
             deadline
         );
     }
@@ -121,7 +130,8 @@ contract OTFLaunchRouter {
         returns (uint256 amountIn, uint256 amountOut)
     {
         (amountIn, amountOut) = _swap(
-            CallbackData(msg.sender, recipient, msg.value, amountOutMinimum, true, true), deadline
+            CallbackData(msg.sender, recipient, msg.value, amountOutMinimum, true, true, false),
+            deadline
         );
         uint256 refund = msg.value - amountIn;
         if (refund != 0) {
@@ -137,7 +147,23 @@ contract OTFLaunchRouter {
         uint256 deadline
     ) external nonReentrant returns (uint256 amountIn, uint256 amountOut) {
         (amountIn, amountOut) = _swap(
-            CallbackData(msg.sender, recipient, amountInMaximum, amountOutMinimum, false, false),
+            CallbackData(
+                msg.sender, recipient, amountInMaximum, amountOutMinimum, false, false, false
+            ),
+            deadline
+        );
+    }
+
+    function sellOtfForEth(
+        uint256 amountInMaximum,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 amountIn, uint256 amountOut) {
+        (amountIn, amountOut) = _swap(
+            CallbackData(
+                msg.sender, recipient, amountInMaximum, amountOutMinimum, false, false, true
+            ),
             deadline
         );
     }
@@ -189,7 +215,10 @@ contract OTFLaunchRouter {
             inputToken.safeTransferFrom(callback.payer, poolManager, amountIn);
         }
         IUniswapV4PoolManager(poolManager).settle();
-        IUniswapV4PoolManager(poolManager).take(outputToken, callback.recipient, amountOut);
+        IUniswapV4PoolManager(poolManager)
+            .take(
+                outputToken, callback.nativeOutput ? address(this) : callback.recipient, amountOut
+            );
         return abi.encode(amountIn, amountOut);
     }
 
@@ -214,6 +243,11 @@ contract OTFLaunchRouter {
         );
         if (ILaunchManagerRouter(launchManager).phase() == GRADUATION_READY) {
             ILaunchManagerRouter(launchManager).finalizeGraduation();
+        }
+        if (callback.nativeOutput) {
+            IWETH(weth).withdraw(amountOut);
+            (bool success,) = callback.recipient.call{ value: amountOut }("");
+            if (!success) revert NativeTransferFailed(callback.recipient, amountOut);
         }
         emit BootstrapSwap(callback.payer, callback.recipient, callback.buyOtf, amountIn, amountOut);
     }

@@ -373,7 +373,7 @@ assert(/sqrtPriceX96\s*==\s*finalSqrtPriceX96/u.test(launchSource), "graduation 
 
 const launchRouterSource = readFileSync(join(contracts, "src", "OTFLaunchRouter.sol"), "utf8");
 const launchRouterNames = functionNames(compiled.OTFLaunchRouter);
-for (const name of ["buyOtfWithWeth", "buyOtfWithEth", "sellOtfForWeth", "unlockCallback"]) {
+for (const name of ["buyOtfWithWeth", "buyOtfWithEth", "sellOtfForWeth", "sellOtfForEth", "unlockCallback"]) {
   assert(launchRouterNames.has(name), `launch router function ${name} is absent`);
 }
 assert(!/delegatecall/u.test(launchRouterSource), "launch router contains delegatecall execution");
