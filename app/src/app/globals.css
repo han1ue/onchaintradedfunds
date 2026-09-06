@@ -1612,30 +1612,35 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationModeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .valuationState { display: flex; min-height: 268px; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); padding: 24px; font-size: 0.68rem; text-align: center; }
 .valuationSummary { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 16px 0; }
-.valuationPerformance strong,
-.valuationPerformance small { display: block; font-variant-numeric: tabular-nums; }
+.valuationPerformance strong { display: block; font-variant-numeric: tabular-nums; }
 .valuationPerformance strong { font-size: 1.35rem; font-weight: 650; }
 .valuationPerformance strong.positive { color: var(--green); }
 .valuationPerformance strong.negative { color: var(--danger); }
 .valuationPerformance strong.neutral { color: var(--text-muted); }
-.valuationPerformance small { margin-top: 1px; color: var(--text-muted); font-size: 0.65rem; font-weight: 600; }
 .valuationRangeToggle { display: inline-flex; flex: 0 0 auto; gap: 2px; }
 .valuationRangeToggle button { min-width: 38px; height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 0 7px; font-size: 0.6rem; font-weight: 700; }
 .valuationRangeToggle button:hover { background: var(--background); color: var(--text); }
 .valuationRangeToggle button.active { background: rgb(var(--accent-rgb) / 12%); color: var(--accent-text); }
 .valuationRangeToggle button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.valuationChartWrap { min-height: 218px; padding: 6px 12px 10px; }
+.valuationChartWrap { min-height: 218px; padding: 6px 16px 10px; }
 .valuationChart { display: block; width: 100%; height: 218px; overflow: visible; }
 .valuationChartGrid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .valuationChartLabel { fill: var(--text-muted); font-size: 9px; }
 .valuationChartArea { fill: rgb(var(--accent-rgb) / 10%); }
 .valuationChartLine { fill: none; stroke: var(--lime); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .valuationChartPoint { fill: var(--card); stroke: var(--lime); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.valuationDates { display: flex; justify-content: space-between; color: var(--text-muted); margin: -8px 2px 0 43px; font-size: 0.57rem; }
+.valuationDates { display: flex; justify-content: space-between; color: var(--text-muted); margin: -8px 0 0; font-size: 0.57rem; }
 .valuationAllocation { min-width: 0; overflow: hidden; }
 .allocationPanelHeading { padding-top: 13px; padding-bottom: 13px; }
 .allocationHeadingMeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
-.fundVerificationBadge { display: inline-flex; margin-right: 6px; color: var(--accent-text); vertical-align: -0.15em; }
+.fundVerificationBadge { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; color: var(--accent-text); }
+.directoryFundLink .fundNameWithBadge,
+.directoryFundCard .fundNameWithBadge,
+.fundDetailTitleLine .fundNameWithBadge { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fundNameText { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.directoryFundLink .fundVerificationBadge svg { width: 13px; height: 13px; }
+.fundDetailTitleLine .fundVerificationBadge svg { width: 22px; height: 22px; }
+.fundDetailTitleLine .fundNameWithBadge { gap: 8px; }
 .fundTradePanel { min-width: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
 .fundTradeBody { min-width: 0; overflow: hidden; }
 .fundTradeHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 12px 14px; }
@@ -2757,3 +2762,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .liquidityActionHeading { align-items: flex-start; flex-direction: column; gap: 4px; padding-top: 12px; padding-bottom: 12px; }
   .liquidityActionBody { padding: 14px; }
 }
+
+.rwaAssetIdentity .allocationAssetTitle { display: inline-flex; align-items: center; gap: 5px; }
+.allocationAssetVerified { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--accent-text); }
+.allocationAssetVerified svg { display: block; width: 1em; height: 1em; }

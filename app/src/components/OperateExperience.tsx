@@ -1886,6 +1886,7 @@ type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
 type FundValuation = {
   fundAddress?: Address;
   allocationWeights?: FundAllocationWeights;
+  assetPrices?: CreationAssetData[];
   state: "loading" | "ready" | "unavailable";
   current?: FundValuationSnapshot;
   history: FundValuationSnapshot[];
@@ -1964,7 +1965,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       }, 0n);
       const aumUsdWad = usdWadFor(accountedBalances);
       const usesBootstrapNav = fund.totalSupply === 0n;
-      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], usesBootstrapNav ? bootstrapUnits : accountedBalances);
+      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], accountedBalances);
       const navUsdWad = usesBootstrapNav
         ? usdWadFor(bootstrapUnits)
         : aumUsdWad * 10n ** 18n / fund.totalSupply;
@@ -2003,7 +2004,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       } catch {
         // Live values remain available when browser storage is disabled.
       }
-      return { current, history: nextHistory, usesBootstrapNav, allocationWeights, fundAddress: fund.address };
+      return { current, history: nextHistory, usesBootstrapNav, allocationWeights, assetPrices: prices, fundAddress: fund.address };
     }).then((result) => {
       if (!cancelled) {
         setValuation({ state: "ready", ...result });
@@ -2198,7 +2199,7 @@ function useFundAllocation(fund?: FactoryVaultSummary) {
     setAllocation({ state: "loading", rows: [] });
     if (!fund || !publicClient) return;
     void Promise.all([
-      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: fund.totalSupply === 0n ? "bootstrapBasketUnits" : "accountedBalances" }),
+      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "accountedBalances" }),
       Promise.all(fund.assets.map(async (address) => {
         const [symbol, name, decimals] = await Promise.all([
           publicClient.readContract({ address, abi: erc20Abi, functionName: "symbol" }).catch(() => undefined),
@@ -2218,12 +2219,14 @@ function useFundAllocation(fund?: FactoryVaultSummary) {
 }
 
 function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valuation: FundValuation; fund?: FactoryVaultSummary }) {
+  const chainId = useChainId();
   const allocation = useFundAllocation(fund);
   const weights = valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.allocationWeights : undefined;
   const weightsByAddress = new Map(weights?.rows.map((row) => [row.address.toLowerCase(), row]));
+  const pricesByAddress = new Map(valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.assetPrices?.map((asset) => [asset.address.toLowerCase(), Number(asset.priceUsd)]) : []);
   const weightingLabel = weights?.matchesMarketCap === undefined
     ? valuation.state === "loading" ? "Loading weights…" : "Market-cap comparison unavailable"
-    : weights.matchesMarketCap ? "Matches current market-cap weights" : "Differs from current market-cap weights";
+    : weights.matchesMarketCap ? "Market-cap weighted" : "Modified market-cap weighted";
   const [mode, setMode] = useState<"share" | "nav">("share");
   const [range, setRange] = useState<ValuationRange>("30d");
   const allPoints = valuation.history;
@@ -2248,7 +2251,7 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
 
   const width = 720;
   const height = 190;
-  const left = 54;
+  const left = 0;
   const right = 14;
   const top = 18;
   const bottom = 25;
@@ -2286,12 +2289,12 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         {valuation.state === "loading" ? <div className="valuationState"><LoaderCircle className="createAssetSpinner" size={17} /><span>Calculating the current valuation…</span></div> : valuation.state === "unavailable" ? <div className="valuationState"><History size={17} /><span>Valuation is unavailable because current prices or onchain balances could not be read.</span></div> : (
           <>
             <div className="valuationSummary">
-              <div className="valuationPerformance"><strong className={changeTone}>{changeLabel}</strong><small>{formatUsd(selectedValue, mode === "share" ? 4 : 2)}</small></div>
+              <div className="valuationPerformance"><strong className={changeTone}>{changeLabel}</strong></div>
               <div className="valuationRangeToggle" role="group" aria-label="Chart time range">{VALUATION_RANGES.map((option) => <button className={range === option.value ? "active" : ""} key={option.value} type="button" aria-pressed={range === option.value} onClick={() => setRange(option.value)}>{option.label}</button>)}</div>
             </div>
             <div className="valuationChartWrap">
               <svg className="valuationChart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${symbol} ${mode === "share" ? "NAV per share" : "total NAV"} chart ending at ${formatUsd(selectedValue)}`}>
-                {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left - 8} y={y + 3} textAnchor="end">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
+                {ticks.map((tick) => { const y = top + ((maximum - tick) / spread) * (height - top - bottom); return <g key={tick}><line className="valuationChartGrid" x1={left} x2={width - right} y1={y} y2={y} /><text className="valuationChartLabel" x={left} y={y - 6} textAnchor="start">{formatUsd(tick, tick < 10 ? 2 : 0)}</text></g>; })}
                 <path className="valuationChartArea" d={areaPath} />
                 <path className="valuationChartLine" d={linePath} />
                 {chartPoints.map((point, index) => <circle className="valuationChartPoint" key={`${point.x}-${index}`} cx={point.x} cy={point.y} r={index === chartPoints.length - 1 ? "4" : "3"} />)}
@@ -2306,12 +2309,12 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
-              <thead><tr><th>Asset</th><th>{fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}</th><th>Allocation %</th><th>Market-cap %</th></tr></thead>
-              <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label={fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}>{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation %">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Market-cap %">{weight?.marketCapPercentageUnits === undefined ? "—" : formatStoredPercentage(weight.marketCapPercentageUnits.toString())}</td></tr>; })}</tbody>
+              <thead><tr><th>Asset</th><th>Amount</th><th>Allocation</th><th>Price</th></tr></thead>
+              <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount">{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
             </table>
           </div>
         ) : (
-          <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading units…" : "Could not load units."}</span></div>
+          <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading amounts…" : "Could not load amounts."}</span></div>
         )}
       </section>
     </div>
@@ -2404,7 +2407,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailIdentity">
                 <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
                 <div>
-                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails ? <FundVerificationBadge chainId={chainId} assets={vaultDetails.assets} /> : null}{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1></div>
+                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title" className="fundNameWithBadge">{vaultDetails ? <FundVerificationBadge chainId={chainId} assets={vaultDetails.assets} /> : null}<span className="fundNameText">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</span></h1></div>
                   <div className="fundDetailMeta">
                     {routeAddress ? <a href={`${explorerUrl}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
                   </div>
@@ -2477,10 +2480,10 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
-                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong><FundVerificationBadge chainId={chainId} assets={vault.assets} />{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
+                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><FundVerificationBadge chainId={chainId} assets={vault.assets} /><span className="fundNameText">{vault.name}</span></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
                 </div>
               ) : (
-                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong><FundVerificationBadge chainId={chainId} assets={vault.assets} />{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
+                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><FundVerificationBadge chainId={chainId} assets={vault.assets} /><span className="fundNameText">{vault.name}</span></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
               ) : (
                 <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}
