@@ -16,7 +16,7 @@ L-01 is corrected in source. `ManagedOTFVault.previewRedeem()` now checks reques
 effective supply before deducting the redeem fee. Its regression covers fees, pending expenses,
 shutdown, and agreement with execution at the supply boundary.
 
-The four-field V4 tuple and Permit2 cleanup corrections are also present. The separate
+The five-field V4 tuple and Permit2 cleanup corrections are also present. The separate
 [routing validation report](TESTNET_ROUTING_VALIDATION.md) records four successful testnet fork tests;
 those network-dependent tests were not rerun during this follow-up.
 
@@ -99,28 +99,15 @@ Validate the original requested shares against effective supply before deducting
 `previewRedeem()`. Check preview/execution agreement at the supply boundary with zero and nonzero
 fees, including pending expense fees and shutdown.
 
-## Production dependency validation remains incomplete
+## Production dependency validation completed
 
-Follow-up, 6 September 2026: the protocol now uses the Robinhood mainnet-address V4 deployment on
-testnet and the same five-field exact-input encoding. The deployment pins chain-46630 runtime hashes.
-The testnet fork also exposed and corrected the adapter's Permit2 cleanup expiration check.
-See [testnet routing validation](TESTNET_ROUTING_VALIDATION.md) for runtime bindings, execution
-coverage, and remaining mainnet work. The following paragraphs preserve the original review.
-
-The V4 adapter and collector encode a five-field exact-input tuple, including `maxHopSlippage`
-(`src/interfaces/IUniswapV4.sol:13-20`). The installed `@uniswap/v4-periphery` 1.0.3 interface has
-four fields. Current [upstream Uniswap source](https://github.com/Uniswap/v4-periphery/blob/main/src/interfaces/IV4Router.sol)
-has five, so the local version difference alone does not prove that the intended production router
-is incompatible.
-
-The V4 adapter tests decode the project's own tuple in a mock. The real V4 launch tests exercise
-PoolManager and PositionManager, but do not validate the adapter or collector against Universal
-Router. The V3 protocol integration suite also uses a mocked swap router.
-
-Before deployment, bind the exact production router bytecode and ABI, then verify successful basket
-entry, exit, and collector settlement against those runtimes. The mainnet protocol configuration
-still says `configuration-required`. This is a release validation gap, not a confirmed contract
-vulnerability.
+Follow-up, 6 September 2026: the protocol uses the Robinhood mainnet-address V4 deployment on
+testnet and its five-field exact-input encoding. Universal Router 2.1.1 pins `v4-periphery` commit
+`3231810`, which pins `v4-core` commit `59d3ecf` and Permit2 commit `cc56ad0`. The repository now pins
+those revisions directly and imports `IV4Router.ExactInputParams` and `PathKey` from the official
+periphery source. The local duplicate tuple was removed. The deployment also pins chain-46630
+runtime hashes. See [testnet routing validation](TESTNET_ROUTING_VALIDATION.md) for runtime bindings
+and execution coverage.
 
 ## Existing risks and previous findings
 

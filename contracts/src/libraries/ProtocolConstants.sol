@@ -8,6 +8,7 @@ library ProtocolConstants {
     uint256 internal constant MIN_CONSTITUENTS = 2;
     uint256 internal constant MAX_CONSTITUENTS = 20;
     uint256 internal constant MAX_SWAP_HOPS = 3;
+    uint256 internal constant MAX_OTF_NAME_BYTES = 50;
     uint256 internal constant MAX_FUND_THESIS_BYTES = 2_048;
     uint16 internal constant MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS = 1_000;
     uint16 internal constant MAX_MINT_FEE_BPS = 200;

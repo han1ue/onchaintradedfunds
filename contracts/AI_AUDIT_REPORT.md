@@ -501,26 +501,12 @@ an open question rather than presented as a vulnerability.
 
 ### Universal Router V4 exact-input ABI
 
-Follow-up, 5 September 2026: the configured testnet runtime uses four fields. Encoding and Permit2
-cleanup corrections now have tests against the deployed venue contracts on a local fork. See
-[testnet routing validation](TESTNET_ROUTING_VALIDATION.md). Mainnet runtime validation remains open;
-the original assessment below describes the audit baseline.
-
-This is not a confirmed finding. The local production interface declares a five-field
-`UniswapV4ExactInputParams` with `maxHopSlippage` at
-`contracts/src/interfaces/IUniswapV4.sol:13-20`. The V4 adapter and collector encode that type at
-`contracts/src/UniswapV4Adapter.sol:168-178` and `contracts/src/BuybackCollector.sol:395-410`.
-The installed `@uniswap/v4-periphery` source instead declares a four-field `ExactInputParams` at
-`node_modules/@uniswap/v4-periphery/src/interfaces/IV4Router.sol:26-32`.
-
-Tests use a mock that decodes the same custom five-field type. The real-V4 launch integration does
-not instantiate the Universal Router, and local configuration binds the intended router by address
-and code hash without including its verified source or ABI. A conditional decode of representative
-five-field data as the installed four-field tuple changed `amountIn = 1 ether` into `416` and
-`amountOutMinimum = 1 ether`; that route would be expected to revert rather than execute as
-intended. Before deployment, obtain the verified source and ABI for the exact configured router
-code hash and execute both adapter and collector routes against that runtime. Until that binding is
-available, treating this mismatch as a vulnerability would be speculative.
+Follow-up, 6 September 2026: this mismatch is resolved. The configured testnet and mainnet-address
+Universal Router 2.1.1 runtimes use the five-field tuple. The repository pins the router's official
+`v4-periphery` revision (`3231810`) and that revision's matching `v4-core` (`59d3ecf`) and Permit2
+(`cc56ad0`) dependencies. Production code and tests import `IV4Router.ExactInputParams` and `PathKey`
+from that source; the duplicate local tuple was removed. See
+[testnet routing validation](TESTNET_ROUTING_VALIDATION.md) for the runtime bindings.
 
 ### Chain and oracle assumptions
 

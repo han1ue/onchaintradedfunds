@@ -258,7 +258,7 @@ contract BuybackCollectorRedemptionTest is TestBase {
         units[0] = 1 ether;
         units[1] = 2 ether;
         VaultCreationParams memory params = VaultCreationParams({
-            name: "Fee Settlement Fund",
+            name: "Fee Settlement Fund OTF",
             symbol: "FEES",
             fundThesis: "Tests redemption and annual expense fee settlement.",
             expenseBeneficiary: BENEFICIARY,

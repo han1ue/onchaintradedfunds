@@ -7,15 +7,16 @@ import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
     IUniswapV4ImmutableState,
-    IUniswapV4StateView,
-    UniswapV4ExactInputParams,
-    UniswapV4PathKey
+    IUniswapV4StateView
 } from "./interfaces/IUniswapV4.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
 
 /// @notice Bounded Uniswap V4 exact-input adapter for one OTF entry/exit router.
-/// @dev `data` is exclusively `abi.encode(UniswapV4PathKey[])`. This contract constructs the
+/// @dev `data` is exclusively `abi.encode(PathKey[])`. This contract constructs the
 ///      Universal Router command and action streams; callers cannot supply either one.
 contract UniswapV4Adapter is ITradeAdapter {
     using SafeTransferLib for address;
@@ -112,7 +113,7 @@ contract UniswapV4Adapter is ITradeAdapter {
         ) {
             revert InvalidAmount();
         }
-        UniswapV4PathKey[] memory path = abi.decode(data, (UniswapV4PathKey[]));
+        PathKey[] memory path = abi.decode(data, (PathKey[]));
         _validatePath(path, tokenIn, tokenOut);
         _requirePoolManagerBindings(
             uniswapV4PoolManager, uniswapV4StateView, uniswapUniversalRouter
@@ -161,7 +162,7 @@ contract UniswapV4Adapter is ITradeAdapter {
     }
 
     function _executeExactInput(
-        UniswapV4PathKey[] memory path,
+        PathKey[] memory path,
         address tokenIn,
         address tokenOut,
         uint128 amountIn,
@@ -169,8 +170,8 @@ contract UniswapV4Adapter is ITradeAdapter {
     ) private {
         bytes[] memory actionParams = new bytes[](3);
         actionParams[0] = abi.encode(
-            UniswapV4ExactInputParams({
-                currencyIn: tokenIn,
+            IV4Router.ExactInputParams({
+                currencyIn: Currency.wrap(tokenIn),
                 path: path,
                 minHopPriceX36: new uint256[](0),
                 amountIn: amountIn,
@@ -190,18 +191,15 @@ contract UniswapV4Adapter is ITradeAdapter {
             .execute(abi.encodePacked(V4_SWAP_COMMAND), commandInputs, block.timestamp);
     }
 
-    function _validatePath(UniswapV4PathKey[] memory path, address tokenIn, address tokenOut)
-        private
-        view
-    {
+    function _validatePath(PathKey[] memory path, address tokenIn, address tokenOut) private view {
         uint256 hops = path.length;
         if (hops == 0) revert InvalidPath();
         if (hops > MAX_HOPS) revert TooManyHops(hops, MAX_HOPS);
 
         address current = tokenIn;
         for (uint256 i = 0; i < hops; i++) {
-            UniswapV4PathKey memory hop = path[i];
-            address next = hop.intermediateCurrency;
+            PathKey memory hop = path[i];
+            address next = Currency.unwrap(hop.intermediateCurrency);
             if (
                 next == address(0) || next == current
                     || (hop.fee > MAX_STATIC_FEE && hop.fee != DYNAMIC_FEE_FLAG)
@@ -213,7 +211,7 @@ contract UniswapV4Adapter is ITradeAdapter {
             if (hop.hookData.length > MAX_HOOK_DATA_LENGTH) {
                 revert HookDataTooLong(hop.hookData.length, MAX_HOOK_DATA_LENGTH);
             }
-            bytes32 poolId = _poolId(current, next, hop.fee, hop.tickSpacing, hop.hooks);
+            bytes32 poolId = _poolId(current, next, hop.fee, hop.tickSpacing, address(hop.hooks));
             (uint160 sqrtPriceX96,,,) = IUniswapV4StateView(uniswapV4StateView).getSlot0(poolId);
             if (sqrtPriceX96 == 0) revert UnauthenticatedPool(poolId);
             current = next;

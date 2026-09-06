@@ -18,6 +18,9 @@ importers:
       '@openzeppelin/merkle-tree':
         specifier: 1.0.8
         version: 1.0.8(supports-color@7.2.0)
+      '@uniswap/permit2':
+        specifier: github:Uniswap/permit2#cc56ad0f3439c502c246fc5cfcc3db92bb8b7219
+        version: https://codeload.github.com/Uniswap/permit2/tar.gz/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219
       '@uniswap/swap-router-contracts':
         specifier: 1.3.1
         version: 1.3.1(hardhat@2.29.1(bufferutil@4.1.0)(supports-color@8.1.1)(typescript@5.9.3)(utf-8-validate@5.0.10))
@@ -28,11 +31,17 @@ importers:
         specifier: 1.4.4
         version: 1.4.4
       '@uniswap/v4-core':
-        specifier: 1.0.2
-        version: 1.0.2
+        specifier: github:Uniswap/v4-core#59d3ecf53afa9264a16bba0e38f4c5d2231f80bc
+        version: https://codeload.github.com/Uniswap/v4-core/tar.gz/59d3ecf53afa9264a16bba0e38f4c5d2231f80bc
       '@uniswap/v4-periphery':
-        specifier: 1.0.3
-        version: 1.0.3
+        specifier: github:Uniswap/v4-periphery#3231810e39b8c4d569b9d66907fa4ef8cd2cec22
+        version: https://codeload.github.com/Uniswap/v4-periphery/tar.gz/3231810e39b8c4d569b9d66907fa4ef8cd2cec22
+      forge-std:
+        specifier: github:foundry-rs/forge-std#1de6eecf821de7fe2c908cc48d3ab3dced20717f
+        version: https://codeload.github.com/foundry-rs/forge-std/tar.gz/1de6eecf821de7fe2c908cc48d3ab3dced20717f
+      openzeppelin-contracts:
+        specifier: npm:@openzeppelin/contracts@5.0.2
+        version: '@openzeppelin/contracts@5.0.2'
       slopless:
         specifier: ^0.2.36
         version: 0.2.36(supports-color@8.1.1)
@@ -42,6 +51,9 @@ importers:
       solhint:
         specifier: 6.2.4
         version: 6.2.4(typescript@5.9.3)
+      solmate:
+        specifier: github:transmissions11/solmate#4b47a19038b798b4a33d9749d25e570443520647
+        version: https://codeload.github.com/transmissions11/solmate/tar.gz/4b47a19038b798b4a33d9749d25e570443520647
 
   app:
     dependencies:
@@ -1452,6 +1464,9 @@ packages:
   '@openzeppelin/contracts@3.4.2-solc-0.7':
     resolution: {integrity: sha512-W6QmqgkADuFcTLzHL8vVoNBtkwjvQRpYIAom7KiUNoLKghyx3FgH0GBjt8NRvigV1ZmMOBllvE1By1C+bi8WpA==}
 
+  '@openzeppelin/contracts@5.0.2':
+    resolution: {integrity: sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA==}
+
   '@openzeppelin/contracts@5.6.1':
     resolution: {integrity: sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w==}
 
@@ -2223,6 +2238,10 @@ packages:
     resolution: {integrity: sha512-f6UIliwBbRsgVLxIaBANF6w09tYqc6Y/qXdsrbEmXHyFA7ILiKrIwRFXe1yOg8M3cksgVsO9N7yuL2DdCGQKBA==}
     engines: {node: '>=10'}
 
+  '@uniswap/permit2@https://codeload.github.com/Uniswap/permit2/tar.gz/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219':
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/Uniswap/permit2/tar.gz/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219}
+    version: 1.0.0
+
   '@uniswap/swap-router-contracts@1.3.1':
     resolution: {integrity: sha512-mh/YNbwKb7Mut96VuEtL+Z5bRe0xVIbjjiryn+iMMrK2sFKhR4duk/86mEz0UO5gSx4pQIw9G5276P5heY/7Rg==}
     engines: {node: '>=10'}
@@ -2240,11 +2259,13 @@ packages:
     resolution: {integrity: sha512-S4+m+wh8HbWSO3DKk4LwUCPZJTpCugIsHrWR86m/OrUyvSqGDTXKFfc2sMuGXCZrD1ZqO3rhQsKgdWg3Hbb2Kw==}
     engines: {node: '>=10'}
 
-  '@uniswap/v4-core@1.0.2':
-    resolution: {integrity: sha512-X15Tm2wWd+USAzEExMbo+g9naA6QN6mPgWm0MzDwRNlOfaNlepfUpSyt9RSrUfEODspwbyWbcLg6t5nwc/e7lg==}
+  '@uniswap/v4-core@https://codeload.github.com/Uniswap/v4-core/tar.gz/59d3ecf53afa9264a16bba0e38f4c5d2231f80bc':
+    resolution: {gitHosted: true, integrity: sha512-spEZFtrmYf0D02MvVO8N0ZCRdbc6F2RE/wQVPkqvXhwQfQkqPUjOA94RjgLspEKqsWpUvo/vQ5RTktxRQ0ZX/w==, tarball: https://codeload.github.com/Uniswap/v4-core/tar.gz/59d3ecf53afa9264a16bba0e38f4c5d2231f80bc}
+    version: 1.0.2
 
-  '@uniswap/v4-periphery@1.0.3':
-    resolution: {integrity: sha512-JxLL0Djv9XcMvI2PatEnWrCrxuEaYNVhHxstndBOP+aJfh1XLg5ec8SDZ0xyoVfg2ElJTvuKpBgnu90bNValsg==}
+  '@uniswap/v4-periphery@https://codeload.github.com/Uniswap/v4-periphery/tar.gz/3231810e39b8c4d569b9d66907fa4ef8cd2cec22':
+    resolution: {gitHosted: true, integrity: sha512-5XUI//aJ+MBm526VLoJKd4QAc30J8eG/JiUrOmCBTiuZfeBU7t/5kMzH93rFay3KR+4QQZEStGDn+O27tkXvSw==, tarball: https://codeload.github.com/Uniswap/v4-periphery/tar.gz/3231810e39b8c4d569b9d66907fa4ef8cd2cec22}
+    version: 1.0.4
 
   '@unrs/resolver-binding-android-arm-eabi@1.12.2':
     resolution: {integrity: sha512-g5T90pqg1bo/7mytQx6F4iBNC0Wsh9cu+z9veDbFjc7HjpesJFWD7QMS0NGStXM075+7dJPPVvBbpZlnrdpi/w==}
@@ -3834,6 +3855,10 @@ packages:
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
+
+  forge-std@https://codeload.github.com/foundry-rs/forge-std/tar.gz/1de6eecf821de7fe2c908cc48d3ab3dced20717f:
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/foundry-rs/forge-std/tar.gz/1de6eecf821de7fe2c908cc48d3ab3dced20717f}
+    version: 1.9.3
 
   form-data-encoder@2.1.4:
     resolution: {integrity: sha512-yDYSgNMraqvnxiEXO4hi88+YZxaHC6QKzb5N84iRCTDeRO7ZALpir/lVmf/uXUhnwUr2O4HU8s/n6x+yNjQkHw==}
@@ -5873,6 +5898,10 @@ packages:
     resolution: {integrity: sha512-2hCfsDGcCit/4Ue0Bf3HxalxEaHM/rfoSf3rMVAQQ5NWWcVPS0F+RSqQzMEPc8Ta7r5L3DeaKyzmbjD5B2fUdg==}
     engines: {node: '>=20'}
     hasBin: true
+
+  solmate@https://codeload.github.com/transmissions11/solmate/tar.gz/4b47a19038b798b4a33d9749d25e570443520647:
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/transmissions11/solmate/tar.gz/4b47a19038b798b4a33d9749d25e570443520647}
+    version: 6.2.0
 
   sonic-boom@2.8.0:
     resolution: {integrity: sha512-kuonw1YOYYNOve5iHdSahXPOK49GqwA+LZhI6Wz/l0rP57iKyXXIHaRagOBHAPmGwJC6od2Z9zgvZ5loSgMlVg==}
@@ -8122,6 +8151,8 @@ snapshots:
 
   '@openzeppelin/contracts@3.4.2-solc-0.7': {}
 
+  '@openzeppelin/contracts@5.0.2': {}
+
   '@openzeppelin/contracts@5.6.1': {}
 
   '@openzeppelin/merkle-tree@1.0.8(supports-color@7.2.0)':
@@ -9300,6 +9331,8 @@ snapshots:
 
   '@uniswap/lib@4.0.1-alpha': {}
 
+  '@uniswap/permit2@https://codeload.github.com/Uniswap/permit2/tar.gz/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219': {}
+
   '@uniswap/swap-router-contracts@1.3.1(hardhat@2.29.1(bufferutil@4.1.0)(supports-color@8.1.1)(typescript@5.9.3)(utf-8-validate@5.0.10))':
     dependencies:
       '@openzeppelin/contracts': 3.4.2-solc-0.7
@@ -9323,9 +9356,9 @@ snapshots:
       '@uniswap/v3-core': 1.0.1
       base64-sol: 1.0.1
 
-  '@uniswap/v4-core@1.0.2': {}
+  '@uniswap/v4-core@https://codeload.github.com/Uniswap/v4-core/tar.gz/59d3ecf53afa9264a16bba0e38f4c5d2231f80bc': {}
 
-  '@uniswap/v4-periphery@1.0.3': {}
+  '@uniswap/v4-periphery@https://codeload.github.com/Uniswap/v4-periphery/tar.gz/3231810e39b8c4d569b9d66907fa4ef8cd2cec22': {}
 
   '@unrs/resolver-binding-android-arm-eabi@1.12.2':
     optional: true
@@ -11734,6 +11767,8 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
+
+  forge-std@https://codeload.github.com/foundry-rs/forge-std/tar.gz/1de6eecf821de7fe2c908cc48d3ab3dced20717f: {}
 
   form-data-encoder@2.1.4: {}
 
@@ -14666,6 +14701,8 @@ snapshots:
       prettier: 3.9.6
     transitivePeerDependencies:
       - typescript
+
+  solmate@https://codeload.github.com/transmissions11/solmate/tar.gz/4b47a19038b798b4a33d9749d25e570443520647: {}
 
   sonic-boom@2.8.0:
     dependencies:

@@ -52,12 +52,14 @@ const input = {
 
 function resolveImport(importPath) {
   const dependencyPath = importPath.startsWith("permit2/")
-    ? join(nodeModules, "@uniswap", "v4-periphery", "lib", ...importPath.split("/"))
+    ? join(nodeModules, "@uniswap", ...importPath.split("/"))
     : importPath.startsWith("solmate/")
-      ? join(nodeModules, "@uniswap", "v4-periphery", "lib", ...importPath.split("/"))
+      ? join(nodeModules, ...importPath.split("/"))
       : importPath.startsWith("forge-std/")
-        ? join(nodeModules, "@uniswap", "v4-periphery", "lib", "v4-core", "lib", "forge-std", "src", ...importPath.split("/").slice(1))
-      : join(nodeModules, ...importPath.split("/"));
+        ? join(nodeModules, "forge-std", "src", ...importPath.split("/").slice(1))
+        : importPath.startsWith("openzeppelin-contracts/contracts/")
+          ? join(nodeModules, "openzeppelin-contracts", ...importPath.split("/").slice(2))
+          : join(nodeModules, ...importPath.split("/"));
   try {
     return { contents: readFileSync(dependencyPath, "utf8") };
   } catch {

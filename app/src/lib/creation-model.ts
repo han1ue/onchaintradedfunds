@@ -5,6 +5,16 @@ export const PERCENT_SCALE = 10n ** BigInt(PERCENT_DECIMALS);
 export const TOTAL_PERCENT_UNITS = 100n * PERCENT_SCALE;
 export const USD_DECIMALS = 18;
 export const FIXED_TARGET_USD_WAD = 10n ** BigInt(USD_DECIMALS);
+export const MAX_OTF_NAME_BYTES = 50;
+
+export function validOtfName(value: string): boolean {
+  return new TextEncoder().encode(value).length <= MAX_OTF_NAME_BYTES
+    && value.endsWith(" OTF") && /[A-Za-z0-9]/u.test(value.slice(0, -4));
+}
+
+export function validOtfTicker(value: string): boolean {
+  return value.length >= 1 && value.length <= 8 && !/[^A-Za-z0-9]/u.test(value);
+}
 
 export function annualExpenseRatioBpsFromPercentage(value: string): number {
   if (!/^\d+(?:\.\d{0,2})?$/u.test(value)) return Number.NaN;

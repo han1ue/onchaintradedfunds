@@ -8,9 +8,10 @@ remappings = [
     "@openzeppelin/=../node_modules/@openzeppelin/",
     "@uniswap/v4-core/=../node_modules/@uniswap/v4-core/",
     "@uniswap/v4-periphery/=../node_modules/@uniswap/v4-periphery/",
-    "permit2/=../node_modules/@uniswap/v4-periphery/lib/permit2/",
-    "solmate/=../node_modules/@uniswap/v4-periphery/lib/permit2/lib/solmate/",
-    "forge-std/=../node_modules/@uniswap/v4-periphery/lib/v4-core/lib/forge-std/src/",
+    "permit2/=../node_modules/@uniswap/permit2/",
+    "solmate/=../node_modules/solmate/",
+    "forge-std/=../node_modules/forge-std/src/",
+    "openzeppelin-contracts/contracts/=../node_modules/openzeppelin-contracts/",
 ]
 solc_version = "0.8.26"
 evm_version = "cancun"

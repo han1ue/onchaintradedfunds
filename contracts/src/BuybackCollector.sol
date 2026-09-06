@@ -6,10 +6,12 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
-    IUniswapV4ImmutableState,
-    UniswapV4ExactInputParams,
-    UniswapV4PathKey
+    IUniswapV4ImmutableState
 } from "./interfaces/IUniswapV4.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import {
     BasketRedeemRequest,
     FeeShareSwapRequest,
@@ -349,12 +351,12 @@ contract BuybackCollector {
         IPermit2AllowanceTransfer(permit2)
             .approve(weth, universalRouter, permitAmount, uint48(block.timestamp + 1));
 
-        UniswapV4PathKey[] memory path = new UniswapV4PathKey[](1);
-        path[0] = UniswapV4PathKey(otf, 0, 1, launchManager, "");
+        PathKey[] memory path = new PathKey[](1);
+        path[0] = PathKey(Currency.wrap(otf), 0, 1, IHooks(launchManager), "");
         bytes[] memory actionParams = new bytes[](3);
         actionParams[0] = abi.encode(
-            UniswapV4ExactInputParams({
-                currencyIn: weth,
+            IV4Router.ExactInputParams({
+                currencyIn: Currency.wrap(weth),
                 path: path,
                 minHopPriceX36: new uint256[](0),
                 // Both values are explicitly bounded before this call.

@@ -33,6 +33,7 @@ import {
 } from "@/lib/deployment";
 import {
   PERCENT_DECIMALS,
+  MAX_OTF_NAME_BYTES,
   TOTAL_PERCENT_UNITS,
   annualExpenseRatioBpsFromPercentage,
   calculateBootstrapBasketUnits,
@@ -47,6 +48,8 @@ import {
   previewBootstrapBasketUnits,
   resetToMarketCapPercentageUnits,
   submitAndConfirmCreation,
+  validOtfName,
+  validOtfTicker,
   vaultCreationTransactionParams,
   zeroRawUnitError,
   type BasketCalculation,
@@ -299,8 +302,9 @@ export function CreateOTFForm() {
   const normalizedFundThesis = mandate.trim();
   const mandateBytes = new TextEncoder().encode(normalizedFundThesis).length;
   const normalizedName = name.trim();
-  const nameValid = normalizedName.length > 4 && normalizedName.endsWith(" OTF");
-  const symbolValid = /^[A-Z0-9][A-Z0-9-]*$/u.test(symbol);
+  const nameBytes = new TextEncoder().encode(normalizedName).length;
+  const nameValid = validOtfName(normalizedName);
+  const symbolValid = validOtfTicker(symbol);
   const identityValid = nameValid && symbolValid && mandateBytes > 0
     && mandateBytes <= MAX_MANDATE_BYTES;
   const totalPercentage = selectedAssets.reduce((sum, asset) => sum + asset.percentageUnits, 0n);
@@ -693,8 +697,8 @@ export function CreateOTFForm() {
           {step === 0 ? (
             <div className="formSection">
               <div className="formGrid twoColumns">
-                <label><span>OTF name</span><input value={name} onChange={(event) => { setName(event.target.value); resetSubmission(); }} onBlur={() => setName((value) => value.trimEnd())} placeholder="Technology Leaders OTF" aria-invalid={!nameValid} aria-describedby="create-name-help" /><small id="create-name-help">Immutable onchain identity; must end in “ OTF”.</small></label>
-                <label><span>OTF ticker</span><input value={symbol} onChange={(event) => { setSymbol(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/gu, "").slice(0, 16)); resetSubmission(); }} placeholder="TECH" aria-invalid={!symbolValid} aria-describedby="create-symbol-help" /><small id="create-symbol-help">Uppercase letters, numbers and hyphens.</small></label>
+                <label><span>OTF name</span><input value={name} onChange={(event) => { setName(event.target.value); resetSubmission(); }} onBlur={() => setName((value) => value.trimEnd())} maxLength={MAX_OTF_NAME_BYTES} placeholder="Technology Leaders OTF" aria-invalid={!nameValid} aria-describedby="create-name-help" /><small id="create-name-help">Immutable; must end in “ OTF” with at least one ASCII letter or digit before it. {nameBytes} / {MAX_OTF_NAME_BYTES} bytes, including the suffix.</small></label>
+                <label><span>OTF ticker</span><input value={symbol} onChange={(event) => { setSymbol(event.target.value); resetSubmission(); }} maxLength={8} placeholder="TECH" aria-invalid={!symbolValid} aria-describedby="create-symbol-help" /><small id="create-symbol-help">1–8 letters or digits (A–Z, a–z, 0–9).</small></label>
               </div>
               <label>
                 <div className="subHeader"><span>Fund thesis</span><small>{mandateBytes.toLocaleString()} / {MAX_MANDATE_BYTES.toLocaleString()} bytes</small></div>

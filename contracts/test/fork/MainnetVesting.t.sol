@@ -7,10 +7,12 @@ import { TeamMarketCapVesting } from "../../src/TeamMarketCapVesting.sol";
 import {
     IUniswapV4StateView,
     IUniswapUniversalRouter,
-    IPermit2AllowanceTransfer,
-    UniswapV4PathKey,
-    UniswapV4ExactInputParams
+    IPermit2AllowanceTransfer
 } from "../../src/interfaces/IUniswapV4.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 
 contract MainnetVestingTest is MainnetRehearsalBase {
     function testLiveOracleAndCanonicalPoolPriceAtLaunchAndGraduation() public {
@@ -88,11 +90,14 @@ contract MainnetVestingTest is MainnetRehearsalBase {
 
     // An ordinary funded purchase after graduation. No oracle or pool state is overwritten.
     function _buyOnGraduatedMarket(uint128 amount) private {
-        UniswapV4PathKey[] memory path = new UniswapV4PathKey[](1);
-        path[0] = UniswapV4PathKey(address(otf), 0, 1, address(launch), bytes(""));
+        PathKey[] memory path = new PathKey[](1);
+        path[0] = PathKey(Currency.wrap(address(otf)), 0, 1, IHooks(address(launch)), bytes(""));
         bytes[] memory actions = new bytes[](3);
-        actions[0] =
-            abi.encode(UniswapV4ExactInputParams(address(weth), path, new uint256[](0), amount, 1));
+        actions[0] = abi.encode(
+            IV4Router.ExactInputParams(
+                Currency.wrap(address(weth)), path, new uint256[](0), amount, 1
+            )
+        );
         actions[1] = abi.encode(address(weth), uint256(amount));
         actions[2] = abi.encode(address(otf), uint256(1));
         bytes[] memory inputs = new bytes[](1);

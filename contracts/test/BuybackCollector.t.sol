@@ -530,7 +530,7 @@ contract BuybackCollectorTest is TestBase {
         bootstrapUnits[0] = 1 ether;
         bootstrapUnits[1] = 1 ether;
         params = VaultCreationParams({
-            name: "Canonical Fund",
+            name: "Canonical Fund OTF",
             symbol: "CANON",
             fundThesis: "Canonical factory and collector trust-boundary coverage.",
             expenseBeneficiary: BENEFICIARY,

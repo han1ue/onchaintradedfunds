@@ -25,7 +25,7 @@ The vault holds the basket and issues shares. The entry and exit router handles 
 
 Creating a vault fixes its basket and fee terms without depositing any tokens. The connected wallet becomes its creator. `OTFFactory.createVault` accepts:
 
-- Name, symbol, and a fund thesis of one to 2,048 UTF-8 bytes.
+- A name of at most 50 UTF-8 bytes, including the exact suffix ` OTF`, with at least one ASCII letter or digit before that suffix; a ticker of 1–8 ASCII letters or digits (`A–Z`, `a–z`, `0–9`); and a fund thesis of one to 2,048 UTF-8 bytes.
 - Two to 20 ordered constituents and their raw token units per share (`1e18` share units).
 - An expense beneficiary who receives the creator portion of fees.
 - Annual expense, mint, and redeem rates, capped at 10%, 2%, and 1% respectively.

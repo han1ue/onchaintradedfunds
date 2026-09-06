@@ -43,9 +43,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
         if (creator_ == address(this) || params.expenseBeneficiary == address(this)) {
             revert InvalidReceiver(address(this));
         }
-        if (bytes(params.name).length == 0 || bytes(params.symbol).length == 0) {
-            revert InvalidVaultMetadata();
-        }
+        _validateVaultMetadata(bytes(params.name), bytes(params.symbol));
         uint256 fundThesisBytes = bytes(params.fundThesis).length;
         if (fundThesisBytes == 0) revert FundThesisRequired();
         if (fundThesisBytes > ProtocolConstants.MAX_FUND_THESIS_BYTES) {
@@ -125,6 +123,28 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     function creator() external view returns (address) {
         return _creator;
+    }
+
+    function _validateVaultMetadata(bytes memory name_, bytes memory symbol_) private pure {
+        if (symbol_.length == 0 || symbol_.length > 8) revert InvalidVaultMetadata();
+        for (uint256 i = 0; i < symbol_.length; i++) {
+            if (!_isAsciiAlphanumeric(symbol_[i])) revert InvalidVaultMetadata();
+        }
+
+        uint256 length = name_.length;
+        if (
+            length < 5 || length > ProtocolConstants.MAX_OTF_NAME_BYTES || name_[length - 4] != " "
+                || name_[length - 3] != "O" || name_[length - 2] != "T" || name_[length - 1] != "F"
+        ) revert InvalidVaultMetadata();
+        for (uint256 i = 0; i < length - 4; i++) {
+            if (_isAsciiAlphanumeric(name_[i])) return;
+        }
+        revert InvalidVaultMetadata();
+    }
+
+    function _isAsciiAlphanumeric(bytes1 character) private pure returns (bool) {
+        return (character >= "A" && character <= "Z") || (character >= "a" && character <= "z")
+            || (character >= "0" && character <= "9");
     }
 
     function fundThesis() external view returns (string memory) {

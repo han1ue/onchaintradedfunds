@@ -38,6 +38,134 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         assertTrue(factory.isVault(address(vault)));
     }
 
+    function testTickerLengthBoundariesAndLetterCaseAreAccepted() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        string[7] memory tickers = ["A", "z", "ABCDEFGH", "aBcDeFgH", "TECH1", "0", "12345678"];
+        for (uint256 i = 0; i < tickers.length; i++) {
+            params.symbol = tickers[i];
+            vm.prank(CREATOR);
+            ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+            assertEq(vault.symbol(), tickers[i]);
+        }
+    }
+
+    function testInvalidTickersAreRejectedAtomically() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        string[16] memory tickers = [
+            "",
+            "ABCDEFGHI",
+            "A B",
+            " A",
+            "A ",
+            "A\n",
+            "A\t",
+            "\x00",
+            "\x1f",
+            "\x7f",
+            unicode"é",
+            unicode"🚀",
+            "A-B",
+            "$BTC",
+            "@",
+            "["
+        ];
+        for (uint256 i = 0; i < tickers.length; i++) {
+            params.symbol = tickers[i];
+            vm.prank(CREATOR);
+            vm.expectRevert(ManagedOTFVaultStorage.InvalidVaultMetadata.selector);
+            factory.createVault(params);
+        }
+        assertEq(factory.vaultCount(), 0);
+    }
+
+    function testNameRequiresLetterOrDigitBeforeExactSuffix() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        string[12] memory names = [
+            "",
+            "OTF",
+            " OTF",
+            "  OTF",
+            "! OTF",
+            "\t OTF",
+            unicode"é OTF",
+            unicode"🚀 OTF",
+            "Alpha",
+            "AlphaOTF",
+            "Alpha otf",
+            "Alpha OTF "
+        ];
+        for (uint256 i = 0; i < names.length; i++) {
+            params.name = names[i];
+            vm.prank(CREATOR);
+            vm.expectRevert(ManagedOTFVaultStorage.InvalidVaultMetadata.selector);
+            factory.createVault(params);
+        }
+        assertEq(factory.vaultCount(), 0);
+    }
+
+    function testValidNamesAreStoredExactly() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        string[6] memory names =
+            ["A OTF", "z OTF", "123 Growth! OTF", unicode"Café 🚀 OTF", "123 OTF", "0 OTF"];
+        for (uint256 i = 0; i < names.length; i++) {
+            params.name = names[i];
+            vm.prank(CREATOR);
+            ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+            assertEq(vault.name(), names[i]);
+        }
+    }
+
+    function testNameLimitCountsFullUtf8BytesIncludingSuffix() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        bytes memory prefix = new bytes(46);
+        for (uint256 i = 0; i < prefix.length; i++) {
+            prefix[i] = "A";
+        }
+        for (uint256 i = 0; i < 2; i++) {
+            if (i == 1) {
+                // Replace the final two ASCII letters with the UTF-8 bytes of é.
+                prefix[44] = 0xc3;
+                prefix[45] = 0xa9;
+            }
+            params.name = string.concat(string(prefix), " OTF");
+            assertEq(bytes(params.name).length, 50);
+            vm.prank(CREATOR);
+            ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+            assertEq(vault.name(), params.name);
+
+            params.name = string.concat("A", params.name);
+            assertEq(bytes(params.name).length, 51);
+            vm.prank(CREATOR);
+            vm.expectRevert(ManagedOTFVaultStorage.InvalidVaultMetadata.selector);
+            factory.createVault(params);
+        }
+        assertEq(factory.vaultCount(), 2);
+    }
+
+    function testEveryDigitIsAcceptedInTickerAndName() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        for (uint256 code = 0x30; code <= 0x39; code++) {
+            params.symbol = string(abi.encodePacked(bytes1(uint8(code))));
+            params.name = string.concat(params.symbol, " OTF");
+            vm.prank(CREATOR);
+            ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+            assertEq(vault.symbol(), params.symbol);
+            assertEq(vault.name(), params.name);
+        }
+    }
+
+    function testFundThesisAtByteLimitIsAccepted() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        bytes memory thesis = new bytes(2_048);
+        for (uint256 i = 0; i < thesis.length; i++) {
+            thesis[i] = "A";
+        }
+        params.fundThesis = string(thesis);
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        assertEq(vault.fundThesis(), params.fundThesis);
+    }
+
     function testEmptyFundThesisIsRejected() public {
         VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
         params.fundThesis = "";

@@ -19,7 +19,8 @@ import {
 } from "../../src/OTFEntryExitRouter.sol";
 import { UniswapV4Adapter } from "../../src/UniswapV4Adapter.sol";
 import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
-import { UniswapV4PathKey, IPermit2AllowanceTransfer } from "../../src/interfaces/IUniswapV4.sol";
+import { IPermit2AllowanceTransfer } from "../../src/interfaces/IUniswapV4.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { MockStockToken } from "../mocks/MockStockToken.sol";
 import { IPoolManager } from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -102,7 +103,7 @@ contract MainnetRoutingTest is Test {
             OTFFactory(router.factory())
                 .createVault(
                     VaultCreationParams({
-                    name: "Fork validation fund",
+                    name: "Fork validation fund OTF",
                     symbol: "FORK",
                     fundThesis: "Mainnet router validation.",
                     expenseBeneficiary: address(this),
@@ -403,8 +404,8 @@ contract MainnetRoutingTest is Test {
         view
         returns (SwapLeg memory)
     {
-        UniswapV4PathKey[] memory path = new UniswapV4PathKey[](1);
-        path[0] = UniswapV4PathKey(tokenOut, 3000, 60, address(0), bytes(""));
+        PathKey[] memory path = new PathKey[](1);
+        path[0] = PathKey(Currency.wrap(tokenOut), 3000, 60, IHooks(address(0)), bytes(""));
         return SwapLeg(
             v3 ? address(v3Adapter) : address(v4Adapter),
             tokenIn,

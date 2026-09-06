@@ -281,7 +281,8 @@ assert(/MAX_HOPS\s*=\s*ProtocolConstants\.MAX_SWAP_HOPS/u.test(v4AdapterSource),
 assert(!/delegatecall/u.test(routerSource + adapterSource + v4AdapterSource), "router or adapter contains delegatecall execution");
 assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource + v4AdapterSource), "router or adapter exposes an arbitrary target");
 assert(/recipient:\s*entryExitRouter/u.test(adapterSource), "V3 adapter recipient is not fixed to the entry router");
-assert(/abi\.decode\(data,\s*\(UniswapV4PathKey\[\]\)\)/u.test(v4AdapterSource), "V4 adapter data is not a typed pool-key path");
+assert(/abi\.decode\(data,\s*\(PathKey\[\]\)\)/u.test(v4AdapterSource), "V4 adapter data is not a canonical typed pool-key path");
+assert(/IV4Router\.ExactInputParams/u.test(v4AdapterSource), "V4 adapter does not use the canonical router tuple");
 assert(/SWAP_EXACT_IN_ACTION,\s*SETTLE_ALL_ACTION,\s*TAKE_ALL_ACTION/u.test(v4AdapterSource), "V4 adapter does not construct the fixed swap/settle/take action stream");
 
 const tokenNames = functionNames(compiled.OTFToken);
@@ -394,9 +395,17 @@ assert(/functionName:\s*"beneficiary"/u.test(deploySource) && /functionName:\s*"
 const testnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"));
 const testnetRoutingPin = JSON.parse(readFileSync(join(root, "scripts", "fixtures", "robinhood-testnet-routing.json"), "utf8"));
 assertTestnetRoutingConfiguration(testnetConfig, testnetRoutingPin);
-const v4InterfaceSource = readFileSync(join(contracts, "src", "interfaces", "IUniswapV4.sol"), "utf8");
-const exactInputFields = v4InterfaceSource.match(/struct UniswapV4ExactInputParams\s*\{([^}]+)\}/u)?.[1].trim().split(/\s*;\s*/u).filter(Boolean);
-assert(JSON.stringify(exactInputFields) === JSON.stringify(["address currencyIn", "UniswapV4PathKey[] path", "uint256[] minHopPriceX36", "uint128 amountIn", "uint128 amountOutMinimum"]), "V4 exact-input tuple differs from the pinned mainnet router");
+const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+assert(packageJson.devDependencies["@uniswap/v4-periphery"] === "github:Uniswap/v4-periphery#3231810e39b8c4d569b9d66907fa4ef8cd2cec22", "V4 periphery is not pinned to Universal Router 2.1.1");
+assert(packageJson.devDependencies["@uniswap/v4-core"] === "github:Uniswap/v4-core#59d3ecf53afa9264a16bba0e38f4c5d2231f80bc", "V4 core differs from the pinned periphery dependency");
+assert(packageJson.devDependencies["@uniswap/permit2"] === "github:Uniswap/permit2#cc56ad0f3439c502c246fc5cfcc3db92bb8b7219", "Permit2 differs from the pinned periphery dependency");
+const v4RouterSource = readFileSync(
+  join(root, "node_modules", "@uniswap", "v4-periphery", "src", "interfaces", "IV4Router.sol"),
+  "utf8",
+);
+const exactInputFields = v4RouterSource.match(/struct ExactInputParams\s*\{([^}]+)\}/u)?.[1]
+  .trim().split(/\s*;\s*/u).filter(Boolean);
+assert(JSON.stringify(exactInputFields) === JSON.stringify(["Currency currencyIn", "PathKey[] path", "uint256[] minHopPriceX36", "uint128 amountIn", "uint128 amountOutMinimum"]), "canonical V4 exact-input tuple differs from Universal Router 2.1.1");
 assert(/verifyTestnetRoutingRuntime\(publicClient, previous, routingPin\)/u.test(deploySource), "deployment does not enforce the validated testnet runtime binding");
 assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
 assert(!("architecture" in testnetConfig), "testnet configuration must not use an architecture version gate");

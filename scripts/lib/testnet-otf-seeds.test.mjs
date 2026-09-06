@@ -26,6 +26,11 @@ test("defines three distinct testnet OTFs with varied fees and baskets", () => {
   );
   assert.deepEqual(seeds.map((seed) => seed.constituents.length), [3, 3, 5]);
   for (const seed of seeds) {
+    assert(seed.name.endsWith(" OTF"));
+    assert(Buffer.byteLength(seed.name, "utf8") <= 50);
+    assert.match(seed.name.slice(0, -4), /[A-Za-z0-9]/u);
+    assert(seed.symbol.length >= 1 && seed.symbol.length <= 8);
+    assert.doesNotMatch(seed.symbol, /[^A-Za-z0-9]/u);
     assert.equal(seed.expenseBeneficiary, beneficiary);
     assert.equal(seed.bootstrapBasketUnitsPerOTF.length, seed.constituents.length);
     assert(seed.bootstrapBasketUnitsPerOTF.every((unit) => unit === 10n ** 17n));

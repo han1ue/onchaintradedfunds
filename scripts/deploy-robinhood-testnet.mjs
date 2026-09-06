@@ -14,7 +14,8 @@ const deploymentPath = join(root, "app", "src", "config", "robinhood-testnet.jso
 const simulation = process.env.DEPLOYMENT_MODE === "simulate";
 const outputPath = simulation ? join(root, "test-results/v3-auth/protocol-simulation.json") : deploymentPath;
 const journalPath = join(root, simulation ? "test-results/v3-auth/deployment-simulate-journal.json" : "deployments/robinhood-testnet-v3-journal.json");
-if (!simulation && process.env.DEPLOYMENT_PREFLIGHT_ONLY !== "true" && existsSync(journalPath)) {
+const resume = process.env.DEPLOYMENT_RESUME === "true";
+if (!simulation && process.env.DEPLOYMENT_PREFLIGHT_ONLY !== "true" && existsSync(journalPath) && !resume) {
   throw new Error("A deployment journal already exists; reconcile its transactions before another deployment");
 }
 const localEnvPath = join(root, ".env.deploy.local");
@@ -175,7 +176,7 @@ const chain = {
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
 };
-const maxDeploymentGas = 33_000_000n;
+const maxDeploymentGas = 60_000_000n;
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
 if (await publicClient.getChainId() !== chainId) {
@@ -263,9 +264,15 @@ if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
   process.exit(0);
 }
 
-let totalGas = 0n;
-let gasSpend = 0n;
-const transactions = [];
+const existingJournal = resume && existsSync(journalPath)
+  ? JSON.parse(readFileSync(journalPath, "utf8"))
+  : undefined;
+if (existingJournal && (existingJournal.chainId !== chainId || existingJournal.simulation !== simulation)) {
+  throw new Error("Deployment journal does not match the active chain or deployment mode");
+}
+let totalGas = BigInt(existingJournal?.totalGas ?? 0);
+let gasSpend = BigInt(existingJournal?.gasSpend ?? 0);
+const transactions = existingJournal?.transactions ?? [];
 const saveJournal = () => {
   mkdirSync(dirname(journalPath), { recursive: true });
   writeFileSync(journalPath, json({ chainId, simulation, transactions, totalGas, gasSpend }) + "\n");
@@ -279,7 +286,7 @@ const transactionGasPrice = async () => simulation
   ? BigInt(JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-v3.json"), "utf8")).gasPriceWei)
   : publicClient.getGasPrice();
 async function reserveGas(gas) {
-  if (totalGas + gas > maxDeploymentGas) throw new Error("Deployment exceeds the 33,000,000 gas budget");
+  if (totalGas + gas > maxDeploymentGas) throw new Error(`Deployment exceeds the ${maxDeploymentGas} gas budget`);
   const gasPrice = await transactionGasPrice();
   if (fundingBudget && (gasPrice > BigInt(fundingBudget.maxGasPriceWei) || gasSpend + gas * gasPrice > BigInt(fundingBudget.maxDeploymentGasSpendWei))) throw new Error("Deployment exceeds the authorized gas budget");
   return gasPrice;
@@ -287,6 +294,22 @@ async function reserveGas(gas) {
 async function deploy(name, args = []) {
   const compiled = artifact(name);
   const data = viem.encodeDeployData({ abi: compiled.abi, bytecode: bytecode(name), args });
+  const existing = transactions.find((entry) =>
+    entry.kind === "deploy" && entry.name === name && entry.data === data
+  );
+  if (existing) {
+    const receipt = await publicClient.getTransactionReceipt({ hash: existing.transactionHash });
+    if (receipt.status !== "success" || !receipt.contractAddress) {
+      throw new Error(`${name} journaled deployment is not successful`);
+    }
+    return {
+      address: getAddress(receipt.contractAddress),
+      runtimeCodehash: keccak256(await publicClient.getCode({ address: receipt.contractAddress })),
+      transactionHash: existing.transactionHash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed,
+    };
+  }
   const estimatedGas = await publicClient.estimateGas({ account, data });
   const gas = estimatedGas * 125n / 100n + 50_000n;
   const gasPrice = await reserveGas(gas);
@@ -309,6 +332,22 @@ async function deploy(name, args = []) {
 }
 
 async function transact(contract, functionName, args = []) {
+  const data = viem.encodeFunctionData({ abi: artifact(contract.name).abi, functionName, args });
+  const existing = transactions.find((entry) =>
+    entry.kind === "call" && entry.name === contract.name && entry.functionName === functionName
+      && getAddress(entry.to) === contract.address && entry.data === data
+  );
+  if (existing) {
+    const receipt = await publicClient.getTransactionReceipt({ hash: existing.transactionHash });
+    if (receipt.status !== "success") {
+      throw new Error(`${contract.name}.${functionName} journaled transaction is not successful`);
+    }
+    return {
+      transactionHash: existing.transactionHash,
+      blockNumber: receipt.blockNumber,
+      gasUsed: receipt.gasUsed,
+    };
+  }
   await publicClient.simulateContract({ address: contract.address, abi: artifact(contract.name).abi, functionName, args, account });
   const gas = (await publicClient.estimateContractGas({ address: contract.address, abi: artifact(contract.name).abi, functionName, args, account })) * 125n / 100n + 50_000n;
   const gasPrice = await reserveGas(gas);
@@ -327,7 +366,7 @@ async function transact(contract, functionName, args = []) {
   totalGas += receipt.gasUsed;
   gasSpend += receipt.gasUsed * receipt.effectiveGasPrice;
   transactions.push({ kind: "call", name: contract.name, functionName, to: contract.address,
-    data: viem.encodeFunctionData({ abi: artifact(contract.name).abi, functionName, args }), transactionHash: hash, gasUsed: receipt.gasUsed });
+    data, transactionHash: hash, gasUsed: receipt.gasUsed });
   saveJournal();
   return { transactionHash: hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed };
 }

@@ -1,24 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @dev ABI-compatible with Uniswap v4-periphery's PathKey.
-struct UniswapV4PathKey {
-    address intermediateCurrency;
-    uint24 fee;
-    int24 tickSpacing;
-    address hooks;
-    bytes hookData;
-}
-
-/// @dev ABI-compatible with the pinned Robinhood mainnet Universal Router's ExactInputParams.
-struct UniswapV4ExactInputParams {
-    address currencyIn;
-    UniswapV4PathKey[] path;
-    uint256[] minHopPriceX36;
-    uint128 amountIn;
-    uint128 amountOutMinimum;
-}
-
 /// @dev ABI-compatible with Uniswap v4-core's PoolKey (Currency and IHooks encode as addresses).
 struct UniswapV4PoolKey {
     address currency0;

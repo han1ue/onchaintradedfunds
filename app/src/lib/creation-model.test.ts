@@ -16,9 +16,44 @@ import {
   percentageUnitsForSelectionChange,
   previewBootstrapBasketUnits,
   submitAndConfirmCreation,
+  validOtfName,
+  validOtfTicker,
   vaultCreationTransactionParams,
   zeroRawUnitError,
 } from "./creation-model";
+
+describe("OTF identity validation", () => {
+  it.each(["A", "z", "ABCDEFGH", "aBcDeFgH", "TECH1", "0", "12345678"])("accepts ticker %j", (value) => {
+    expect(validOtfTicker(value)).toBe(true);
+  });
+
+  it.each(["", "ABCDEFGHI", "A B", " A", "A ", "A\n", "A\t", "\x00", "\x1f", "\x7f", "é", "🚀", "A-B", "$BTC", "@", "["])("rejects ticker %j", (value) => {
+    expect(validOtfTicker(value)).toBe(false);
+  });
+
+  it.each(["A OTF", "z OTF", "123 Growth! OTF", "Café 🚀 OTF", "123 OTF", "0 OTF"])("accepts name %j", (value) => {
+    expect(validOtfName(value)).toBe(true);
+  });
+
+  it.each(["", "OTF", " OTF", "  OTF", "! OTF", "\t OTF", "\x7f OTF", "é OTF", "🚀 OTF", "Alpha", "AlphaOTF", "Alpha otf", "Alpha OTF ", "Alpha OTF\n"])("rejects name %j", (value) => {
+    expect(validOtfName(value)).toBe(false);
+  });
+
+  it.each(["A".repeat(46), `${"A".repeat(44)}é`])("limits the full name to 50 UTF-8 bytes for prefix %j", (prefix) => {
+    const name = `${prefix} OTF`;
+    expect(new TextEncoder().encode(name).length).toBe(50);
+    expect(validOtfName(name)).toBe(true);
+    expect(validOtfName(`A${name}`)).toBe(false);
+  });
+
+  it("accepts every ASCII digit in tickers and names", () => {
+    for (let code = 0x30; code <= 0x39; code++) {
+      const character = String.fromCharCode(code);
+      expect(validOtfTicker(character)).toBe(true);
+      expect(validOtfName(`${character} OTF`)).toBe(true);
+    }
+  });
+});
 
 describe("creator expense ratio percentage", () => {
   it("converts percentage input to exact integer basis points", () => {

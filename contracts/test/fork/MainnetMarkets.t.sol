@@ -56,8 +56,8 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
         vault = ManagedOTFVault(
             factory.createVault(
                 VaultCreationParams({
-                    name: "Mainnet five-stock rehearsal",
-                    symbol: "REAL5",
+                    name: "Mainnet five-stock rehearsal OTF",
+                    symbol: "REAL",
                     fundThesis: "Mainnet market integration test.",
                     expenseBeneficiary: beneficiary,
                     annualCreatorExpenseRatioBps: 1_000,

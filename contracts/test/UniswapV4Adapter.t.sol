@@ -3,7 +3,9 @@ pragma solidity ^0.8.24;
 
 import { SwapLeg } from "../src/OTFEntryExitRouter.sol";
 import { UniswapV4Adapter } from "../src/UniswapV4Adapter.sol";
-import { UniswapV4PathKey } from "../src/interfaces/IUniswapV4.sol";
+import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
 import {
     MockPermit2,
@@ -88,7 +90,7 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         assetC.mint(address(v4Adapter), 7 * ONE);
         assetC.mint(address(universalRouter), ONE);
 
-        UniswapV4PathKey[] memory path = new UniswapV4PathKey[](3);
+        PathKey[] memory path = new PathKey[](3);
         path[0] = _hop(address(assetA));
         path[1] = _hop(address(assetB));
         path[2] = _hop(address(assetC));
@@ -107,31 +109,32 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
     }
 
     function testMalformedEndpointBoundsAndMissingPoolsAreRejected() public {
-        _expectPathFailure(new UniswapV4PathKey[](0), UniswapV4Adapter.InvalidPath.selector);
+        _expectPathFailure(new PathKey[](0), UniswapV4Adapter.InvalidPath.selector);
 
-        UniswapV4PathKey[] memory wrongEndpoint = new UniswapV4PathKey[](1);
+        PathKey[] memory wrongEndpoint = new PathKey[](1);
         wrongEndpoint[0] = _hop(address(assetA));
         _createV4Pool(address(input), address(assetA));
         _expectPathFailure(wrongEndpoint, UniswapV4Adapter.InvalidPath.selector);
 
-        UniswapV4PathKey[] memory fourHops = new UniswapV4PathKey[](4);
+        PathKey[] memory fourHops = new PathKey[](4);
         fourHops[0] = _hop(address(assetA));
         fourHops[1] = _hop(address(assetB));
         fourHops[2] = _hop(address(assetD));
         fourHops[3] = _hop(address(assetC));
         _expectPathFailure(fourHops, UniswapV4Adapter.TooManyHops.selector);
 
-        UniswapV4PathKey[] memory missing = new UniswapV4PathKey[](1);
+        PathKey[] memory missing = new PathKey[](1);
         missing[0] = _hop(address(assetC));
         _expectPathFailure(missing, UniswapV4Adapter.UnauthenticatedPool.selector);
 
-        UniswapV4PathKey[] memory invalidSpacing = new UniswapV4PathKey[](1);
-        invalidSpacing[0] = UniswapV4PathKey(address(assetC), FEE, 0, address(0), "");
+        PathKey[] memory invalidSpacing = new PathKey[](1);
+        invalidSpacing[0] = PathKey(Currency.wrap(address(assetC)), FEE, 0, IHooks(address(0)), "");
         _expectPathFailure(invalidSpacing, UniswapV4Adapter.InvalidPath.selector);
 
-        UniswapV4PathKey[] memory longHookData = new UniswapV4PathKey[](1);
-        longHookData[0] =
-            UniswapV4PathKey(address(assetC), FEE, TICK_SPACING, address(0), new bytes(1_025));
+        PathKey[] memory longHookData = new PathKey[](1);
+        longHookData[0] = PathKey(
+            Currency.wrap(address(assetC)), FEE, TICK_SPACING, IHooks(address(0)), new bytes(1_025)
+        );
         _expectPathFailure(longHookData, UniswapV4Adapter.HookDataTooLong.selector);
     }
 
@@ -187,13 +190,13 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
     }
 
     function _path(address tokenOut) private pure returns (bytes memory) {
-        UniswapV4PathKey[] memory path = new UniswapV4PathKey[](1);
+        PathKey[] memory path = new PathKey[](1);
         path[0] = _hop(tokenOut);
         return abi.encode(path);
     }
 
-    function _hop(address tokenOut) private pure returns (UniswapV4PathKey memory) {
-        return UniswapV4PathKey(tokenOut, FEE, TICK_SPACING, address(0), "");
+    function _hop(address tokenOut) private pure returns (PathKey memory) {
+        return PathKey(Currency.wrap(tokenOut), FEE, TICK_SPACING, IHooks(address(0)), "");
     }
 
     function _createV4Pool(address tokenA, address tokenB) private {
@@ -210,7 +213,7 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         return keccak256(abi.encode(currency0, currency1, fee, tickSpacing, hooks));
     }
 
-    function _expectPathFailure(UniswapV4PathKey[] memory path, bytes4 selector) private {
+    function _expectPathFailure(PathKey[] memory path, bytes4 selector) private {
         input.mint(address(v4Adapter), ONE);
         vm.prank(address(router));
         vm.expectPartialRevert(selector);

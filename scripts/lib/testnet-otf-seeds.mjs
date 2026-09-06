@@ -2,7 +2,7 @@ const BASKET_UNIT = 10n ** 17n;
 
 const SEED_DEFINITIONS = [
   {
-    name: "Consumer Tech Leaders",
+    name: "Consumer Tech Leaders OTF",
     symbol: "CTECH",
     fundThesis: "Amazon, Tesla, and Netflix offer focused exposure to companies changing how people shop, travel, and watch entertainment.",
     annualCreatorExpenseRatioBps: 0,
@@ -11,7 +11,7 @@ const SEED_DEFINITIONS = [
     constituentIds: ["amzn", "tsla", "nflx"],
   },
   {
-    name: "AI Stack",
+    name: "AI Stack OTF",
     symbol: "AISTK",
     fundThesis: "Palantir, AMD, and Amazon combine software, chips, and cloud infrastructure in one AI-focused basket.",
     annualCreatorExpenseRatioBps: 100,
@@ -20,7 +20,7 @@ const SEED_DEFINITIONS = [
     constituentIds: ["pltr", "amd", "amzn"],
   },
   {
-    name: "Frontier Five",
+    name: "Frontier Five OTF",
     symbol: "FIVE",
     fundThesis: "Tesla, Amazon, Palantir, Netflix, and AMD form a broad testnet portfolio of technology and growth stocks.",
     annualCreatorExpenseRatioBps: 250,
