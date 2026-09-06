@@ -544,7 +544,7 @@ function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: (
           {refundDisclosure.hiddenCount ? <button type="button" onClick={() => setRefundsExpanded(true)}>Show {refundDisclosure.hiddenCount} more</button> : refundsExpanded && receipt.refunds.length > 4 ? <button type="button" onClick={() => setRefundsExpanded(false)}>Show less</button> : null}
         </section>
       ) : null}
-      <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link>
+      {!receipt.fund.isProtocolToken ? <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link> : null}
     </div>
   );
 }
@@ -641,11 +641,16 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapSqrtPriceBounds" },
   ] as const;
-  const { data: canonicalPoolReads } = useReadContracts({
+  const { data: canonicalPoolReads, refetch: refetchCanonicalPool } = useReadContracts({
     contracts: canonicalReadContracts,
     query: { enabled: canonicalOtfPair && Boolean(launchManager), refetchInterval: 12_000 },
   });
   const canonicalPhase = Number(canonicalPoolReads?.[0]?.result ?? 0);
+  useEffect(() => {
+    if (canonicalOtfPair && canonicalPhase === 1 && output.kind === "native" && configuredWeth) {
+      setOutput(configuredWeth);
+    }
+  }, [canonicalOtfPair, canonicalPhase, output.kind, configuredWeth]);
   const canonicalAmountRaw = amountValid ? decimalAmount(amount, input.decimals) : undefined;
   const canonicalQuote = useMemo(() => {
     const poolState = canonicalPoolReads?.[1]?.result;
@@ -868,7 +873,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   function reverse() {
     setInput(output);
-    setOutput(input);
+    setOutput(canonicalOtfPair && canonicalPhase === 1 && input.kind === "native" && configuredWeth ? configuredWeth : input);
     setActiveQuote(undefined);
     setExecution("idle");
     setExecutionMessage(undefined);
@@ -1072,7 +1077,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error("The canonical OTF swap reverted.");
         await finishConfirmedSwap(hash, receipt, outputBalanceBefore, value);
-        await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
+        await Promise.all([refetchInputBalance(), refetchOutputBalance(), refetchCanonicalPool()]);
       } catch (error) {
         setExecution("failure");
         setExecutionMessage(error instanceof Error ? error.message : "The canonical OTF swap failed.");
@@ -1340,6 +1345,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                 </div>
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
+              {canonicalOtfPair && canonicalPhase === 1 && input.isProtocolToken ? <p className="swapPreflight">During launch, OTF sells return WETH. You can unwrap WETH to ETH at 1:1 on the Swap page.</p> : null}
               {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This maximum crosses the launch boundary. The launch router will consume only the required input; unused WETH stays in your wallet and unused ETH is refunded.</p> : null}
               {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
               {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
@@ -1351,7 +1357,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   );
   const pickerAsset = picker === "input" ? input : output;
   const pickerCounterpart = picker === "input" ? output : input;
-  const pickerDialog = picker && !(pinnedAsset && sameAsset(pickerAsset, pinnedAsset)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={pickerCounterpart} routeFund={routeFund} configuredAssets={configuredAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
+  const pickerAssets = picker === "output" && canonicalOtfPair && canonicalPhase === 1 && input.isProtocolToken
+    ? configuredAssets.filter((asset) => asset.kind !== "native")
+    : configuredAssets;
+  const pickerDialog = picker && !(pinnedAsset && sameAsset(pickerAsset, pinnedAsset)) ? <TokenPicker title={picker === "input" ? "Select token to pay" : "Select token to receive"} onClose={() => setPicker(undefined)} onSelect={(asset) => selectAsset(picker, asset)} selected={pickerAsset} exclude={pickerCounterpart} routeFund={routeFund} configuredAssets={pickerAssets} otfAssets={otfAssets} otfDirectoryState={otfDirectoryState} fixedKind={embedded ? "erc20" : undefined} /> : null;
 
   if (embedded) return <div className="fundSwapWidget">{swapCard}{pickerDialog}</div>;
 

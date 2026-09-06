@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import otfIcon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
 import "./globals.css";
-import { AppTopBanner } from "@/components/AppTopBanner";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
 import { PersistentAppShell } from "@/components/PersistentAppShell";
 import { rootViewForHost } from "@/lib/app-host-routing";
@@ -56,7 +55,6 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           }}
         />
         <InputBehaviorGuard />
-        <AppTopBanner />
         <PersistentAppShell showOnRoot={showOperatingRoot}>{children}</PersistentAppShell>
       </body>
     </html>

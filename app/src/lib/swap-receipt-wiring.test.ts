@@ -22,6 +22,10 @@ describe("swap receipt wiring", () => {
     expect(component).not.toContain("Review and submit swap");
   });
 
+  it("does not offer a fund-detail action for the protocol token", () => {
+    expect(component).toContain("!receipt.fund.isProtocolToken");
+  });
+
   it("caps pay and receive amounts at eight fractional digits", () => {
     expect(component).toContain("const MAX_SWAP_FRACTION_DIGITS = 8;");
     expect(component).toContain("decimalInputValue(event.target.value, Math.min(input.decimals, MAX_SWAP_FRACTION_DIGITS))");

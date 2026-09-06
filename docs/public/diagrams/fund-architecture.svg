@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1100" viewBox="0 0 960 1100" role="img" aria-labelledby="title description">
+  <title id="title">Onchain Traded Funds: fund architecture</title>
+  <desc id="description">The application converts offchain prices and creator weights into raw basket units. The creator calls OTFFactory, which deploys and registers a ManagedOTFVault clone. Holders mint or redeem through OTFEntryExitRouter, which settles the basket with the vault and calls approved Uniswap V3 or V4 trade adapters. Those adapters execute swaps through SwapRouter02 or Universal Router. Holders can also call the vault directly to redeem in kind. The vault holds the ERC-20 basket, accounts for balances, issues fund shares, and stores fixed fees and the fund thesis. Arrows show calls, not the direction of token transfers.</desc>
+  <style>
+    :root {
+      --background: #f5f8f7;
+      --surface: #eef3f1;
+      --foreground: #14201f;
+      --muted: #526460;
+      --border: #b2c2bd;
+      --line: #526460;
+      --accent: #187f76;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #0e1218;
+        --surface: #131820;
+        --foreground: #edf2f7;
+        --muted: #9ba8ba;
+        --border: #465262;
+        --line: #9ba8ba;
+        --accent: #57cfc2;
+      }
+    }
+    text { fill: var(--foreground); font-family: "Segoe UI", Helvetica, Arial, sans-serif; }
+    .heading { font-size: 28px; font-weight: 650; letter-spacing: -0.5px; }
+    .name { font-size: 24px; font-weight: 650; letter-spacing: -0.4px; }
+    .body { font-size: 21px; }
+    .note { fill: var(--muted); font-size: 18px; }
+    .label { fill: var(--muted); font-size: 18px; text-anchor: middle; }
+    .node { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+    .external { fill: var(--background); }
+    .vault { stroke: var(--foreground); stroke-width: 1.8; }
+    .rule { stroke: var(--border); stroke-width: 1; }
+    .call { fill: none; stroke: var(--line); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+    .settlement { stroke: var(--accent); marker-end: url(#accent-arrow); }
+    .direct { stroke-dasharray: 5 6; }
+    .accent { fill: var(--accent); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="accent-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="1100" fill="var(--background)"/>
+  <text x="48" y="58" class="heading">Fund creation and settlement</text>
+  <text x="48" y="88" class="note">Onchain Traded Funds</text>
+
+  <!-- Fund creation: offchain inputs become immutable onchain configuration. -->
+  <rect x="48" y="130" width="352" height="120" rx="8" class="node external"/>
+  <text x="72" y="169" class="name">Application</text>
+  <text x="376" y="169" class="note" text-anchor="end">Offchain</text>
+  <text x="72" y="205" class="body">Prices + creator weights</text>
+  <text x="72" y="233" class="note">Ordered tokens + raw basket units</text>
+
+  <path d="M400 190H574" class="call"/>
+  <text x="488" y="174" class="label">createVault</text>
+
+  <rect x="576" y="130" width="336" height="120" rx="8" class="node"/>
+  <text x="600" y="169" class="name">OTFFactory</text>
+  <text x="600" y="205" class="body">Deploys and registers</text>
+  <text x="600" y="233" class="note">one vault clone per fund</text>
+
+  <path d="M744 250V334" class="call"/>
+  <text x="767" y="298" class="note">clone</text>
+
+  <!-- Direct redemption bypasses the settlement router and swap venues. -->
+  <rect x="48" y="336" width="352" height="108" rx="8" class="node external"/>
+  <text x="72" y="377" class="name">Holder wallet</text>
+  <text x="72" y="413" class="body">Input assets / fund shares</text>
+
+  <path d="M400 390H574" class="call direct"/>
+  <text x="488" y="367" class="label">Redeem in kind</text>
+  <text x="488" y="422" class="label">Receive basket</text>
+
+  <rect x="576" y="336" width="336" height="320" rx="8" class="node vault"/>
+  <text x="600" y="377" class="name">ManagedOTFVault</text>
+  <text x="600" y="409" class="note">Custody + share accounting</text>
+  <path d="M600 434H888" class="rule"/>
+  <text x="600" y="472" class="body">ERC-20 basket</text>
+  <text x="600" y="511" class="body">Accounted token balances</text>
+  <text x="600" y="550" class="body">Fund shares</text>
+  <text x="600" y="589" class="body">Fixed fee configuration</text>
+  <text x="600" y="628" class="body">Permanent fund thesis</text>
+
+  <!-- The router executes the holder's basket mint or redemption. -->
+  <path d="M224 444V522" class="call settlement"/>
+  <text x="244" y="491" class="note accent">Mint / redeem</text>
+
+  <rect x="48" y="524" width="352" height="132" rx="8" class="node"/>
+  <text x="72" y="565" class="name">OTFEntryExitRouter</text>
+  <text x="72" y="601" class="body">Single-asset entry / exit</text>
+  <text x="72" y="633" class="note">ETH / WETH wrapping at the edge</text>
+
+  <path d="M400 590H574" class="call settlement"/>
+  <text x="488" y="570" class="label accent">Settle basket</text>
+
+  <!-- Only approved ITradeAdapter implementations execute swap legs. -->
+  <path d="M224 656V782" class="call settlement"/>
+  <path d="M224 720H736V782" class="call settlement"/>
+  <circle cx="224" cy="720" r="4" fill="var(--accent)"/>
+  <text x="480" y="701" class="label accent">Approved swap adapters</text>
+  <text x="480" y="750" class="label">ITradeAdapter</text>
+
+  <rect x="48" y="784" width="352" height="96" rx="8" class="node"/>
+  <text x="72" y="824" class="name">UniswapV3Adapter</text>
+  <text x="72" y="857" class="note">Validates V3 swap paths</text>
+
+  <rect x="560" y="784" width="352" height="96" rx="8" class="node"/>
+  <text x="584" y="824" class="name">UniswapV4Adapter</text>
+  <text x="584" y="857" class="note">Validates V4 pool-key paths</text>
+
+  <path d="M224 880V950" class="call"/>
+  <path d="M736 880V950" class="call"/>
+  <text x="480" y="921" class="label">External swap execution</text>
+  <path d="M48 915H178M270 915H365M595 915H690M782 915H912" class="rule" stroke-dasharray="4 6"/>
+
+  <text x="224" y="985" class="name" text-anchor="middle">Uniswap V3</text>
+  <text x="224" y="1016" class="note" text-anchor="middle">SwapRouter02</text>
+  <text x="736" y="985" class="name" text-anchor="middle">Uniswap V4</text>
+  <text x="736" y="1016" class="note" text-anchor="middle">Universal Router</text>
+
+  <path d="M48 1045H912" class="rule"/>
+  <text x="48" y="1077" class="note">Arrows show calls. Tokens can move in both directions.</text>
+</svg>

@@ -3,6 +3,8 @@ title: Protocol overview
 description: Vault creation, accounting, fees, routing, and application behavior.
 ---
 
+import { FundArchitecture } from "../components/FundArchitecture"
+
 # Protocol overview
 
 An Onchain Traded Fund is a vault that holds a basket of ERC-20 tokens, called constituents. You hold fund shares, which represent a proportional claim on that basket. Minting creates shares by adding basket tokens; redemption burns shares and returns basket tokens after fees.
@@ -15,22 +17,7 @@ Each fund has its own share token. The separate protocol token, OTF, is describe
 
 The vault holds the basket and issues shares. The entry and exit router handles the swaps needed to assemble or sell the basket. Holders can also redeem directly from the vault to receive the constituent tokens.
 
-```text
-offchain prices and creator percentages
-                  |
-                  | ordered constituents + raw bootstrap units
-                  v
-             OTFFactory ---- clone ----> ManagedOTFVault
-                  |                           |
-                  |                           +-- accounted constituent balances
-                  |                           +-- immutable fee configuration
-                  |                           +-- permanent fund thesis
-                  v
-         OTFEntryExitRouter ---- approved ITradeAdapter
-                                      |
-                                      +---- UniswapV3Adapter ---- SwapRouter02
-                                      +---- UniswapV4Adapter ---- Universal Router
-```
+<FundArchitecture />
 
 `OTFFactory` deploys `ManagedOTFVault` clones and records their addresses. Depositors mint shares through `OTFEntryExitRouter`, which uses approved trade adapters for swaps. Protocol-token launch, vesting, rewards, and fee buybacks use separate contracts.
 

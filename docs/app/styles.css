@@ -135,6 +135,65 @@ article :where(code) {
   font-variant-ligatures: none;
 }
 
+.fundArchitecture {
+  overflow: hidden;
+  margin: 1.75rem 0 2rem;
+  border: 1px solid var(--otf-border);
+  border-radius: 8px;
+  background: var(--otf-background);
+}
+
+.fundArchitectureScroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--otf-muted) var(--otf-background);
+}
+
+.fundArchitectureScroll:focus-visible {
+  outline-offset: -3px;
+}
+
+.fundArchitectureHint {
+  display: none;
+}
+
+.fundArchitectureImage {
+  display: block;
+  width: 100%;
+  min-width: 640px;
+  max-width: none;
+  height: auto;
+  margin: 0;
+}
+
+.fundArchitecture figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  border-top: 1px solid var(--otf-border);
+  padding: 0.85rem 1.1rem;
+  color: var(--otf-muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.fundArchitecture figcaption a {
+  color: var(--otf-teal);
+}
+
+@media (max-width: 680px) {
+  .fundArchitectureHint {
+    display: block;
+    margin: 0;
+    border-bottom: 1px solid var(--otf-border);
+    padding: 0.75rem 1.1rem;
+    color: var(--otf-muted);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+}
+
 .tokenUnlockFigure {
   overflow: hidden;
   margin: 1.75rem 0 2rem;

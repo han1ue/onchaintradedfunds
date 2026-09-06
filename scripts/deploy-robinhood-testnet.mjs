@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { appOwnedIntegrationConfiguration } from "./lib/deployment-config.mjs";
+import { testnetOtfSeedConfiguration } from "./lib/testnet-otf-seeds.mjs";
 import { assertTestnetDeploymentEncoding, verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -170,6 +171,7 @@ const chain = {
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [rpcUrl] } },
 };
+const maxDeploymentGas = 33_000_000n;
 const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 const wallet = createWalletClient({ chain, transport: http(rpcUrl), account });
 if (await publicClient.getChainId() !== chainId) {
@@ -247,8 +249,7 @@ for (const pool of assetCatalog.pools) {
 if (process.env.DEPLOYMENT_PREFLIGHT_ONLY === "true") {
   const deployerBalance = await publicClient.getBalance({ address: account.address });
   const gasPrice = await publicClient.getGasPrice();
-  const deploymentGasBudget = 30_000_000n;
-  const minimumBalance = deploymentGasBudget * gasPrice;
+  const minimumBalance = maxDeploymentGas * gasPrice;
   if (deployerBalance < minimumBalance) {
     throw new Error(`Deployer needs at least ${minimumBalance} wei at the current gas price`);
   }
@@ -274,7 +275,7 @@ const transactionGasPrice = async () => simulation
   ? BigInt(JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-testnet-v3.json"), "utf8")).gasPriceWei)
   : publicClient.getGasPrice();
 async function reserveGas(gas) {
-  if (totalGas + gas > 30_000_000n) throw new Error("Deployment exceeds the existing 30,000,000 gas budget");
+  if (totalGas + gas > maxDeploymentGas) throw new Error("Deployment exceeds the 33,000,000 gas budget");
   const gasPrice = await transactionGasPrice();
   if (fundingBudget && (gasPrice > BigInt(fundingBudget.maxGasPriceWei) || gasSpend + gas * gasPrice > BigInt(fundingBudget.maxDeploymentGasSpendWei))) throw new Error("Deployment exceeds the authorized gas budget");
   return gasPrice;
@@ -541,6 +542,43 @@ setupTransactions.v4AdapterApproval = await transact(
   [uniswapV4Adapter.address, true],
 );
 
+const sampleOtfs = [];
+const sampleOtfConfiguration = testnetOtfSeedConfiguration(assetCatalog, protocolMultisig);
+for (const configuration of sampleOtfConfiguration) {
+  const transaction = await transact(
+    { ...factory, name: "OTFFactory" },
+    "createVault",
+    [configuration],
+  );
+  const vaultCount = await publicClient.readContract({
+    address: factory.address,
+    abi: artifact("OTFFactory").abi,
+    functionName: "vaultCount",
+  });
+  if (vaultCount !== BigInt(sampleOtfs.length + 1)) {
+    throw new Error(`Unexpected vault count after creating ${configuration.symbol}`);
+  }
+  const vault = getAddress(await publicClient.readContract({
+    address: factory.address,
+    abi: artifact("OTFFactory").abi,
+    functionName: "vaultAt",
+    args: [vaultCount - 1n],
+  }));
+  sampleOtfs.push({
+    address: vault,
+    ...configuration,
+    transactionHash: transaction.transactionHash,
+    blockNumber: transaction.blockNumber,
+    gasUsed: transaction.gasUsed,
+  });
+}
+setupTransactions.sampleOtfCreations = sampleOtfs.map((sample) => ({
+  address: sample.address,
+  transactionHash: sample.transactionHash,
+  blockNumber: sample.blockNumber,
+  gasUsed: sample.gasUsed,
+}));
+
 const transfer = async (to, amount) => transact(
   { ...otfToken, name: "OTFToken" },
   "transfer",
@@ -753,6 +791,7 @@ const deployment = {
     maxV4HopsPerLeg: 3,
     maxLegs: 40,
   },
+  sampleOtfs,
   setupTransactions,
   ...appOwnedIntegrations,
   note: "Protocol contracts are deployed.",

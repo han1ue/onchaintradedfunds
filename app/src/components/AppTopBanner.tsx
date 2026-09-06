@@ -3,6 +3,8 @@
 import { AlertTriangle } from "lucide-react";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useChainId } from "wagmi";
+import { robinhoodChainTestnet } from "@/lib/chains";
 
 function isAppRoute(pathname: string): boolean {
   if (pathname === "/") return true;
@@ -18,7 +20,8 @@ function isAppRoute(pathname: string): boolean {
 
 export function AppTopBanner() {
   const pathname = usePathname();
-  const showBanner = isAppRoute(pathname);
+  const chainId = useChainId();
+  const showBanner = isAppRoute(pathname) && chainId === robinhoodChainTestnet.id;
 
   useEffect(() => {
     if (showBanner) {

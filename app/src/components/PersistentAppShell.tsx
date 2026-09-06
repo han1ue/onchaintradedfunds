@@ -10,6 +10,7 @@ import { useChainId, useSwitchChain } from "wagmi";
 import { Providers } from "@/app/providers";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import { navigationItemForPath } from "@/lib/operate-navigation";
+import { AppTopBanner } from "./AppTopBanner";
 
 type AppearancePreference = "default" | "light" | "dark";
 type ResolvedAppearance = Exclude<AppearancePreference, "default">;
@@ -246,6 +247,7 @@ export function PersistentAppShell({ children, showOnRoot }: { children: ReactNo
 
   return (
     <Providers appearance={resolvedTheme}>
+      <AppTopBanner />
       <div className={showHeader ? "operateShell" : undefined}>
         {showHeader ? <OperateAmbientField /> : null}
         {showHeader ? <OperateNav theme={theme} onThemeChange={changeTheme} /> : null}
