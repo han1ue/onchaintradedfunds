@@ -386,7 +386,7 @@ assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require
 assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
 assert(/deploy\("UniswapV4Adapter"/u.test(deploySource), "deployment does not deploy UniswapV4Adapter");
 assert(/deploy\("OTFLaunchRouter"/u.test(deploySource), "deployment does not deploy OTFLaunchRouter");
-assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 3 && deploySource.includes("revokePreviousV3Adapter"), "deployment must approve both replacements and revoke the previous V3 adapter");
+assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 3 && deploySource.includes("revokePreviousAdapters"), "deployment must approve both replacements and revoke both previous adapters");
 for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle"]) {
   assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
 }

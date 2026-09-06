@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import otfIcon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.svg";
 import { Head } from "nextra/components";
 import { getPageMap } from "nextra/page-map";
 import { Footer, Layout, Navbar } from "nextra-theme-docs";
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: "%s | Onchain Traded Funds",
   },
   description: "Protocol, security, and incentive documentation for Onchain Traded Funds.",
-  icons: { icon: { url: otfIcon.src, type: "image/svg+xml", sizes: "any" } },
+  icons: { icon: { url: otfFavicon.src, type: "image/svg+xml", sizes: "any" } },
 };
 
 const logo = (

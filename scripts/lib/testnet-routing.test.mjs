@@ -8,8 +8,8 @@ const { keccak256 } = createRequire(new URL("../../app/package.json", import.met
 const config = JSON.parse(readFileSync(new URL("../../app/src/config/robinhood-testnet.json", import.meta.url)));
 const pin = JSON.parse(readFileSync(new URL("../fixtures/robinhood-testnet-routing.json", import.meta.url)));
 
-test("blocks fresh deployments against the incompatible historical testnet router", () => {
-  assert.throws(() => assertTestnetDeploymentEncoding(pin), /testnet router is incompatible/);
+test("accepts the canonical deployment encoding", () => {
+  assert.doesNotThrow(() => assertTestnetDeploymentEncoding(pin));
 });
 
 test("accepts the pinned testnet configuration", () => {
@@ -24,8 +24,8 @@ test("rejects an unvalidated replacement router", () => {
 
 test("rejects a changed encoding or chain", () => {
   const changed = structuredClone(pin);
-  changed.universalRouterSource.exactInputParams.splice(2, 0, "uint256[] maxHopSlippage;");
-  assert.throws(() => assertTestnetRoutingConfiguration(config, changed), /four-field/);
+  changed.universalRouterSource.exactInputParams.splice(2, 1);
+  assert.throws(() => assertTestnetRoutingConfiguration(config, changed), /five-field/);
   assert.throws(() => assertTestnetRoutingConfiguration({ ...config, chainId: 4663 }, pin), /chain 46630/);
 });
 

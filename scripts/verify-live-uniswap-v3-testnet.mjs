@@ -33,9 +33,14 @@ assert.equal(await client.readContract({ address: launch, abi: abi("OTFLaunchMan
 for (const [functionName, expected] of Object.entries({ entryExitRouter: config.contracts.entryRouter.address, uniswapV3Factory: catalog.venue.factory, uniswapV3Router: catalog.venue.swapRouter02 })) {
   assert.equal((await client.readContract({ address: config.contracts.uniswapV3Adapter.address, abi: abi("UniswapV3Adapter"), functionName })).toLowerCase(), expected.toLowerCase());
 }
-const old = journal.transactions.find((entry) => entry.transactionHash === config.setupTransactions.revokePreviousV3Adapter.transactionHash);
-const revoked = decodeFunctionData({ abi: abi("OTFEntryExitRouter"), data: old.data }).args[0];
-assert.equal(await client.readContract({ address: old.to, abi: abi("OTFEntryExitRouter"), functionName: "isAdapterApproved", args: [revoked] }), false);
+const revocations = [];
+for (const configured of config.setupTransactions.revokePreviousAdapters) {
+  const old = journal.transactions.find((entry) => entry.transactionHash === configured.transactionHash);
+  const revoked = decodeFunctionData({ abi: abi("OTFEntryExitRouter"), data: old.data }).args[0];
+  assert.equal(revoked.toLowerCase(), configured.adapter.toLowerCase());
+  assert.equal(await client.readContract({ address: old.to, abi: abi("OTFEntryExitRouter"), functionName: "isAdapterApproved", args: [revoked] }), false);
+  revocations.push({ adapter: revoked, previousRouter: old.to, transactionHash: configured.transactionHash });
+}
 const pools = [];
 for (const pool of catalog.pools) {
   const seed = seeds.pools.find((entry) => entry.id === pool.id);
@@ -66,7 +71,7 @@ for (const transaction of seeds.transactions) {
 assert(seedGasSpend <= BigInt(budget.maxSeedGasSpendWei));
 assert(BigInt(journal.gasSpend) <= BigInt(budget.maxDeploymentGasSpendWei));
 const report = { chainId: 46630, checkedAt: new Date().toISOString(), result: "passed", contracts, pools,
-  revokedAdapter: revoked, previousRouter: old.to, revocationTransactionHash: config.setupTransactions.revokePreviousV3Adapter.transactionHash,
+  revocations,
   seedGasSpendWei: seedGasSpend, deploymentGasSpendWei: journal.gasSpend, totalGasSpendWei: seedGasSpend + BigInt(journal.gasSpend) };
 writeFileSync(resolve(root, "deployments/robinhood-testnet-v3-verification.json"), JSON.stringify(report, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2) + "\n");
-console.log(`Verified ${Object.keys(contracts).length} live protocol runtimes, six owned positions, adapter revocation, allowance cleanup, and funding caps.`);
+console.log(`Verified ${Object.keys(contracts).length} live protocol runtimes, six owned positions, both adapter revocations, allowance cleanup, and funding caps.`);

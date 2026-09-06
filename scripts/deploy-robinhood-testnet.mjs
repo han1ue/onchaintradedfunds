@@ -147,6 +147,10 @@ const uniswapV4PositionManager = address(
   "externalContracts.uniswapV4PositionManager",
   external.uniswapV4PositionManager,
 );
+const uniswapV4NativeWrapper = address(
+  "universalRouterSource.nativeWrapper",
+  routingPin.universalRouterSource.nativeWrapper,
+);
 const requestedV4PositionManager = address(
   "UNISWAP_V4_POSITION_MANAGER",
   env("UNISWAP_V4_POSITION_MANAGER"),
@@ -232,9 +236,9 @@ await Promise.all([
   verifyAddressBinding("Universal Router PoolManager", uniswapUniversalRouter, "poolManager", uniswapV4PoolManager),
   verifyAddressBinding("Universal Router PositionManager", uniswapUniversalRouter, "V4_POSITION_MANAGER", uniswapV4PositionManager),
 ]);
-verifyEmbeddedAddress("PositionManager WETH", positionManagerCode, weth);
+verifyEmbeddedAddress("PositionManager native wrapper", positionManagerCode, uniswapV4NativeWrapper);
 verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
-verifyEmbeddedAddress("Universal Router WETH", universalRouterCode, weth);
+verifyEmbeddedAddress("Universal Router native wrapper", universalRouterCode, uniswapV4NativeWrapper);
 verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
 await verifyTestnetRoutingRuntime(publicClient, previous, routingPin);
@@ -703,14 +707,21 @@ for (const adapter of [uniswapV3Adapter.address, uniswapV4Adapter.address]) {
 }
 
 const previousRouter = previous.contracts?.entryRouter?.address;
-const previousAdapter = previous.contracts?.uniswapV3Adapter?.address;
-if (previousRouter && previousAdapter) {
-  setupTransactions.revokePreviousV3Adapter = await transact(
-    { name: "OTFEntryExitRouter", address: previousRouter }, "setAdapterApproved", [previousAdapter, false],
-  );
-  const approved = await publicClient.readContract({ address: previousRouter, abi: artifact("OTFEntryExitRouter").abi,
-    functionName: "isAdapterApproved", args: [previousAdapter] });
-  if (approved) throw new Error("Previous V3 adapter was not revoked");
+const previousAdapters = [
+  previous.contracts?.uniswapV3Adapter?.address,
+  previous.contracts?.uniswapV4Adapter?.address,
+].filter(Boolean);
+if (previousRouter && previousAdapters.length > 0) {
+  setupTransactions.revokePreviousAdapters = [];
+  for (const previousAdapter of previousAdapters) {
+    const revocation = await transact(
+      { name: "OTFEntryExitRouter", address: previousRouter }, "setAdapterApproved", [previousAdapter, false],
+    );
+    const approved = await publicClient.readContract({ address: previousRouter, abi: artifact("OTFEntryExitRouter").abi,
+      functionName: "isAdapterApproved", args: [previousAdapter] });
+    if (approved) throw new Error("Previous adapter was not revoked");
+    setupTransactions.revokePreviousAdapters.push({ adapter: previousAdapter, ...revocation });
+  }
 }
 const deployment = {
   network: "robinhood-testnet",

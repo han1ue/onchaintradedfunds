@@ -6,7 +6,7 @@ const { keccak256 } = appRequire("viem");
 export function assertTestnetDeploymentEncoding(pin) {
   const fields = ["Currency currencyIn;", "PathKey[] path;", "uint256[] minHopPriceX36;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
   if (JSON.stringify(pin.universalRouterSource?.exactInputParams) !== JSON.stringify(fields)) {
-    throw new Error("Current contracts require the mainnet five-field V4 tuple; the pinned testnet router is incompatible. Review and replace the testnet venue before redeploying.");
+    throw new Error("Testnet Universal Router must use the canonical five-field exact-input tuple");
   }
 }
 
@@ -22,9 +22,9 @@ export function assertTestnetRoutingConfiguration(config, pin) {
       throw new Error(`${name} differs from the validated testnet code hash`);
     }
   }
-  const expectedFields = ["Currency currencyIn;", "PathKey[] path;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
+  const expectedFields = ["Currency currencyIn;", "PathKey[] path;", "uint256[] minHopPriceX36;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
   if (JSON.stringify(pin.universalRouterSource.exactInputParams) !== JSON.stringify(expectedFields)) {
-    throw new Error("Testnet Universal Router must use the reviewed four-field exact-input tuple");
+    throw new Error("Testnet Universal Router must use the canonical five-field exact-input tuple");
   }
 }
 

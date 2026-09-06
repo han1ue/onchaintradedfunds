@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import otfIcon from "@onchaintradedfunds/brand/assets/otf-icon.svg";
+import otfFavicon from "@onchaintradedfunds/brand/assets/otf-favicon.svg";
 import "./globals.css";
 import { InputBehaviorGuard } from "@/components/InputBehaviorGuard";
 import { PersistentAppShell } from "@/components/PersistentAppShell";
@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 export const metadata: Metadata = {
   title: "Onchain Traded Funds",
   description: "Managed onchain traded funds with enforceable portfolio safety limits.",
-  icons: { icon: { url: otfIcon.src, type: "image/svg+xml", sizes: "any" } },
+  icons: { icon: { url: otfFavicon.src, type: "image/svg+xml", sizes: "any" } },
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
