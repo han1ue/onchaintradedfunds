@@ -2224,9 +2224,12 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
   const weights = valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.allocationWeights : undefined;
   const weightsByAddress = new Map(weights?.rows.map((row) => [row.address.toLowerCase(), row]));
   const pricesByAddress = new Map(valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.assetPrices?.map((asset) => [asset.address.toLowerCase(), Number(asset.priceUsd)]) : []);
-  const weightingLabel = weights?.matchesMarketCap === undefined
-    ? valuation.state === "loading" ? "Loading weights…" : "Market-cap comparison unavailable"
-    : weights.matchesMarketCap ? "Market-cap weighted" : "Modified market-cap weighted";
+  const emptyFund = allocation.state === "ready" && allocation.rows.length > 0 && allocation.rows.every((asset) => asset.quantity === "0");
+  const weightingLabel = emptyFund
+    ? "Awaiting first deposit"
+    : weights?.matchesMarketCap === undefined
+      ? valuation.state === "loading" ? "Loading weights…" : "Pricing data unavailable"
+      : weights.matchesMarketCap ? "Market-cap weighted" : "Modified market-cap weighted";
   const [mode, setMode] = useState<"share" | "nav">("share");
   const [range, setRange] = useState<ValuationRange>("30d");
   const allPoints = valuation.history;
@@ -2305,13 +2308,14 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         )}
       </section>
       <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
-        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title="Compares each current allocation with its share of the constituents’ combined market cap. A match allows up to 0.01 percentage points difference per asset.">{weightingLabel}</span></div>
+        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title={emptyFund ? "Allocation percentages require fund holdings." : "Compares each current allocation with its share of the constituents’ combined market cap. A match allows up to 0.01 percentage points difference per asset."}>{weightingLabel}</span></div>
         {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
               <thead><tr><th>Asset</th><th>Amount</th><th>Allocation</th><th>Price</th></tr></thead>
               <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount">{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
             </table>
+            {emptyFund ? <p className="allocationEmptyNote">This fund has no holdings yet. Allocation percentages appear after the first deposit.</p> : null}
           </div>
         ) : (
           <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading amounts…" : "Could not load amounts."}</span></div>
@@ -2407,7 +2411,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailIdentity">
                 <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
                 <div>
-                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title" className="fundNameWithBadge">{vaultDetails ? <FundVerificationBadge chainId={chainId} assets={vaultDetails.assets} /> : null}<span className="fundNameText">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</span></h1></div>
+                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title" className="fundNameWithBadge"><span className="fundNameText">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</span>{vaultDetails ? <FundVerificationBadge chainId={chainId} assets={vaultDetails.assets} /> : null}</h1></div>
                   <div className="fundDetailMeta">
                     {routeAddress ? <a href={`${explorerUrl}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
                   </div>
@@ -2480,10 +2484,10 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
-                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><FundVerificationBadge chainId={chainId} assets={vault.assets} /><span className="fundNameText">{vault.name}</span></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
+                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
                 </div>
               ) : (
-                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><FundVerificationBadge chainId={chainId} assets={vault.assets} /><span className="fundNameText">{vault.name}</span></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
+                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
               ) : (
                 <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}
