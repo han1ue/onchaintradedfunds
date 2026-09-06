@@ -20,7 +20,7 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetAddresses).toMatchObject({
       otfToken: "0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab",
       launchManager: "0xdeAdc1F7542f404A8548AF28659771c1ebbFa840",
-      launchRouter: "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
+      launchRouter: "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
       teamVesting: "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
       buybackCollector: "0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC",
       merkleRewardsDistributor: "0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B",

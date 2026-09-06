@@ -148,7 +148,7 @@ no mainnet validation.
 ## Completed live operations
 
 The user approved the exact seed amounts and 0.002 ETH combined gas cap. All 31 seed transactions
-and 22 deployment/setup transactions succeeded. Actual gas spending was 0.00062198386 ETH: 0.00032661645 ETH for seeding and 0.00029536741 ETH for deployment.
+and 23 deployment/setup transactions succeeded. Actual gas spending was 0.00063491562 ETH: 0.00032661645 ETH for seeding and 0.00030829917 ETH for deployment.
 
 | Pool | Asset deposited | USDG deposited | Position | Mint transaction |
 | --- | ---: | ---: | ---: | --- |
@@ -161,7 +161,7 @@ and 22 deployment/setup transactions succeeded. Actual gas spending was 0.000621
 
 - OTF token: `0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0x29eb85efbf5e6c06d0c76f24f7eac4ad6c9539a40f462794a521d86082f30c4f).
 - Launch manager: `0xdeAdc1F7542f404A8548AF28659771c1ebbFa840`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2).
-- Launch router: `0xa4EdB977c64a178F91ab2d1d59f9EC207a375023`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a).
+- Launch router: `0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0xb41b85d8000f934e061ddf0e76416ec7832097ae4e1eb6c13d0bd879914a2b01).
 - Team vesting: `0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0x6e7d57a0e3427db159d5efff55abaa7e66e2bfea7173c8514594d6b4a51b7c12).
 - Buyback collector: `0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0x5e8a052485097271cab1bc95e62111eec65e8f1e27cf842e958a38f16f3924e6).
 - Merkle rewards distributor: `0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B`, [deployment receipt](https://explorer.testnet.chain.robinhood.com/tx/0xd27ec6c5537296a9b08317669abfbb8da86902c8eb660dbc48a15d4c4a076b2e).

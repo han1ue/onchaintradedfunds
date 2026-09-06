@@ -26,11 +26,11 @@
       "runtimeCodehash": "0x28bb23ed29e77cb6bd4fb5bfe9aca0b28c6da2c6140fab6578d66e76e50a1b2f"
     },
     "launchRouter": {
-      "address": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
-      "runtimeCodehash": "0x5ae8798d2936545b53144389e4dc4892e2847916204dabd3107cf83b6af4f332",
-      "transactionHash": "0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a",
-      "blockNumber": "113608757",
-      "gasUsed": "1219854"
+      "address": "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
+      "runtimeCodehash": "0x9d7895ba038458119bfa4005ed978ad2e491a087d9c7884d421c861b7d570ca9",
+      "transactionHash": "0xb41b85d8000f934e061ddf0e76416ec7832097ae4e1eb6c13d0bd879914a2b01",
+      "blockNumber": "113785620",
+      "gasUsed": "1293176"
     },
     "teamVesting": {
       "address": "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
@@ -164,7 +164,7 @@
     ],
     "uniswapV3Adapter": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
     "uniswapV4Adapter": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
-    "launchRouter": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
+    "launchRouter": "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
     "nativeEntryExitEnabled": true,
     "v4RouteData": "abi.encode((address,uint24,int24,address,bytes)[])",
     "maxV4HopsPerLeg": 3,
@@ -233,5 +233,6 @@
       "blockNumber": "113608681",
       "gasUsed": "4643378"
     }
-  }
+  },
+  "updatedAt": "2026-09-06T00:33:16.513Z"
 }

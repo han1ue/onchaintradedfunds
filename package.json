@@ -6,6 +6,7 @@
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:abi": "node scripts/generate-contract-abis.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
+    "contracts:deploy:robinhood-testnet-launch-router": "node scripts/deploy-robinhood-testnet-launch-router.mjs",
     "oracle:verify:robinhood-mainnet": "node scripts/verify-robinhood-mainnet-oracle.mjs",
     "rewards:tree": "node scripts/build-merkle-rewards.mjs",
     "docs:dev": "corepack pnpm --filter @onchaintradedfunds/docs dev",

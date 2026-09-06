@@ -1,6 +1,6 @@
 {
   "chainId": 46630,
-  "checkedAt": "2026-09-05T18:17:50.052Z",
+  "checkedAt": "2026-09-06T00:34:31.954Z",
   "result": "passed",
   "contracts": {
     "otfToken": {
@@ -14,9 +14,9 @@
       "transactionHash": "0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2"
     },
     "launchRouter": {
-      "address": "0xa4EdB977c64a178F91ab2d1d59f9EC207a375023",
-      "runtimeCodehash": "0x5ae8798d2936545b53144389e4dc4892e2847916204dabd3107cf83b6af4f332",
-      "transactionHash": "0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a"
+      "address": "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
+      "runtimeCodehash": "0x9d7895ba038458119bfa4005ed978ad2e491a087d9c7884d421c861b7d570ca9",
+      "transactionHash": "0xb41b85d8000f934e061ddf0e76416ec7832097ae4e1eb6c13d0bd879914a2b01"
     },
     "teamVesting": {
       "address": "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
@@ -118,6 +118,6 @@
   "previousRouter": "0x88a8c94f0eCb600ce980cAAEefD9eC68c7c95614",
   "revocationTransactionHash": "0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a",
   "seedGasSpendWei": "326616450000000",
-  "deploymentGasSpendWei": "295367410000000",
-  "totalGasSpendWei": "621983860000000"
+  "deploymentGasSpendWei": "308299170000000",
+  "totalGasSpendWei": "634915620000000"
 }

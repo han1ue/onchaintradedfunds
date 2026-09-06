@@ -5,7 +5,7 @@ description: Current protocol deployments and external dependencies.
 
 # Deployment addresses
 
-The application uses the September 5, 2026 deployment on Robinhood Chain Testnet. The repository records no protocol deployment on Mainnet.
+The application uses the September 5, 2026 deployment on Robinhood Chain Testnet, with the launch router updated on September 6. The repository records no protocol deployment on Mainnet.
 
 ## Robinhood Chain Testnet
 
@@ -15,7 +15,7 @@ Chain ID: 46630. Deployment completed at 2026-09-05T18:14:18.372Z.
 | --- | --- | --- |
 | OTF token | `0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x29eb85efbf5e6c06d0c76f24f7eac4ad6c9539a40f462794a521d86082f30c4f) |
 | Launch manager | `0xdeAdc1F7542f404A8548AF28659771c1ebbFa840` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2) |
-| Launch router | `0xa4EdB977c64a178F91ab2d1d59f9EC207a375023` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xef4bcccca1e46ba5f95ba06144ccbd62f2ee94e0707f1b3a87dca93951bd160a) |
+| Launch router | `0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xb41b85d8000f934e061ddf0e76416ec7832097ae4e1eb6c13d0bd879914a2b01) |
 | Team vesting | `0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x6e7d57a0e3427db159d5efff55abaa7e66e2bfea7173c8514594d6b4a51b7c12) |
 | Buyback collector | `0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x5e8a052485097271cab1bc95e62111eec65e8f1e27cf842e958a38f16f3924e6) |
 | Merkle rewards distributor | `0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xd27ec6c5537296a9b08317669abfbb8da86902c8eb660dbc48a15d4c4a076b2e) |
@@ -28,7 +28,7 @@ Chain ID: 46630. Deployment completed at 2026-09-05T18:14:18.372Z.
 
 The launch manager includes the liquidity-capacity correction and uses hook mask `0x2840`. The deployed V4 adapter and collector use the testnet Universal Router's four-field tuple and clear ERC-20 and Permit2 allowances after execution. Current source targets a five-field tuple; see [deployment controls](/security#deployment-controls) before redeploying.
 
-The listed launch router does not include the new `sellOtfForEth` entry point. Enabling ETH output during launch requires deploying the updated router with the existing launch manager address and updating the application's router address and deployment records. The token and pool can remain in place.
+The launch router includes `sellOtfForEth`, which unwraps the current sale's WETH output and pays native ETH to the specified recipient.
 
 The previous V3 adapter was [revoked](https://explorer.testnet.chain.robinhood.com/tx/0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a). Old launch positions remain onchain.
 
