@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountedRewardWeightOtf,
   cappedRewardWeightOtf,
   coinGeckoEthUsd,
   estimatedRewardsApy,
@@ -11,7 +12,6 @@ import {
   OTF_REWARD_WEIGHT_CAP,
   weeklyEmissionBucketsOtf,
   weeklyEmissionOtf,
-  ZERO_AUM_BASELINE_USD,
 } from "./incentive-apy";
 
 describe("OTF incentive APY model", () => {
@@ -51,17 +51,52 @@ describe("OTF incentive APY model", () => {
     expect(cappedRewardWeightOtf(-1)).toBeUndefined();
   });
 
-  it("uses the depositor bucket and a $100 denominator only when fund AUM is zero", () => {
-    expect(estimatedRewardsApy({ weeklyDepositorEmissionOtf: 100, otfPriceUsd: 2, fundAumUsd: 0 })).toEqual({
-      percent: 10_400,
-      denominatorUsd: ZERO_AUM_BASELINE_USD,
-      usesZeroAumBaseline: true,
-    });
-    expect(estimatedRewardsApy({ weeklyDepositorEmissionOtf: 100, otfPriceUsd: 2, fundAumUsd: 50 })).toEqual({
-      percent: 20_800,
-      denominatorUsd: 50,
-      usesZeroAumBaseline: false,
-    });
+  it("weights only the protocol OTF constituent's accounted balance", () => {
+    expect(accountedRewardWeightOtf(["0xAb", "0xCd"], [3n * 10n ** 18n, 100n * 10n ** 18n], "0xaB")).toBe(3);
+    expect(accountedRewardWeightOtf(["0xCd"], [100n * 10n ** 18n], "0xAb")).toBe(0);
+    expect(accountedRewardWeightOtf(["0xAb"], [20_000_000n * 10n ** 18n], "0xAb")).toBe(10_000_000);
+    expect(accountedRewardWeightOtf(["0xAb"], [0n], "0xAb")).toBe(0);
+    expect(accountedRewardWeightOtf(["0xAb"], [], "0xAb")).toBeUndefined();
+    expect(accountedRewardWeightOtf(["0xAb"], [-1n], "0xAb")).toBeUndefined();
+  });
+
+  const apyInput = {
+    weeklyDepositorEmissionOtf: 100,
+    otfPriceUsd: 2,
+    fundAumUsd: 50,
+    fundRewardWeightOtf: 5_000_000,
+    totalRewardWeightOtf: 25_000_000,
+  };
+
+  it("allocates 20%, 40%, 40%, and 0% to funds holding 5M, 10M, 20M, and no OTF", () => {
+    const weights = [5_000_000, 10_000_000, 20_000_000, 0].map((balance) => cappedRewardWeightOtf(balance)!);
+    const totalRewardWeightOtf = weights.reduce((total, weight) => total + weight, 0);
+    const apys = weights.map((fundRewardWeightOtf) => estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf, totalRewardWeightOtf })!.percent);
+    expect(apys).toEqual([4160, 8320, 8320, 0]);
+    expect(apys.reduce((total, apy) => total + apy, 0)).toBe(20_800);
+  });
+
+  it("returns zero APY at zero NAV without a calculation baseline", () => {
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0 })).toEqual({ percent: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });
+  });
+
+  it("returns zero APY for no OTF weight, including an entirely empty directory", () => {
+    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0 })).toEqual({ percent: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0, totalRewardWeightOtf: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });
+  });
+
+  it("uses actual positive NAV even below $100", () => {
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 1 })).toEqual({ percent: 208_000 });
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 50 })).toEqual({ percent: 4160 });
+  });
+
+  it("does not invent APY from missing prices or invalid reward totals", () => {
+    expect(estimatedRewardsApy({ ...apyInput, otfPriceUsd: NaN })).toBeUndefined();
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: NaN })).toBeUndefined();
+    expect(estimatedRewardsApy({ ...apyInput, totalRewardWeightOtf: 0 })).toBeUndefined();
+    expect(estimatedRewardsApy({ ...apyInput, totalRewardWeightOtf: 1 })).toBeUndefined();
+    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 20_000_000 })).toBeUndefined();
   });
 
   it("parses CoinGecko's Ethereum USD response", () => {

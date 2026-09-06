@@ -174,6 +174,91 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         _assertRouterClean();
     }
 
+    function testFuzzGeneratedRoutesAndAtomicMinimum(uint256 seed, uint8 hopsSeed, bool allBalance)
+        public
+    {
+        uint256 hops = 1 + hopsSeed % 3;
+        uint256 amount = bound(seed, 1, 1 ether);
+        address[2] memory middle =
+            seed & 1 == 0 ? [address(assetA), address(assetB)] : [address(assetB), address(assetA)];
+        PathKey[] memory path = new PathKey[](hops);
+        address current = address(input);
+        for (uint256 h; h < hops; h++) {
+            address next = h + 1 == hops ? address(assetC) : middle[h];
+            _createV4Pool(current, next);
+            path[h] = _hop(next);
+            current = next;
+        }
+        _createV4Pool(address(input), address(assetD));
+        assetC.mint(address(universalRouter), amount);
+        assetD.mint(address(universalRouter), amount);
+        uint256 donation = 7 + seed % 101;
+        input.mint(address(router), donation);
+        assetC.mint(address(router), donation);
+        input.mint(address(v4Adapter), donation);
+        assetC.mint(address(v4Adapter), donation);
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = SwapLeg(
+            address(v4Adapter), address(input), address(assetC), amount, amount, abi.encode(path)
+        );
+        legs[1] = _v4Leg(
+            address(input), address(assetD), allBalance ? type(uint256).max : amount, amount + 1
+        );
+        uint256 beforeUser = input.balanceOf(ALICE);
+        uint256 beforeVenue = input.balanceOf(address(universalRouter));
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("SLIPPAGE"));
+        router.mintFromToken(_mintRequest(2 * amount, amount), legs);
+        assertEq(input.balanceOf(ALICE), beforeUser);
+        assertEq(input.balanceOf(address(universalRouter)), beforeVenue);
+        assertEq(input.balanceOf(address(router)), donation);
+        assertEq(assetC.balanceOf(address(router)), donation);
+        assertEq(targetVault.balanceOf(ALICE), 0);
+        assertEq(input.allowance(address(v4Adapter), address(permit2)), 0);
+        legs[1].minAmountOut = amount;
+        vm.prank(ALICE);
+        (uint256 minted,,) = router.mintFromToken(_mintRequest(2 * amount, amount), legs);
+        assertEq(minted, amount);
+        assertEq(input.balanceOf(ALICE), beforeUser - 2 * amount);
+        assertEq(input.balanceOf(address(universalRouter)), beforeVenue + 2 * amount);
+        assertEq(input.balanceOf(address(router)), donation);
+        assertEq(assetC.balanceOf(address(router)), donation);
+        assertEq(input.balanceOf(address(v4Adapter)), donation);
+        assertEq(assetC.balanceOf(address(v4Adapter)), donation);
+        assertEq(input.allowance(address(v4Adapter), address(permit2)), 0);
+        (uint160 allowanceAmount,,) =
+            permit2.allowance(address(v4Adapter), address(input), address(universalRouter));
+        assertEq(allowanceAmount, 0);
+    }
+
+    function testFuzzV4InputBoundaryAndRollback(uint128 seed) public {
+        uint256 amount = seed == 0 ? 1 : uint256(seed);
+        _createV4Pool(address(input), address(assetC));
+        input.mint(address(v4Adapter), amount + 7);
+        assetC.mint(address(universalRouter), amount);
+        uint256 beforeOut = assetC.balanceOf(address(router));
+        vm.prank(address(router));
+        vm.expectRevert(UniswapV4Adapter.InvalidAmount.selector);
+        v4Adapter.executeSwap(
+            address(input),
+            address(assetC),
+            uint256(type(uint128).max) + 1,
+            1,
+            _path(address(assetC))
+        );
+        assertEq(input.balanceOf(address(v4Adapter)), amount + 7);
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(input), address(assetC), amount, amount, _path(address(assetC))
+            ),
+            amount
+        );
+        assertEq(input.balanceOf(address(v4Adapter)), 7);
+        assertEq(assetC.balanceOf(address(router)), beforeOut + amount);
+        assertEq(input.allowance(address(v4Adapter), address(permit2)), 0);
+    }
+
     function _v4Leg(address tokenIn, address tokenOut, uint256 amountIn, uint256 minimum)
         private
         view

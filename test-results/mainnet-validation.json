@@ -1,0 +1,166 @@
+{
+  "chainId": 4663,
+  "blockNumber": "56320801",
+  "blockHash": "0x6a95eb15b47ffd3bf1ac096d77c94f9678b385cef344975771e14ba243b8c569",
+  "dependencies": {
+    "uniswapV3Factory": {
+      "address": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+      "codehash": "0xec72b1abd1f2faee020cfea9c646bd8994f9fb389054f6e574f103a895091739"
+    },
+    "uniswapV3SwapRouter02": {
+      "address": "0xcaf681a66d020601342297493863e78c959e5cb2",
+      "codehash": "0x6f36c378e272c6324c48f045182bcb54bd8ad654cf9ebd42e8893d52c4cb25dc"
+    },
+    "uniswapV4PoolManager": {
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+      "codehash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+    },
+    "uniswapV4StateView": {
+      "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+      "codehash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+    },
+    "uniswapV4PositionManager": {
+      "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+      "codehash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2"
+    },
+    "uniswapUniversalRouter": {
+      "address": "0x8876789976decbfcbbbe364623c63652db8c0904",
+      "codehash": "0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde"
+    },
+    "permit2": {
+      "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "codehash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca"
+    },
+    "weth": {
+      "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "codehash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+    },
+    "ethUsdOracle": {
+      "address": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+      "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2",
+      "aggregator": {
+        "address": "0x6091E64eb7138EEF066a80FD3A0d7427B91f2721",
+        "codehash": "0x8cbea1fd25321771256158fd6beb8689fe60cd36230b22c65e77c2a03c5972fd"
+      },
+      "decimals": 8,
+      "heartbeatSeconds": 86400,
+      "maxAgeSeconds": 90000
+    },
+    "ethUsdAggregator": {
+      "address": "0x6091E64eb7138EEF066a80FD3A0d7427B91f2721",
+      "codehash": "0x8cbea1fd25321771256158fd6beb8689fe60cd36230b22c65e77c2a03c5972fd"
+    },
+    "uniswapV3Quoter": {
+      "address": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+      "codehash": "0x3db0868d945e9304c9bc6a8b2181948109ea617647142f3c4083e14393496a28"
+    },
+    "usdg": {
+      "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "codehash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6",
+      "decimals": 6
+    },
+    "wethUsdgPool": {
+      "address": "0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca",
+      "codehash": "0x3298b5dd4e6f115074c526a55ad05a36fd73a0034ac22ec6cbaab32cc9c1e8d2",
+      "fee": 100
+    },
+    "stock0": {
+      "symbol": "TSLA",
+      "address": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
+        "codehash": "0x3051864bf6341e841e6ee2a1bd7f5e5fe03b8f5ff633e02e00c6d13923b8ec19",
+        "fee": 3000
+      },
+      "referenceLiquidity": "3971929454723778943"
+    },
+    "stock0UsdgPool": {
+      "address": "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
+      "codehash": "0x3051864bf6341e841e6ee2a1bd7f5e5fe03b8f5ff633e02e00c6d13923b8ec19",
+      "fee": 3000
+    },
+    "stock1": {
+      "symbol": "AMZN",
+      "address": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x8AC92DA74AB5F3b1d024Dc1943Ad7e15Dc4179Ef",
+        "codehash": "0x191671d26bc1c6db2d6313ed04651a5c23d04c93efdad353a8dd6ff0adf2692a",
+        "fee": 3000
+      },
+      "referenceLiquidity": "3353260990202955010"
+    },
+    "stock1UsdgPool": {
+      "address": "0x8AC92DA74AB5F3b1d024Dc1943Ad7e15Dc4179Ef",
+      "codehash": "0x191671d26bc1c6db2d6313ed04651a5c23d04c93efdad353a8dd6ff0adf2692a",
+      "fee": 3000
+    },
+    "stock2": {
+      "symbol": "PLTR",
+      "address": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x851680416A4f4E1c463d45171d61ACDdBc8554c0",
+        "codehash": "0x030660d256a69c9dadce0d462caaf45c6a0740934771e822864fb867c2bb8253",
+        "fee": 3000
+      },
+      "referenceLiquidity": "625459681060145691"
+    },
+    "stock2UsdgPool": {
+      "address": "0x851680416A4f4E1c463d45171d61ACDdBc8554c0",
+      "codehash": "0x030660d256a69c9dadce0d462caaf45c6a0740934771e822864fb867c2bb8253",
+      "fee": 3000
+    },
+    "stock3": {
+      "symbol": "NFLX",
+      "address": "0xE0444EF8BF4eD74f74FD73686e2ddF4C1c5591E8",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x59895C0302F41aEaa129D2fa2442CEc01E7eF45E",
+        "codehash": "0xe8cab93914e070d6519a74a1e8bf313a03cbb439d33f6388e9d1b8912b48faca",
+        "fee": 3000
+      },
+      "referenceLiquidity": "1488644937544000889"
+    },
+    "stock3UsdgPool": {
+      "address": "0x59895C0302F41aEaa129D2fa2442CEc01E7eF45E",
+      "codehash": "0xe8cab93914e070d6519a74a1e8bf313a03cbb439d33f6388e9d1b8912b48faca",
+      "fee": 3000
+    },
+    "stock4": {
+      "symbol": "AMD",
+      "address": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+      "codehash": "0x6c1fdd40002dcb440c7fff6a84171404d279ccb057803b65826f7546acd65630",
+      "decimals": 18,
+      "pool": {
+        "address": "0x48D284A2A4d3DC1b3Da08231Fe44317e7e7Aa51f",
+        "codehash": "0x1c21637dafc804de5eab9be901cd75196a18796f37a69693ec6d7d8bce2e6a3c",
+        "fee": 3000
+      },
+      "referenceLiquidity": "398513929649742967"
+    },
+    "stock4UsdgPool": {
+      "address": "0x48D284A2A4d3DC1b3Da08231Fe44317e7e7Aa51f",
+      "codehash": "0x1c21637dafc804de5eab9be901cd75196a18796f37a69693ec6d7d8bce2e6a3c",
+      "fee": 3000
+    }
+  },
+  "result": "passed",
+  "rehearsal": {
+    "accountMode": "funded-local-rehearsal-accounts",
+    "oracleMaxAgeSeconds": 90000,
+    "stockSymbols": [
+      "TSLA",
+      "AMZN",
+      "PLTR",
+      "NFLX",
+      "AMD"
+    ],
+    "productionRolesValidated": false
+  }
+}

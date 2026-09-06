@@ -4,12 +4,15 @@ on:
   push:
     paths:
       - ".github/workflows/solidity-security.yml"
+      - ".github/workflows/solidity-campaign.yml"
       - ".solhint.json"
       - "contracts/**"
       - "app/src/config/robinhood-mainnet.json"
       - "package.json"
       - "pnpm-lock.yaml"
       - "scripts/check-contract-coverage.mjs"
+      - "scripts/check-invariant-sensitivity.mjs"
+      - "scripts/run-solidity-campaign.mjs"
       - "scripts/check-contract-security.mjs"
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
@@ -22,12 +25,15 @@ on:
   pull_request:
     paths:
       - ".github/workflows/solidity-security.yml"
+      - ".github/workflows/solidity-campaign.yml"
       - ".solhint.json"
       - "contracts/**"
       - "app/src/config/robinhood-mainnet.json"
       - "package.json"
       - "pnpm-lock.yaml"
       - "scripts/check-contract-coverage.mjs"
+      - "scripts/check-invariant-sensitivity.mjs"
+      - "scripts/run-solidity-campaign.mjs"
       - "scripts/check-contract-security.mjs"
       - "scripts/compile-contracts.mjs"
       - "scripts/deploy-robinhood-testnet.mjs"
@@ -138,23 +144,20 @@ jobs:
           --fuzz-seed "$CI_FUZZ_SEED"
           --summary
 
-      - name: Run 10,000-case fuzz campaign
-        working-directory: contracts
-        run: >-
-          forge test
-          --fuzz-runs 10000
-          --fuzz-seed "$CI_FUZZ_SEED"
-          --summary
-
-      - name: Run 512 x 128 invariant campaign
-        working-directory: contracts
-        env:
-          FOUNDRY_INVARIANT_RUNS: "512"
-          FOUNDRY_INVARIANT_DEPTH: "128"
-        run: >-
-          forge test
-          --fuzz-seed "$CI_FUZZ_SEED"
-          --summary
+      - name: Verify invariant failure sensitivity in both profiles
+        run: node scripts/check-invariant-sensitivity.mjs
 
       - name: Generate advisory production coverage summary
         run: corepack pnpm contracts:coverage
+
+      - name: Preserve coverage and sensitivity evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: solidity-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/invariant-sensitivity/
+            test-results/solidity-coverage.lcov
+            contracts/cache/invariant/
+            contracts/cache/fuzz/
+          retention-days: 30

@@ -1,11 +1,11 @@
 [
   {
     "chainId": 46630,
-    "tokenAddress": "0xFcCd7bd300d7Fe0eC27E9FfB34714Ad865d3b78C",
+    "tokenAddress": "0xE59E6BF7147aE8416f858976dDe232a0C157FDcF",
     "approvedPricingConfigs": [
       {
         "source": "otf-launch-manager",
-        "feedAddress": "0x494b5C992c9EDf17Aa528A9c1e09eEF1d681a840",
+        "feedAddress": "0xdA7a65Cb40614757E5775e908a3F4362166Ca840",
         "maxStaleness": 90000
       }
     ]

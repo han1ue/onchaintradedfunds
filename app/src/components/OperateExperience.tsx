@@ -21,6 +21,7 @@ import {
   ExternalLink,
   FilePlus2,
   History,
+  Info,
   LayoutGrid,
   List,
   LoaderCircle,
@@ -48,7 +49,8 @@ import {
   robinhoodTestnetV4,
 } from "@/lib/deployment";
 import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
-import { estimatedRewardsApy } from "@/lib/incentive-apy";
+import { accountedRewardWeightOtf, estimatedRewardsApy } from "@/lib/incentive-apy";
+import { FundRewardsDialog } from "./FundRewardsDialog";
 import {
   bestQueriedQuote,
   assetHasExecutableMetadata,
@@ -94,7 +96,7 @@ import {
   type FeeSettlementRoutePreference,
   type FeeSettlementRoutes,
 } from "@/lib/fee-settlement";
-import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
+import { readVaultSummary, useFactoryVaults, type FactoryVaultDirectoryState, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
   formatStoredPercentage,
@@ -1893,15 +1895,20 @@ type FundValuation = {
   usesBootstrapNav: boolean;
 };
 
-type DirectoryAum = { state: "loading" | "ready" | "unavailable"; value?: number };
-
-type RewardsApy = {
+type DirectoryAum = {
   state: "loading" | "ready" | "unavailable";
-  percent?: number;
+  value?: number;
+  byFund?: Map<string, number>;
+  rewardWeights?: Map<string, number>;
+  totalRewardWeightOtf?: number;
+};
+
+type IncentivePricing = {
+  state: "loading" | "ready" | "unavailable";
+  otfPriceUsd?: number;
   weeklyEmissionOtf?: number;
   weeklyDepositorEmissionOtf?: number;
   weeklyCreatorEmissionOtf?: number;
-  usesZeroAumBaseline: boolean;
   week?: number;
   ended: boolean;
 };
@@ -2023,79 +2030,85 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
   return valuation;
 }
 
-function useDirectoryAum(vaults: FactoryVaultSummary[], enabled: boolean): DirectoryAum {
+function useDirectoryAum(vaults: FactoryVaultSummary[], directoryState: FactoryVaultDirectoryState, includeNav: boolean): DirectoryAum {
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId });
   const [directoryAum, setDirectoryAum] = useState<DirectoryAum>({ state: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    if (!enabled || !publicClient || chainId !== robinhoodChainTestnet.id) {
-      setDirectoryAum({ state: enabled ? "unavailable" : "loading" });
+    const otfToken = robinhoodTestnetAddresses.otfToken;
+    if (directoryState !== "ready" || !publicClient || chainId !== robinhoodChainTestnet.id || !otfToken) {
+      setDirectoryAum({ state: directoryState === "loading" ? "loading" : "unavailable" });
       return;
     }
     if (!vaults.length) {
-      setDirectoryAum({ state: "ready", value: 0 });
+      setDirectoryAum({ state: "ready", value: 0, byFund: new Map(), rewardWeights: new Map(), totalRewardWeightOtf: 0 });
       return;
     }
     setDirectoryAum({ state: "loading" });
     const controller = new AbortController();
-    const assetRequest = fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+    const assetRequest = includeNav ? fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
       return response.json() as Promise<{ data?: unknown[] }>;
-    });
-    void Promise.all([
-      assetRequest,
-      Promise.all(vaults.map((vault) => publicClient.readContract({
+    }) : Promise.resolve(undefined);
+    const balancesRequest = Promise.all(vaults.map((vault) => !includeNav && !vault.assets.some((asset) => asset.toLowerCase() === otfToken.toLowerCase()) ? Promise.resolve([]) : publicClient.readContract({
         address: vault.address,
         abi: managedOtfVaultAbi,
         functionName: "accountedBalances",
-      }))),
-    ]).then(([payload, balancesByVault]) => {
+      }))).then((balancesByVault) => {
+      const rewardWeights = new Map<string, number>();
+      let totalRewardWeightOtf = 0;
+      vaults.forEach((vault, index) => {
+        const weight = accountedRewardWeightOtf(vault.assets, balancesByVault[index], otfToken);
+        if (weight === undefined) throw new Error("REWARD_BALANCES_INVALID");
+        rewardWeights.set(vault.address.toLowerCase(), weight);
+        totalRewardWeightOtf += weight;
+      });
+      if (!cancelled) setDirectoryAum((current) => ({ ...current, rewardWeights, totalRewardWeightOtf }));
+      return { balancesByVault, rewardWeights, totalRewardWeightOtf };
+    });
+    void Promise.all([assetRequest, balancesRequest]).then(([payload, { balancesByVault, rewardWeights, totalRewardWeightOtf }]) => {
+      if (!payload) return { rewardWeights, totalRewardWeightOtf };
       const prices = (payload.data ?? []).flatMap((value) => {
         const parsed = valuationAsset(value);
         return parsed ? [parsed] : [];
       });
       const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
+      const byFund = new Map<string, number>();
       const totalAumUsdWad = vaults.reduce((directoryTotal, vault, vaultIndex) => {
         const balances = balancesByVault[vaultIndex];
         if (!balances || balances.length !== vault.assets.length) throw new Error("VALUATION_BALANCES_INVALID");
-        return directoryTotal + balances.reduce((fundTotal, quantity, assetIndex) => {
+        const fundAumUsdWad = balances.reduce((fundTotal, quantity, assetIndex) => {
           const asset = priceByAddress.get(vault.assets[assetIndex]!.toLowerCase());
           if (!asset) throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
           const priceUsdWad = parseFixedDecimal(asset.priceUsd, 18);
           if (!priceUsdWad) throw new Error("VALUATION_PRICE_INVALID");
           return fundTotal + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
         }, 0n);
+        byFund.set(vault.address.toLowerCase(), Number(formatUnits(fundAumUsdWad, 18)));
+        return directoryTotal + fundAumUsdWad;
       }, 0n);
-      return Number(formatUnits(totalAumUsdWad, 18));
-    }).then((value) => {
-      if (!cancelled) setDirectoryAum({ state: "ready", value });
+      return { value: Number(formatUnits(totalAumUsdWad, 18)), byFund, rewardWeights, totalRewardWeightOtf };
+    }).then((result) => {
+      if (!cancelled) setDirectoryAum({ state: "ready", ...result });
     }).catch((error) => {
       if (!cancelled && !(error instanceof Error && error.name === "AbortError")) {
-        setDirectoryAum({ state: "unavailable" });
+        setDirectoryAum((current) => ({ ...current, state: "unavailable" }));
       }
     });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [chainId, enabled, publicClient, vaults]);
+  }, [chainId, directoryState, includeNav, publicClient, vaults]);
 
   return directoryAum;
 }
 
-function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): RewardsApy {
+function useIncentivePricing(): IncentivePricing {
   const chainId = useChainId();
-  const [pricing, setPricing] = useState<{
-    state: "loading" | "ready" | "unavailable";
-    week?: number;
-    weeklyEmissionOtf?: number;
-    weeklyDepositorEmissionOtf?: number;
-    weeklyCreatorEmissionOtf?: number;
-    otfPriceUsd?: number;
-    ended: boolean;
-  }>({ state: "loading", ended: false });
+  const [pricing, setPricing] = useState<IncentivePricing>({ state: "loading", ended: false });
 
   useEffect(() => {
     if (chainId !== robinhoodChainTestnet.id) {
@@ -2107,7 +2120,7 @@ function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): Rew
     const load = () => {
       controller?.abort();
       controller = new AbortController();
-      void fetch(`/api/incentive-apy?chainId=${chainId}&includePrice=${includeApy}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      void fetch(`/api/incentive-apy?chainId=${chainId}&includePrice=true`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
         if (!response.ok) throw new Error("INCENTIVE_APY_UNAVAILABLE");
         return response.json() as Promise<Record<string, unknown>>;
       }).then((payload) => {
@@ -2115,7 +2128,7 @@ function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): Rew
           && typeof payload.weeklyEmissionOtf === "number" && Number.isFinite(payload.weeklyEmissionOtf) && payload.weeklyEmissionOtf >= 0
           && typeof payload.weeklyDepositorEmissionOtf === "number" && Number.isFinite(payload.weeklyDepositorEmissionOtf) && payload.weeklyDepositorEmissionOtf >= 0
           && typeof payload.weeklyCreatorEmissionOtf === "number" && Number.isFinite(payload.weeklyCreatorEmissionOtf) && payload.weeklyCreatorEmissionOtf >= 0
-          && (!includeApy || (typeof payload.otfPriceUsd === "number" && Number.isFinite(payload.otfPriceUsd) && payload.otfPriceUsd > 0))
+          && (payload.otfPriceUsd === undefined || (typeof payload.otfPriceUsd === "number" && Number.isFinite(payload.otfPriceUsd) && payload.otfPriceUsd > 0))
           && typeof payload.ended === "boolean";
         if (!valid) throw new Error("INCENTIVE_APY_INVALID");
         if (!cancelled) {
@@ -2125,7 +2138,7 @@ function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): Rew
             weeklyEmissionOtf: payload.weeklyEmissionOtf as number,
             weeklyDepositorEmissionOtf: payload.weeklyDepositorEmissionOtf as number,
             weeklyCreatorEmissionOtf: payload.weeklyCreatorEmissionOtf as number,
-            otfPriceUsd: payload.otfPriceUsd as number,
+            otfPriceUsd: payload.otfPriceUsd as number | undefined,
             ended: payload.ended as boolean,
           });
         }
@@ -2143,29 +2156,57 @@ function useRewardsApy(fundAumUsd: number | undefined, includeApy: boolean): Rew
       window.clearInterval(refresh);
       controller?.abort();
     };
-  }, [chainId, includeApy]);
+  }, [chainId]);
 
-  if (pricing.state !== "ready" || (includeApy && fundAumUsd === undefined)) {
-    return { state: pricing.state === "unavailable" ? "unavailable" : "loading", usesZeroAumBaseline: false, ended: pricing.ended };
-  }
-  const estimate = includeApy ? estimatedRewardsApy({
+  return pricing;
+}
+
+function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
+  pricing: IncentivePricing;
+  valuationState: FundValuation["state"];
+  aumUsd?: number;
+  fund?: FactoryVaultSummary;
+  directory: DirectoryAum;
+}) {
+  const [explanationOpen, setExplanationOpen] = useState(false);
+  const otfToken = robinhoodTestnetAddresses.otfToken;
+  const hasOtf = fund && otfToken ? fund.assets.some((asset) => asset.toLowerCase() === otfToken.toLowerCase()) : undefined;
+  const fundRewardWeightOtf = fund ? directory.rewardWeights?.get(fund.address.toLowerCase()) : undefined;
+  const zeroApy = hasOtf === false || fund?.totalSupply === 0n || aumUsd === 0 || fundRewardWeightOtf === 0;
+  const unavailable = pricing.state === "unavailable" || valuationState === "unavailable" || directory.state === "unavailable";
+  const loading = !zeroApy && !unavailable && (pricing.state === "loading" || valuationState === "loading" || directory.state === "loading");
+  const estimate = zeroApy ? { percent: 0 } : !unavailable && !loading && aumUsd !== undefined ? estimatedRewardsApy({
     weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf!,
     otfPriceUsd: pricing.otfPriceUsd!,
-    fundAumUsd: fundAumUsd!,
+    fundAumUsd: aumUsd,
+    fundRewardWeightOtf: fundRewardWeightOtf!,
+    totalRewardWeightOtf: directory.totalRewardWeightOtf!,
   }) : undefined;
-  if (includeApy && !estimate) {
-    return { state: "unavailable", usesZeroAumBaseline: false, ended: pricing.ended };
-  }
-  return {
-    state: "ready",
-    percent: estimate?.percent,
-    weeklyEmissionOtf: pricing.weeklyEmissionOtf,
-    weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf,
-    weeklyCreatorEmissionOtf: pricing.weeklyCreatorEmissionOtf,
-    usesZeroAumBaseline: estimate?.usesZeroAumBaseline ?? false,
-    week: pricing.week,
-    ended: pricing.ended,
-  };
+  const text = loading ? "…" : formatApy(estimate?.percent);
+  const label = estimate
+    ? `Estimated depositor rewards APY ${text}, paid in $OTF${pricing.week ? `, emission week ${pricing.week}` : ""}`
+    : `Estimated depositor rewards APY ${loading ? "loading" : "unavailable"}`;
+  return (
+    <span className="fundRewardsValue">
+      <span aria-label={label} title={label}>{text}</span>
+      <button className="rewardsInfoButton" type="button" aria-label={`Explain rewards APY for ${fund?.name ?? "this fund"}`} aria-haspopup="dialog" disabled={!fund} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setExplanationOpen(true); }} onKeyDown={(event) => event.stopPropagation()}><Info size={14} aria-hidden="true" /></button>
+      {explanationOpen && fund ? <FundRewardsDialog
+        fundName={fund.name}
+        symbol={fund.symbol}
+        apyText={text}
+        hasOtf={hasOtf}
+        zeroNav={fund.totalSupply === 0n || aumUsd === 0}
+        loading={loading}
+        navUsd={aumUsd}
+        otfPriceUsd={pricing.otfPriceUsd}
+        fundWeightOtf={fundRewardWeightOtf}
+        totalWeightOtf={directory.totalRewardWeightOtf}
+        weeklyDepositorEmissionOtf={pricing.weeklyDepositorEmissionOtf}
+        week={pricing.week}
+        onClose={() => setExplanationOpen(false)}
+      /> : null}
+    </span>
+  );
 }
 
 function formatUsd(value: number | undefined, maximumFractionDigits = 2): string {
@@ -2344,16 +2385,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
-  const directoryAum = useDirectoryAum(vaults, !detail && factoryDirectoryState === "ready");
+  const directoryAum = useDirectoryAum(vaults, factoryDirectoryState, !detail);
   const fundAumUsd = valuation.state === "ready" ? valuation.current?.aumUsd : undefined;
-  const rewardsApy = useRewardsApy(fundAumUsd, detail);
-  const rewardsApyUnavailable = detail && valuation.state === "unavailable";
-  const rewardsApyText = rewardsApyUnavailable ? "—" : rewardsApy.state === "loading" ? "…" : formatApy(rewardsApy.percent);
-  const rewardsApyLabel = rewardsApyUnavailable
-    ? "Estimated depositor rewards APY unavailable"
-    : rewardsApy.state === "ready"
-    ? `Estimated depositor rewards APY for this fund ${rewardsApyText}, emission week ${rewardsApy.week}${rewardsApy.usesZeroAumBaseline ? ", modeled with a $100 fund AUM baseline" : ""}`
-    : rewardsApy.state === "loading" ? "Estimated depositor rewards APY loading" : "Estimated depositor rewards APY unavailable";
+  const rewardsApy = useIncentivePricing();
   const weeklyEmissionText = rewardsApy.state === "ready"
     ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} $OTF`
     : rewardsApy.state === "loading" ? "…" : "—";
@@ -2418,8 +2452,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               <div className="fundDetailMetrics" aria-label="Fund metrics">
                 <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
-                <div><span>AUM</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-                <div><span>Est. rewards APY</span><strong aria-label={rewardsApyLabel} title={rewardsApyLabel}>{rewardsApyText}</strong></div>
+                <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
+                <div><span>Est. rewards APY</span><strong className="fundRewardsMetric"><FundRewardsApy pricing={rewardsApy} valuationState={valuation.state} aumUsd={fundAumUsd} fund={vaultDetails} directory={directoryAum} /></strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>
             </div>
@@ -2483,10 +2517,40 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
-                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
+                  <table className="directoryTable" aria-label="Onchain traded funds">
+                    <thead><tr><th>OTF</th><th>NAV</th><th title="Estimated annualized rewards paid in $OTF">Rewards APY</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead>
+                    <tbody>{filteredVaults.map((vault) => {
+                      const href = `/funds/${vault.address}`;
+                      const aumUsd = directoryAum.byFund?.get(vault.address.toLowerCase());
+                      return (
+                        <tr className="clickableDirectoryRow" key={vault.address} onClick={(event) => { if (!(event.target as Element).closest("a, button")) router.push(href); }}>
+                          <td><Link className="directoryFundLink" href={href}><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></Link></td>
+                          <td data-label="NAV">{directoryAum.state === "loading" ? "…" : formatUsd(aumUsd)}</td>
+                          <td data-label="Rewards APY"><FundRewardsApy pricing={rewardsApy} valuationState={directoryAum.state} aumUsd={aumUsd} fund={vault} directory={directoryAum} /></td>
+                          <td data-label="Assets">{vault.assetCount}</td>
+                          <td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td>
+                          <td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
                 </div>
               ) : (
-                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
+                <div className="directoryFundCards">{filteredVaults.map((vault) => {
+                  const aumUsd = directoryAum.byFund?.get(vault.address.toLowerCase());
+                  return (
+                    <div className="directoryFundCard" key={vault.address}>
+                      <Link className="directoryFundCardLink" href={`/funds/${vault.address}`}><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></Link>
+                      <dl>
+                        <div><dt>NAV</dt><dd>{directoryAum.state === "loading" ? "…" : formatUsd(aumUsd)}</dd></div>
+                        <div><dt>Rewards APY</dt><dd><FundRewardsApy pricing={rewardsApy} valuationState={directoryAum.state} aumUsd={aumUsd} fund={vault} directory={directoryAum} /></dd></div>
+                        <div><dt>Assets</dt><dd>{vault.assetCount}</dd></div>
+                        <div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div>
+                        <div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div>
+                      </dl>
+                    </div>
+                  );
+                })}</div>
               ) : (
                 <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}

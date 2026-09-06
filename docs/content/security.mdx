@@ -25,7 +25,7 @@ The fund creator can permanently shut down their vault at any time. Anyone can a
 
 ### Reward-root publisher
 
-The publisher calculates rewards offchain and publishes each address's total allocation to date. It must follow the [rewards policy](/token-and-fee-incentives#cumulative-rewards-and-incentive-emissions): 208 weeks, 650 million OTF for depositors, 50 million for creators, and a 10-million-OTF cap on each participant's weight.
+The publisher calculates rewards offchain and publishes each address's total allocation to date. It must follow the [rewards policy](/token-and-fee-incentives#cumulative-rewards-and-incentive-emissions): 208 weeks, 650 million OTF for depositors, 50 million for creators, and a 10-million-OTF cap on each fund's accounted OTF weight. Funds without accounted OTF receive no allocation.
 
 The contract does not enforce this policy. A publisher can allocate the distributor's full remaining balance at any time. Proof verification and claim accounting prevent invalid proofs and duplicate claims, but cannot detect an incorrect or early allocation.
 

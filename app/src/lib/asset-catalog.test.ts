@@ -55,7 +55,7 @@ describe("asset catalogs", () => {
     const verifiedTestnetAddresses = verifiedAssets
       .filter((asset) => asset.chainId === 46630)
       .map((asset) => asset.tokenAddress.toLowerCase());
-    expect(verifiedTestnetAddresses).toContain("0xfccd7bd300d7fe0ec27e9ffb34714ad865d3b78c");
+    expect(verifiedTestnetAddresses).toContain("0xe59e6bf7147ae8416f858976dde232a0c157fdcf");
     expect(testnetFundAssets.every((asset) => (
       verifiedTestnetAddresses.includes(asset.address.toLowerCase())
     ))).toBe(true);

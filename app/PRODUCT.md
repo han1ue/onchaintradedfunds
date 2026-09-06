@@ -41,7 +41,9 @@ The Funds directory reads vault addresses, identity, creator, constituent count,
 
 The fund page reads the permanent thesis and accounted balances onchain. NAV per share and AUM use offchain prices, with history stored in the browser. These informational values do not affect settlement or execution prices.
 
-The Funds summary shows the combined weekly OTF distribution. Each fund estimates depositor rewards APY using emissions from the 65% depositor allocation, current OTF price, and its AUM. Zero-AUM funds use a labeled $100 baseline for the calculation; displayed AUM stays zero. The estimate does not determine Merkle entitlements.
+The Funds summary shows the combined weekly OTF distribution. The directory shows each fund's total NAV in dollars and estimated depositor rewards APY. Each fund's weight is its accounted protocol OTF balance, capped at 10 million OTF. Its share of the depositor pool is that weight divided by the sum of capped weights across factory funds.
+
+APY values that share at the current OTF price and annualizes it over 52 weeks against the fund's NAV. Funds with zero NAV or no OTF weight show 0% APY. There is no calculation baseline. The estimate does not determine Merkle entitlements.
 
 An empty vault's first mint must produce at least `0.01` shares. The quote's guaranteed minimum output must meet this threshold. There is no first-mint maximum; the minimum check ends once supply is nonzero.
 

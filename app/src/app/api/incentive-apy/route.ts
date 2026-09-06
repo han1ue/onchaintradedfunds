@@ -57,11 +57,8 @@ export async function GET(request: Request) {
     weeklyCreatorEmissionOtf: buckets.creators,
     ended,
   };
-  if (!includePrice) {
+  if (!includePrice || !launchManager) {
     return Response.json(schedule, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
-  }
-  if (!launchManager) {
-    return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });
   }
 
   try {
@@ -86,6 +83,6 @@ export async function GET(request: Request) {
       priceUpdatedAt: ethUsd.updatedAt,
     }, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
   } catch {
-    return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });
+    return Response.json(schedule, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
   }
 }

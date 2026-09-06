@@ -1,0 +1,53 @@
+name: Solidity changing-seed campaign
+
+on:
+  schedule:
+    - cron: "23 3 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Optional hex seed to replay; blank generates a fresh seed"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  campaign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "22.18.0"
+          package-manager-cache: false
+      - name: Install pinned dependencies
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.7.1
+          cache: true
+      - name: Run measured default and real V4 campaigns
+        env:
+          REQUESTED_SEED: ${{ inputs.seed }}
+        shell: bash
+        run: |
+          if [ -n "$REQUESTED_SEED" ]; then export CAMPAIGN_SEED="$REQUESTED_SEED"; fi
+          node scripts/run-solidity-campaign.mjs
+      - name: Preserve seed, commands, runtime, action metrics and failure replay cache
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: solidity-campaign-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/campaign/
+            contracts/cache/invariant/
+            contracts/cache/fuzz/
+          retention-days: 30
+          if-no-files-found: error

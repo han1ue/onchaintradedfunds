@@ -5,7 +5,6 @@ export const OTF_CREATOR_INCENTIVE_TOTAL = 50_000_000;
 export const OTF_WEEK_ONE_EMISSION = 14_000_000;
 export const OTF_WEEKLY_DECAY_FACTOR = 0.9803203;
 export const OTF_REWARD_WEIGHT_CAP = 10_000_000;
-export const ZERO_AUM_BASELINE_USD = 100;
 
 const WEEK_MS = 7 * 24 * 60 * 60_000;
 
@@ -40,22 +39,32 @@ export function cappedRewardWeightOtf(eligibleBalanceOtf: number): number | unde
   return Math.min(eligibleBalanceOtf, OTF_REWARD_WEIGHT_CAP);
 }
 
+export function accountedRewardWeightOtf(assets: readonly string[], balances: readonly bigint[], otfToken: string): number | undefined {
+  const index = assets.findIndex((asset) => asset.toLowerCase() === otfToken.toLowerCase());
+  if (index === -1) return 0;
+  if (balances.length !== assets.length || balances[index] < 0n) return undefined;
+  const capRaw = BigInt(OTF_REWARD_WEIGHT_CAP) * 10n ** 18n;
+  return Number(balances[index] > capRaw ? capRaw : balances[index]) / 1e18;
+}
+
 export function estimatedRewardsApy(input: {
   weeklyDepositorEmissionOtf: number;
   otfPriceUsd: number;
   fundAumUsd: number;
+  fundRewardWeightOtf: number;
+  totalRewardWeightOtf: number;
 }) {
+  if (input.fundAumUsd === 0 || input.fundRewardWeightOtf === 0) return { percent: 0 };
   if (
     !Number.isFinite(input.weeklyDepositorEmissionOtf) || input.weeklyDepositorEmissionOtf < 0
     || !Number.isFinite(input.otfPriceUsd) || input.otfPriceUsd <= 0
     || !Number.isFinite(input.fundAumUsd) || input.fundAumUsd < 0
+    || !Number.isFinite(input.fundRewardWeightOtf) || input.fundRewardWeightOtf < 0 || input.fundRewardWeightOtf > OTF_REWARD_WEIGHT_CAP
+    || !Number.isFinite(input.totalRewardWeightOtf) || input.totalRewardWeightOtf < input.fundRewardWeightOtf
   ) return undefined;
-  const usesZeroAumBaseline = input.fundAumUsd === 0;
-  const denominatorUsd = usesZeroAumBaseline ? ZERO_AUM_BASELINE_USD : input.fundAumUsd;
+  const fundWeeklyEmissionOtf = input.weeklyDepositorEmissionOtf * input.fundRewardWeightOtf / input.totalRewardWeightOtf;
   return {
-    percent: input.weeklyDepositorEmissionOtf * input.otfPriceUsd * 52 / denominatorUsd * 100,
-    denominatorUsd,
-    usesZeroAumBaseline,
+    percent: fundWeeklyEmissionOtf * input.otfPriceUsd * 52 / input.fundAumUsd * 100,
   };
 }
 

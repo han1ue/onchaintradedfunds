@@ -328,3 +328,136 @@ contract TeamMarketCapVestingTest is TestBase {
         return Math.mulDiv(fdvUsdWad, 1e36, token.totalSupply() * 2_000 ether, Math.Rounding.Ceil);
     }
 }
+
+contract PropertyETHUSDOracle {
+    uint8 public immutable decimals;
+    int256 public answer;
+    uint256 public updatedAt;
+
+    constructor(uint8 d) {
+        decimals = d;
+    }
+
+    function set(int256 a, uint256 t) external {
+        answer = a;
+        updatedAt = t;
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (1, answer, updatedAt, updatedAt, 1);
+    }
+}
+
+contract TeamVestingSequencePropertiesTest is TestBase {
+    OTFToken private token;
+    MockUniswapV4StateView private state;
+    PropertyETHUSDOracle private oracle;
+    TeamMarketCapVesting private vesting;
+    address private beneficiary;
+    uint256 private unlocked;
+    uint256 private claimed;
+
+    function testFuzzSpotCheckpointsClaimsAndSuccession(
+        uint256 seed,
+        uint8 decimalsSeed,
+        bool direct
+    ) public {
+        vm.warp(1_000_000);
+        token = new OTFToken(address(this));
+        MockUniswapV4PoolManager pool = new MockUniswapV4PoolManager();
+        state = new MockUniswapV4StateView(address(pool));
+        oracle = new PropertyETHUSDOracle(decimalsSeed % 19);
+        bytes32 id = keccak256("PROPERTY_POOL");
+        MockLaunchPriceSource launch =
+            new MockLaunchPriceSource(address(token), address(state), id, direct);
+        beneficiary = address(0xBEEF);
+        vesting = new TeamMarketCapVesting(address(launch), address(oracle), 1 days, beneficiary);
+        token.transfer(address(vesting), 100_000_000 ether);
+        for (uint256 step; step < 12; step++) {
+            uint256 entropy = uint256(keccak256(abi.encode(seed, step)));
+            uint256 price = 1e11 + entropy % 9e12;
+            uint256 ratio =
+                direct ? (uint256(1) << 192) * price / 1e18 : (uint256(1) << 192) * 1e18 / price;
+            uint160 sqrtPrice = uint160(Math.sqrt(ratio));
+            state.setPool(id, sqrtPrice);
+            uint256 squared = uint256(sqrtPrice) * sqrtPrice;
+            uint256 referencePrice = direct
+                ? squared * 1e18 / (uint256(1) << 192)
+                : (uint256(1) << 192) * 1e18 / squared;
+            assertEq(vesting.currentOtfPriceWethWad(), referencePrice);
+            token.burn(entropy % 1_000_000 ether);
+            vm.warp(block.timestamp + 1 days);
+            uint256 oracleScale = 10 ** oracle.decimals();
+            uint256 answer = 1_000 * oracleScale + (entropy >> 64) % (3_000 * oracleScale + 1);
+            uint256 usdWad = answer * (10 ** (18 - oracle.decimals()));
+            uint256 age = entropy % (1 days + 1);
+            oracle.set(int256(answer), block.timestamp - age);
+            uint256 fdv = (referencePrice * token.totalSupply() / 1e18) * usdWad / 1e18;
+            assertEq(vesting.liveFdvUsdWad(), fdv);
+            uint256 milestones = fdv / 1_000_000 ether;
+            uint256 next = (milestones > 10 ? 10 : milestones) * 10_000_000 ether;
+            if (next > unlocked) unlocked = next;
+            vm.prank(beneficiary);
+            assertEq(vesting.checkpoint(), unlocked);
+            assertLe(unlocked, 100_000_000 ether);
+            assertGe(unlocked, claimed);
+            if (entropy & 1 == 0 && unlocked > claimed) {
+                uint256 beforeBalance = token.balanceOf(beneficiary);
+                vm.prank(beneficiary);
+                assertEq(vesting.claim(), unlocked - claimed);
+                assertEq(token.balanceOf(beneficiary) - beforeBalance, unlocked - claimed);
+                claimed = unlocked;
+            }
+            address successor = address(uint160(0xC000 + step));
+            vm.prank(beneficiary);
+            vesting.initiateBeneficiaryTransfer(successor);
+            vm.prank(successor);
+            vm.expectRevert(
+                abi.encodeWithSelector(TeamMarketCapVesting.NotBeneficiary.selector, successor)
+            );
+            vesting.checkpoint();
+            if (entropy & 2 == 0) {
+                vm.prank(beneficiary);
+                vesting.cancelBeneficiaryTransfer();
+                vm.prank(successor);
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        TeamMarketCapVesting.NotPendingBeneficiary.selector, successor
+                    )
+                );
+                vesting.acceptBeneficiaryTransfer();
+            } else {
+                address old = beneficiary;
+                vm.prank(successor);
+                vesting.acceptBeneficiaryTransfer();
+                beneficiary = successor;
+                vm.prank(old);
+                vm.expectRevert(
+                    abi.encodeWithSelector(TeamMarketCapVesting.NotBeneficiary.selector, old)
+                );
+                vesting.claim();
+            }
+            assertEq(vesting.beneficiary(), beneficiary);
+            assertEq(vesting.pendingBeneficiary(), address(0));
+            assertEq(vesting.unlockedAmount(), unlocked);
+            assertEq(vesting.claimedAmount(), claimed);
+            assertEq(vesting.claimable(), unlocked - claimed);
+            assertEq(token.balanceOf(address(vesting)), 100_000_000 ether - claimed);
+            uint256 badTime = entropy & 4 == 0 ? block.timestamp - 1 days - 1 : block.timestamp + 1;
+            oracle.set(int256(answer), badTime);
+            vm.prank(beneficiary);
+            vm.expectRevert(
+                entropy & 4 == 0
+                    ? abi.encodeWithSelector(
+                        TeamMarketCapVesting.StaleOracle.selector, badTime, 1 days
+                    )
+                    : abi.encodeWithSelector(
+                        TeamMarketCapVesting.InvalidOracleTimestamp.selector, badTime
+                    )
+            );
+            vesting.checkpoint();
+            assertEq(vesting.unlockedAmount(), unlocked);
+            assertEq(vesting.claimedAmount(), claimed);
+        }
+    }
+}

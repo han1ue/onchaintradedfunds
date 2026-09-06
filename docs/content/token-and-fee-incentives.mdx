@@ -177,16 +177,16 @@ Week 1 assigns 13 million OTF to depositors and 1 million OTF to creators.
 
 <RewardsUnlockChart />
 
-Both buckets use capped pro-rata weights:
+Both buckets allocate rewards across funds using capped pro-rata weights:
 
 ```text
-cappedWeight(i) = min(eligible OTF balance(i), 10,000,000 OTF)
-allocation(i) = bucketEmission × cappedWeight(i) / sum(cappedWeight)
+cappedWeight(fund) = min(accounted OTF balance(fund), 10,000,000 OTF)
+allocation(fund) = bucketEmission × cappedWeight(fund) / sum(cappedWeight)
 ```
 
-Depositor weights use eligible deposit balances; creator weights use each creator's eligible OTF balance. Balances above 10 million OTF receive no extra weight. The publisher determines eligibility from weekly snapshots and rounds allocations within each weekly target.
+Only funds with an accounted protocol OTF balance receive an allocation. The cap applies per fund; balances above 10 million OTF receive no extra weight. Direct OTF transfers that do not enter accounted balances add no weight. If the total weight is zero, no fund receives an allocation. The publisher calculates participant entitlements within each fund's allocation from weekly snapshots and rounds allocations within each weekly target.
 
-The Funds page shows the combined weekly distribution. Each fund page estimates depositor APY using the depositor bucket, current OTF USD price, and the fund's informational AUM, annualized over 52 weeks. Zero-AUM funds use a labeled $100 calculation baseline without changing displayed AUM. This variable estimate is not guaranteed and does not determine claim entitlements.
+The Funds page shows the combined weekly distribution. The directory and fund details estimate depositor APY using each fund's allocated share of the depositor bucket, current OTF USD price, and total NAV, annualized over 52 weeks. Funds with zero NAV or no OTF weight show 0% APY. Missing valuation or reward data leaves an eligible fund's estimate unavailable. This variable estimate is not guaranteed and does not determine claim entitlements.
 
 Rewards accumulate across claims. If your published entitlement is 100 OTF and you have already claimed 40 OTF, your next valid claim pays 60 OTF.
 

@@ -11,6 +11,84 @@ contract TypedUniswapV3VenueTest is AtomicRouterTestBase {
         _setUpAtomicRouter();
     }
 
+    function testFuzzGeneratedRoutesAndAtomicMinimum(uint256 seed, uint8 hopsSeed, bool allBalance)
+        public
+    {
+        uint256 hops = 1 + hopsSeed % 3;
+        uint256 amount = bound(seed, 1, 1 ether);
+        address[2] memory middle =
+            seed & 1 == 0 ? [address(assetA), address(assetB)] : [address(assetB), address(assetA)];
+        bytes memory path = abi.encodePacked(address(input));
+        address current = address(input);
+        for (uint256 h; h < hops; h++) {
+            address next = h + 1 == hops ? address(assetC) : middle[h];
+            _createPool(current, next);
+            path = bytes.concat(path, abi.encodePacked(bytes3(FEE), next));
+            current = next;
+        }
+        uint256 donation = 7 + seed % 101;
+        input.mint(address(router), donation);
+        assetC.mint(address(router), donation);
+        input.mint(address(v3Adapter), donation);
+        assetC.mint(address(v3Adapter), donation);
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = SwapLeg(address(v3Adapter), address(input), address(assetC), amount, amount, path);
+        legs[1] = _v3Leg(
+            address(input), address(assetD), allBalance ? type(uint256).max : amount, amount
+        );
+        uint256 beforeUser = input.balanceOf(ALICE);
+        uint256 beforeVenue = input.balanceOf(address(venue));
+        // Failure in the second leg must undo the first leg, all approvals, and the input pull.
+        legs[1].minAmountOut = amount + 1;
+        vm.prank(ALICE);
+        vm.expectRevert(bytes("SLIPPAGE"));
+        router.mintFromToken(_mintRequest(2 * amount, amount), legs);
+        assertEq(input.balanceOf(ALICE), beforeUser);
+        assertEq(input.balanceOf(address(venue)), beforeVenue);
+        assertEq(input.balanceOf(address(router)), donation);
+        assertEq(assetC.balanceOf(address(router)), donation);
+        assertEq(targetVault.balanceOf(ALICE), 0);
+        assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
+        legs[1].minAmountOut = amount;
+        vm.prank(ALICE);
+        (uint256 minted,,) = router.mintFromToken(_mintRequest(2 * amount, amount), legs);
+        assertEq(minted, amount);
+        assertEq(input.balanceOf(ALICE), beforeUser - 2 * amount);
+        assertEq(input.balanceOf(address(venue)), beforeVenue + 2 * amount);
+        assertEq(input.balanceOf(address(router)), donation);
+        assertEq(assetC.balanceOf(address(router)), donation);
+        assertEq(input.balanceOf(address(v3Adapter)), donation);
+        assertEq(assetC.balanceOf(address(v3Adapter)), donation);
+        assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
+    }
+
+    function testFuzzV3LargeInputAndZeroRollback(uint128 seed) public {
+        uint256 amount = seed == 0 ? 1 : uint256(seed);
+        input.mint(address(v3Adapter), amount + 7);
+        assetC.mint(address(venue), amount);
+        uint256 beforeOut = assetC.balanceOf(address(router));
+        vm.prank(address(router));
+        vm.expectRevert(UniswapV3Adapter.InvalidAmount.selector);
+        v3Adapter.executeSwap(
+            address(input), address(assetC), 0, 1, _path(address(input), address(assetC))
+        );
+        assertEq(input.balanceOf(address(v3Adapter)), amount + 7);
+        vm.prank(address(router));
+        assertEq(
+            v3Adapter.executeSwap(
+                address(input),
+                address(assetC),
+                amount,
+                amount,
+                _path(address(input), address(assetC))
+            ),
+            amount
+        );
+        assertEq(input.balanceOf(address(v3Adapter)), 7);
+        assertEq(assetC.balanceOf(address(router)), beforeOut + amount);
+        assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
+    }
+
     function testConstructorAndExecutionBindSwapRouterToFactory() public {
         venue.setFactory(address(protocolFactory));
         vm.expectRevert(

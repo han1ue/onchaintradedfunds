@@ -147,8 +147,8 @@ no mainnet validation.
 
 ## September 6 protocol redeployment
 
-The full protocol deployment and setup used 32,253,592 gas across 26 transactions,
-for 0.00032253592 ETH at 10,000,000 wei/gas. The deployment reused all six RWA pools.
+The full protocol deployment and setup used 32,972,867 gas across 27 transactions,
+for 0.00032972867 ETH at 10,000,000 wei/gas. The deployment reused all six RWA pools.
 The live readback verified twelve protocol runtimes, both adapter revocations, all six
 owned liquidity positions, allowance cleanup, and the authorized funding caps. Current
 addresses and receipts are listed in [deployment addresses](../docs/content/deployment-addresses.mdx).

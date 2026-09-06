@@ -108,9 +108,10 @@ describe("$OTF page wiring", () => {
     const detail = operate.slice(operate.indexOf('className="fundDetailHero"'), operate.indexOf('className="fundDetailPrimaryGrid"'));
     const header = detail.slice(detail.indexOf('className="fundDetailHeader"'));
     expect(header).toContain('className="fundDetailMetrics"');
-    expect(header.indexOf(">AUM<")).toBeLessThan(header.indexOf(">Est. rewards APY<"));
-    expect(header).toContain("rewardsApyLabel");
-    expect(operate).toContain("fundAumUsd, detail");
+    expect(header).toContain(">NAV<");
+    expect(header.indexOf(">NAV<")).toBeLessThan(header.indexOf(">Est. rewards APY<"));
+    expect(header).toContain("<FundRewardsApy");
+    expect(header).toContain("aumUsd={fundAumUsd}");
     expect(detail).toContain('className="fundThesis"');
     expect(css).toContain(".fundDetailHeader { display: grid;");
     expect(css).not.toContain(".valuationPerformance small");

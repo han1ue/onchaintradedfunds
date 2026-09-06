@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { StdInvariant } from "forge-std/StdInvariant.sol";
+
 interface Vm {
     struct Log {
         bytes32[] topics;
@@ -8,6 +10,10 @@ interface Vm {
         address emitter;
     }
 
+    function getNonce(address account) external view returns (uint64);
+    function computeCreateAddress(address deployer, uint256 nonce) external pure returns (address);
+    function envOr(string calldata name, bool defaultValue) external view returns (bool);
+    function chainId(uint256 newChainId) external;
     function warp(uint256 newTimestamp) external;
     function roll(uint256 newHeight) external;
     function deal(address account, uint256 newBalance) external;
@@ -102,14 +108,4 @@ abstract contract TestBase {
     }
 }
 
-abstract contract InvariantTestBase {
-    address[] private _targetedContracts;
-
-    function targetContract(address target) internal {
-        _targetedContracts.push(target);
-    }
-
-    function targetContracts() public view returns (address[] memory) {
-        return _targetedContracts;
-    }
-}
+abstract contract InvariantTestBase is StdInvariant { }

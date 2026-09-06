@@ -175,10 +175,12 @@ The decay factor is approximate. Publication MUST use enough precision or reconc
 to reach exactly 700 million OTF, including exactly 650 million for depositors and 50 million for
 creators. It MUST NOT use the rounded formula's approximately 699,999,574.95-OTF sum as the final total.
 
-Both buckets MUST weight each participant by `min(eligible OTF balance, 10,000,000 OTF)`, using
-eligible deposits for depositors and each creator's eligible OTF balance for creators. Balances above
-the cap MUST NOT increase weight. The publisher MUST calculate eligibility, snapshot balances,
-rounding, and cumulative entitlements offchain before publishing.
+Both buckets MUST allocate across funds in proportion to
+`min(accounted protocol OTF balance, 10,000,000 OTF)` per fund. Funds without accounted OTF MUST receive
+zero allocation. Balances above the cap and unaccounted OTF transfers MUST NOT increase weight.
+If total weight is zero, no fund MAY receive an allocation. The publisher MUST calculate weekly
+snapshot balances, participant entitlements within each fund's allocation, rounding, and cumulative
+entitlements offchain before publishing.
 
 Only the configured publisher MAY set a root, which MUST take effect immediately. Leaves MUST commit
 to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree encoding.

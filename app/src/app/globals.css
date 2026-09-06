@@ -1504,7 +1504,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .directoryTableWrap { overflow-x: auto; }
 .directoryCardsWrap { overflow: hidden; }
 .directoryCardsWrap .directoryTable { display: none; }
-.directoryTable { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.72rem; }
+.directoryTable { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
 .directoryTable th,
 .directoryTable td { border-bottom: 1px solid var(--border); padding: 12px 10px; text-align: right; white-space: nowrap; }
 .directoryTable th { color: var(--text-muted); font-size: 0.61rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -1522,15 +1522,18 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .directoryFundLink strong { overflow: hidden; max-width: 360px; text-overflow: ellipsis; white-space: nowrap; }
 .directoryFundLink small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
 .directoryFundCards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; padding: 12px; }
-.directoryFundCard { display: grid; min-width: 0; gap: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--text); padding: 14px; text-decoration: none; }
+.directoryFundCard { position: relative; display: grid; min-width: 0; gap: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--text); padding: 14px; text-decoration: none; }
 .directoryFundCard:hover { border-color: var(--border-strong); background: var(--surface); }
-.directoryFundCard > div:first-child { display: flex; min-width: 0; align-items: center; gap: 9px; }
-.directoryFundCard > div:first-child > span,
-.directoryFundCard > div:first-child strong,
-.directoryFundCard > div:first-child small { display: block; min-width: 0; }
-.directoryFundCard > div:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.directoryFundCard > div:first-child small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
-.directoryFundCard dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.directoryFundCardLink { display: flex; min-width: 0; align-items: center; gap: 9px; text-decoration: none; }
+.directoryFundCardLink::after { position: absolute; inset: 0; border-radius: 10px; content: ""; }
+.directoryFundCardLink:focus-visible { outline: none; }
+.directoryFundCardLink:focus-visible::after { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.directoryFundCardLink > span,
+.directoryFundCardLink strong,
+.directoryFundCardLink small { display: block; min-width: 0; }
+.directoryFundCardLink strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directoryFundCardLink small { margin-top: 3px; color: var(--text-muted); font-size: 0.61rem; }
+.directoryFundCard dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; font-variant-numeric: tabular-nums; }
 .directoryFundCard dl > div { min-width: 0; border-top: 1px solid var(--border); padding-top: 9px; }
 .directoryFundCard dt { color: var(--text-muted); font-size: 0.58rem; text-transform: uppercase; }
 .directoryFundCard dd { overflow: hidden; margin: 5px 0 0; color: var(--text-soft); font-size: 0.68rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -1596,6 +1599,54 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundDetailMetrics strong { overflow: hidden; margin-top: 5px; color: var(--text); font-size: 0.75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .fundMetricAddressLink { max-width: 100%; }
 .fundMetricAddressLink code { overflow: hidden; font: inherit; text-overflow: ellipsis; }
+.fundRewardsValue,
+.fundDetailMetrics .fundRewardsValue { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.fundDetailMetrics .fundRewardsValue,
+.fundDetailMetrics .fundRewardsValue > span { color: inherit; font: inherit; letter-spacing: normal; text-transform: none; }
+.fundDetailMetrics .fundRewardsMetric { overflow: visible; }
+.rewardsInfoButton { position: relative; z-index: 1; display: inline-grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); padding: 0; transition: color 160ms ease, background 160ms ease; }
+.rewardsInfoButton:hover { background: var(--card-raised); color: var(--accent-text); }
+.rewardsInfoButton:disabled { opacity: 0.4; }
+.rewardsDialog { width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--card); color: var(--text); padding: 0; text-align: left; font-size: 0.8rem; font-weight: 400; line-height: 1.55; white-space: normal; }
+.rewardsDialog::backdrop { background: rgb(0 0 0 / 72%); }
+.rewardsDialogHeader { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding: 18px 20px; }
+.rewardsDialogHeader > div { min-width: 0; flex: 1; }
+.rewardsDialogHeader h2 { margin: 0; font-size: 1rem; font-weight: 650; letter-spacing: -0.02em; }
+.rewardsDialogHeader p { margin: 2px 0 0; color: var(--text-muted); font-size: 0.75rem; overflow-wrap: anywhere; }
+.rewardsDialogClose { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); padding: 0; }
+.rewardsDialogClose:hover { background: var(--card-raised); color: var(--text); }
+.rewardsDialogBody { padding: 20px; }
+.rewardsDialogReason { margin: 0; color: var(--text); font-size: 0.875rem; }
+.rewardsDialogRule { margin: 10px 0 18px; color: var(--text-muted); font-size: 0.75rem; }
+.rewardsDialogRule strong { color: var(--text-soft); font-weight: 600; }
+.rewardsCalculation { margin: 0; }
+.rewardsCalculation > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); padding: 13px 0; }
+.rewardsCalculation dt { min-width: 0; color: var(--text-soft); font-weight: 500; }
+.rewardsCalculation dt small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 0.7rem; font-weight: 400; }
+.rewardsCalculation dd { flex: 0 0 auto; margin: 0; color: var(--text); font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rewardsCalculation dd span { color: var(--text-muted); font-size: 0.65rem; font-weight: 500; }
+.rewardsValuationInputs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; margin: 0; border-top: 1px solid var(--border); padding: 13px 0 18px; }
+.rewardsValuationInputs > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.rewardsValuationInputs dt { color: var(--text-muted); font-size: 0.7rem; }
+.rewardsValuationInputs dd { margin: 0; font-size: 0.75rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.rewardsApyResult { border-top: 1px solid var(--border-strong); padding: 17px 0 0; }
+.rewardsApyResult > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.rewardsApyResult > div > span { color: var(--text-soft); font-weight: 500; }
+.rewardsApyResult strong { color: var(--accent-text); font-size: 2rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.rewardsApyResult p { margin: 9px 0 0; color: var(--text-soft); font-size: 0.75rem; }
+.rewardsApyResult small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.rewardsDialogNote { margin: 18px 0 0; color: var(--text-muted); font-size: 0.7rem; }
+@media (max-width: 620px) {
+  .rewardsInfoButton { width: 32px; height: 32px; }
+  .rewardsDialog { width: calc(100% - 24px); max-height: calc(100dvh - 24px); }
+  .rewardsDialogHeader { padding: 14px 16px; }
+  .rewardsDialogClose { width: 40px; height: 40px; }
+  .rewardsDialogBody { padding: 16px; }
+  .rewardsCalculation > div { gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rewardsInfoButton { transition: none; }
+}
 .fundDetailPrimaryGrid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.72fr); align-items: start; gap: 14px; }
 .fundValuationColumn,
 .fundTradeColumn { display: grid; min-width: 0; gap: 10px; }
