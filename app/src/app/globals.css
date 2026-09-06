@@ -2766,5 +2766,3 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .rwaAssetIdentity .allocationAssetTitle { display: inline-flex; align-items: center; gap: 5px; }
 .allocationAssetVerified { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--accent-text); }
 .allocationAssetVerified svg { display: block; width: 1em; height: 1em; }
-
-.allocationEmptyNote { margin: 0; padding: 12px 14px; color: var(--text-muted); font-size: 0.7rem; line-height: 1.5; }

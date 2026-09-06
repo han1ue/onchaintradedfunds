@@ -1939,6 +1939,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       return;
     }
     setValuation((current) => ({ ...current, state: "loading" }));
+    const usesBootstrapNav = fund.totalSupply === 0n;
     const assetRequest = fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
       return response.json() as Promise<{ data?: unknown[]; marketCapSnapshotAt?: unknown }>;
@@ -1946,15 +1947,18 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
     void Promise.all([
       assetRequest,
       publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "accountedBalances" }),
-      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "bootstrapBasketUnits" }),
+      usesBootstrapNav
+        ? publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "bootstrapBasketUnits" })
+        : Promise.resolve(undefined),
     ]).then(([payload, accountedBalances, bootstrapUnits]) => {
+      const allocationQuantities = bootstrapUnits ?? accountedBalances;
       const prices = (payload.data ?? []).flatMap((value) => {
         const parsed = valuationAsset(value);
         return parsed ? [parsed] : [];
       });
       const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
       const pricedAssets = fund.assets.map((address) => priceByAddress.get(address.toLowerCase()));
-      if (pricedAssets.some((asset) => !asset) || accountedBalances.length !== fund.assets.length || bootstrapUnits.length !== fund.assets.length) {
+      if (pricedAssets.some((asset) => !asset) || accountedBalances.length !== fund.assets.length || allocationQuantities.length !== fund.assets.length) {
         throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
       }
       const usdWadFor = (quantities: readonly bigint[]) => quantities.reduce((total, quantity, index) => {
@@ -1964,10 +1968,9 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
         return total + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
       }, 0n);
       const aumUsdWad = usdWadFor(accountedBalances);
-      const usesBootstrapNav = fund.totalSupply === 0n;
-      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], bootstrapUnits);
+      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], allocationQuantities);
       const navUsdWad = usesBootstrapNav
-        ? usdWadFor(bootstrapUnits)
+        ? usdWadFor(allocationQuantities)
         : aumUsdWad * 10n ** 18n / fund.totalSupply;
       const at = typeof payload.marketCapSnapshotAt === "string" && Number.isFinite(Date.parse(payload.marketCapSnapshotAt))
         ? Date.parse(payload.marketCapSnapshotAt)
@@ -2305,14 +2308,13 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         )}
       </section>
       <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
-        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title="Compares the initial basket at current prices with the constituents’ current market-cap proportions. A match allows up to 0.01 percentage points difference per asset.">{weightingLabel}</span></div>
+        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title="Compares each allocation with the constituents’ current market-cap proportions. A match allows up to 0.01 percentage points difference per asset.">{weightingLabel}</span></div>
         {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
               <thead><tr><th>Asset</th><th>Amount</th><th>Allocation</th><th>Price</th></tr></thead>
               <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount">{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
             </table>
-            <p className="allocationEmptyNote">Allocation uses the initial basket at current prices. Amount shows accounted holdings.</p>
           </div>
         ) : (
           <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading amounts…" : "Could not load amounts."}</span></div>
