@@ -1,67 +1,67 @@
 {
   "chainId": 46630,
-  "checkedAt": "2026-09-06T00:34:31.954Z",
+  "checkedAt": "2026-09-06T01:41:01.141Z",
   "result": "passed",
   "contracts": {
     "otfToken": {
-      "address": "0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab",
-      "runtimeCodehash": "0x138dcc410ab245635262afdf810d85a0f9407029f7885873951e2c88391aca7e",
-      "transactionHash": "0x29eb85efbf5e6c06d0c76f24f7eac4ad6c9539a40f462794a521d86082f30c4f"
+      "address": "0xae3803B6A46f83C834aC17512F91D21657097199",
+      "runtimeCodehash": "0xf6db4cfe83bbf5c6c38d8fd7eb1f69ef86c8bfea6c5b626d18f23ea8beb26f2f",
+      "transactionHash": "0x0113dd90e08eaf83fcf7631f99bf129a411987f9b5975d6b3f4af002dd3ae39e"
     },
     "launchManager": {
-      "address": "0xdeAdc1F7542f404A8548AF28659771c1ebbFa840",
-      "runtimeCodehash": "0x28bb23ed29e77cb6bd4fb5bfe9aca0b28c6da2c6140fab6578d66e76e50a1b2f",
-      "transactionHash": "0xad9b1a4daea1ebf71e5840ce9ebccdbaf2b1b23874efa50078a0ea521fe528e2"
+      "address": "0x2b7CDE853CC18bcb862500E8ff80F329e4932840",
+      "runtimeCodehash": "0xeda9221fff8ce6946b270ee26bafcae6fabf9a3d2673e06564d1a5c3235d56bf",
+      "transactionHash": "0x2bb6399d4b6028d45ed5eb4aa4f43537629630773668b4b333552754fed1270f"
     },
     "launchRouter": {
-      "address": "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
-      "runtimeCodehash": "0x9d7895ba038458119bfa4005ed978ad2e491a087d9c7884d421c861b7d570ca9",
-      "transactionHash": "0xb41b85d8000f934e061ddf0e76416ec7832097ae4e1eb6c13d0bd879914a2b01"
+      "address": "0xb081Eb9A894e5a260A8249788300FB1A7fC23A67",
+      "runtimeCodehash": "0x871aaf92868da501774805e68778375ec79a9b180f4d5831231cf6d88e48d00a",
+      "transactionHash": "0xe21f498e929645cf1301c768d92d0b415955cd02c0a6175365612f52164cf0c5"
     },
     "teamVesting": {
-      "address": "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
-      "runtimeCodehash": "0x508f72d1df8a8d51043773fdf45b52ca697cab2c9b487897ebbb6174a6d7c6b4",
-      "transactionHash": "0x6e7d57a0e3427db159d5efff55abaa7e66e2bfea7173c8514594d6b4a51b7c12"
+      "address": "0xCbb8B26A2e9A5A4F06Be219938C8Ac1593995b7C",
+      "runtimeCodehash": "0x351b241df3f8dc65dada01d6303d65c5ddc4fd5896d6018375c90b33b4960630",
+      "transactionHash": "0x143cd31e116a74e63e59f7758cb4d904471b6f6502f9fb58488d0a8e8ba756d3"
     },
     "buybackCollector": {
-      "address": "0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC",
-      "runtimeCodehash": "0x38f479b989f8198c32e36688af0f29d1dc0f73ef90701fafd017e3b95a98d337",
-      "transactionHash": "0x5e8a052485097271cab1bc95e62111eec65e8f1e27cf842e958a38f16f3924e6"
+      "address": "0xf13236dC41492219eFBb094a1E6cb6874dfc6AB8",
+      "runtimeCodehash": "0xb9803223fd5b749d761ef319a25e50bc5d408e1cab8c3b90ba720229405c383e",
+      "transactionHash": "0xbd4b6cf5615c7fc83275a460e7053099caf9f340649ecf7d49a3b5c6e4ddaac9"
     },
     "merkleRewardsDistributor": {
-      "address": "0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B",
-      "runtimeCodehash": "0xe67a049d089218fb360c0cb3890895f9db49157cd78292c8d374dfa9b2a5e5af",
-      "transactionHash": "0xd27ec6c5537296a9b08317669abfbb8da86902c8eb660dbc48a15d4c4a076b2e"
+      "address": "0x6bE4F6132aA4253C173fCB4FE2313d13A37ce09D",
+      "runtimeCodehash": "0x465b8f126dbf3c98319395cbb18d087858ca422d48bc5ba56dee27b8846bea69",
+      "transactionHash": "0x94130280f1b2bca580e91d0f22f3bb6efa4764d022f7ddf1067001fb2fc99e5d"
     },
     "fakeEthUsdOracle": {
-      "address": "0xDE1e4B0f8f0B8BD67D51354766fD8D9b48706B67",
+      "address": "0x951FC808673648D231B9f64F72DB082196EA24a2",
       "runtimeCodehash": "0x72347f8de82f3921b5ce00c0ff0bb9af53b00bdd4b601a80ed7b2bf6e385b1e3",
-      "transactionHash": "0xcf130789615d05e2aa83d51394ef7cf21d50c0ff92ee09353aa586db95e1e71c"
+      "transactionHash": "0x2757ea07c4139a3436b458229d5fea73ab7e49d841293c50a196f4bcdfe3ba1d"
     },
     "vaultImplementation": {
-      "address": "0x59B5923264e22c04CFc57F787ADDD53b48A3D84c",
-      "runtimeCodehash": "0x8ea579de583b1b748562387754208eda147032c44b1bdcd8c5d487256a7432dc",
-      "transactionHash": "0x1e7b0b6c63f7c2982f2bdbe81397f0368702acfbe447d5e42a3be5dc5bafff3e"
+      "address": "0x0f9DF04b356935c55B15EC10a05Fd8AC88be4336",
+      "runtimeCodehash": "0x33b248dc1e15f2f6b3d088827c5690fcc6f65f5b7239fec664fa7618debecf99",
+      "transactionHash": "0xb6786be42afd7d62d30bb3279033e329e41dfac9fe44cdaf41a567ec830cd82c"
     },
     "factory": {
-      "address": "0x7619eB1Ec1302e6f9E1a618D875B05dCF5EcFE34",
-      "runtimeCodehash": "0xe1ff1fe0511442868880a4aa49229fa61930a2d0e40a7b089ba97e7f015eeb41",
-      "transactionHash": "0xbdd2ac32f3c16c72bc39eb28664744a85521337cc048eaad127dfe550f05ff12"
+      "address": "0xd5725B9b668ae1ab8Cf42e4F1B3c989CBc14a2E5",
+      "runtimeCodehash": "0x39a695456b4f0b1c854e150735dcadc8a61b1a882862ad2b5a065585ac14b22f",
+      "transactionHash": "0xa3653224760eab752b95387d5bff2766028482b0e32344e60f3a2420a25720be"
     },
     "entryRouter": {
-      "address": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
-      "runtimeCodehash": "0x2120bff05366830d43f0f0c7793fc5b6d45c26e6f347f6d2d6cbe5368ff3f6e0",
-      "transactionHash": "0xf2c586f4c59db957ec541068a03859ffa2b5e205dd3054774ea7cf2bd71a3aa5"
+      "address": "0x66fA0cEd11Db9bA9771F420e330F1Eeb0597F8A1",
+      "runtimeCodehash": "0x614ca46a9ac79bfb32b5d268cb9c2c9a25ed1fc189a5e841cd5ed3f22a93ebb7",
+      "transactionHash": "0xfb40b8d3c18d810f2c01743868e3828271ae8d5ac2967df23b79c1c7140f0963"
     },
     "uniswapV3Adapter": {
-      "address": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
-      "runtimeCodehash": "0x245fdf6cd80b1e384a5d5a9e24a6cc489c77cbe54ffa2a711d37371e6efd0668",
-      "transactionHash": "0xe8c38546f9a1cdde97b8aa274d529c782a22947ebb32ba8f59af11b0b225fd19"
+      "address": "0x36751BB8A97cd1Daaf012F3d959f4C4f44b15bC4",
+      "runtimeCodehash": "0x0c83ffdf504f374fbcccf28537d7d4d36943b82ec2f4700cf300e984820744a5",
+      "transactionHash": "0xb18218e752834907581e18f0bbf51c2987b523112e19c02843447a82e7044bb9"
     },
     "uniswapV4Adapter": {
-      "address": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
-      "runtimeCodehash": "0xe728e8be705caba153536b3bcf2468c13044bdea4e63f8d62f0a6feb3ce3c1be",
-      "transactionHash": "0x6076d2219a9c99472de0841cc001fae7c5327e5df597fbe8a0a51ebfc2b4be05"
+      "address": "0x04A5A84A9ffB21Dd7B83fBB71ccD247ea7CaeEcc",
+      "runtimeCodehash": "0xf728ea17cfdd225042cdbd3c2e91574f5548e07f01878879378b97d2478f4abf",
+      "transactionHash": "0xa2ab34181a5f206dd61b35e8499964161d11f780fff6b397dfae3575e4b2e51a"
     }
   },
   "pools": [
@@ -114,10 +114,19 @@
       "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
     }
   ],
-  "revokedAdapter": "0xF4263c38E09e2d59Eb7af5fE25abB0e2088e8D6E",
-  "previousRouter": "0x88a8c94f0eCb600ce980cAAEefD9eC68c7c95614",
-  "revocationTransactionHash": "0x519fe70a3ee1c911efefddd08d42e78f04a9e2aead3cb85f4dc7a6b79126b59a",
+  "revocations": [
+    {
+      "adapter": "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
+      "previousRouter": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
+      "transactionHash": "0x81b2271a9b7f99616e8a1696bc401de5cda421e61d208bf3a5c6d7d227ceabe2"
+    },
+    {
+      "adapter": "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
+      "previousRouter": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
+      "transactionHash": "0xa90589eb10688812527014634b130490f86ec6d3db4cdaaef4db2a4d431dd3be"
+    }
+  ],
   "seedGasSpendWei": "326616450000000",
-  "deploymentGasSpendWei": "308299170000000",
-  "totalGasSpendWei": "634915620000000"
+  "deploymentGasSpendWei": "322535920000000",
+  "totalGasSpendWei": "649152370000000"
 }

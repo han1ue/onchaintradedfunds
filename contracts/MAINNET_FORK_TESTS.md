@@ -74,18 +74,15 @@ deploy Uniswap locally; they are not fork tests.
 
 ## Router compatibility
 
-The first mainnet run exposed a V4 encoding mismatch. The historical testnet
-Universal Router accepts four fields in `ExactInputParams`. The mainnet router
-requires five, including a per-hop array between the path and input amount.
+The mainnet Universal Router requires five fields in `ExactInputParams`, including
+a per-hop array between the path and input amount.
 The V4 adapter and buyback collector now encode that array as empty and retain
 the caller's aggregate minimum output. All eight fork tests pass with this encoding.
 
-The already deployed testnet contracts retain their four-field encoding.
-The testnet deployment script stops before compilation or wallet setup because
-the pinned testnet venue is incompatible with current source. Replacing that
-venue requires a separate review and deployment. Historical testnet receipts,
-runtime verification, and scripts for inspecting the existing deployment remain
-available; they are not mainnet deployment evidence.
+The September 6 testnet deployment uses the same-address V4 stack and five-field
+encoding. The deployment script pins the chain-46630 runtime hashes and validates
+PoolManager bindings before sending transactions. Testnet receipts are not mainnet
+deployment evidence.
 
 ## Oracle age and rehearsal limits
 

@@ -85,13 +85,13 @@ Rounding prevents unbacked shares and fee undercharging. Small operations may re
 
 Production deployment requires explicit WETH, PoolManager, StateView, PositionManager, Universal Router, Permit2, and ETH/USD oracle addresses, with no fallback defaults.
 
-Testnet uses an unofficial V4 mirror with pinned runtime hashes. A matching hash verifies the expected bytecode at an address; operators and dependencies still require review.
+Testnet uses the Robinhood mainnet-address V4 deployment with runtime hashes pinned on chain 46630. A matching hash verifies the expected bytecode at an address; operators and dependencies still require review.
 
 Run `corepack pnpm contracts:validate:mainnet-routing` to test a local copy of Robinhood mainnet at one recent block. It checks 23 pinned dependency runtimes and rehearses deployment and allocation. The suites cover launch graduation, basket and ETH entry/exit, mixed adapters, fee settlement, buyback burns, and rollback when output falls below a minimum. They also trade five real stock tokens, test in-kind exits after adapter revocation, and check vesting against the live ETH/USD feed.
 
 The Solidity security workflow runs these tests on matching pushes and pull requests, and supports manual runs. The rehearsal allows a 90,000-second oracle age: the feed's 86,400-second heartbeat plus one hour. Final production roles, multisig execution, and the broadcast procedure remain unvalidated.
 
-Current source uses the mainnet router's five-field V4 tuple. The [September 5 testnet deployment](/deployment-addresses) uses its venue's four-field tuple, includes the liquidity-capacity fix with hook mask `0x2840`, and clears Permit2 approvals. Its replacement adapters are approved and the previous V3 adapter is revoked. Fresh testnet deployment from current source is blocked until a compatible venue is reviewed and configured.
+Current source and the [September 6 testnet deployment](/deployment-addresses) use the canonical five-field V4 tuple. The replacement adapters are approved, both previous adapters are revoked, and temporary Permit2 approvals are cleared after execution.
 
 ## Production blockers
 

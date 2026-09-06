@@ -202,8 +202,17 @@
       "data": "0x3d312f6d0000000000000000000000008acbe3de5d585f2f7bbc1342c103db1f5077cfa50000000000000000000000000000000000000000000000000000000000000000",
       "transactionHash": "0x81b2271a9b7f99616e8a1696bc401de5cda421e61d208bf3a5c6d7d227ceabe2",
       "gasUsed": "32773"
+    },
+    {
+      "kind": "call",
+      "name": "OTFEntryExitRouter",
+      "functionName": "setAdapterApproved",
+      "to": "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
+      "data": "0x3d312f6d00000000000000000000000072bb9e0ad6ee8845c13749bd7f8d1b27033b6ba40000000000000000000000000000000000000000000000000000000000000000",
+      "transactionHash": "0xa90589eb10688812527014634b130490f86ec6d3db4cdaaef4db2a4d431dd3be",
+      "gasUsed": "32773"
     }
   ],
-  "totalGas": "32220819",
-  "gasSpend": "322208190000000"
+  "totalGas": "32253592",
+  "gasSpend": "322535920000000"
 }

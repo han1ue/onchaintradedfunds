@@ -15,29 +15,29 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetDeploymentReady).toBe(true);
     expect(robinhoodTestnetV4AdapterReady).toBe(true);
     expect(robinhoodTestnetNativeEntryReady).toBe(true);
-    expect(robinhoodTestnetRewardsDeploymentBlock).toBe(113608985n);
-    expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-05T18:13:48.000Z"));
+    expect(robinhoodTestnetRewardsDeploymentBlock).toBe(113815096n);
+    expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-06T01:39:33.000Z"));
     expect(robinhoodTestnetAddresses).toMatchObject({
-      otfToken: "0xDdc627874CA2B28F13031B31C45E9d5ea7A705ab",
-      launchManager: "0xdeAdc1F7542f404A8548AF28659771c1ebbFa840",
-      launchRouter: "0x19f05c04Ddfa4a6138E6537031f51Bd8Cb9E1fb6",
-      teamVesting: "0x048b33F6469D8A0A439E6D5d9BBD36db61E30BfB",
-      buybackCollector: "0xFE4e62782AEDe67Dc0C4e0c9BcDbDa4769e08BbC",
-      merkleRewardsDistributor: "0xBc1be2e0Cce2F48485e801d7188FC6D633EaFc8B",
-      ethUsdOracle: "0xDE1e4B0f8f0B8BD67D51354766fD8D9b48706B67",
-      vaultImplementation: "0x59B5923264e22c04CFc57F787ADDD53b48A3D84c",
-      factory: "0x7619eB1Ec1302e6f9E1a618D875B05dCF5EcFE34",
-      entryRouter: "0xFBeEDD9dA3c34339C513fd9fA6a24AD4B92a9DC2",
-      uniswapV3Adapter: "0x8AcBE3dE5d585F2f7BBc1342c103dB1F5077CFa5",
-      uniswapV4Adapter: "0x72bB9e0AD6ee8845C13749BD7F8D1b27033B6Ba4",
+      otfToken: "0xae3803B6A46f83C834aC17512F91D21657097199",
+      launchManager: "0x2b7CDE853CC18bcb862500E8ff80F329e4932840",
+      launchRouter: "0xb081Eb9A894e5a260A8249788300FB1A7fC23A67",
+      teamVesting: "0xCbb8B26A2e9A5A4F06Be219938C8Ac1593995b7C",
+      buybackCollector: "0xf13236dC41492219eFBb094a1E6cb6874dfc6AB8",
+      merkleRewardsDistributor: "0x6bE4F6132aA4253C173fCB4FE2313d13A37ce09D",
+      ethUsdOracle: "0x951FC808673648D231B9f64F72DB082196EA24a2",
+      vaultImplementation: "0x0f9DF04b356935c55B15EC10a05Fd8AC88be4336",
+      factory: "0xd5725B9b668ae1ab8Cf42e4F1B3c989CBc14a2E5",
+      entryRouter: "0x66fA0cEd11Db9bA9771F420e330F1Eeb0597F8A1",
+      uniswapV3Adapter: "0x36751BB8A97cd1Daaf012F3d959f4C4f44b15bC4",
+      uniswapV4Adapter: "0x04A5A84A9ffB21Dd7B83fBB71ccD247ea7CaeEcc",
     });
     expect(robinhoodTestnetV4).toEqual({
-      poolManager: "0x949257d5181128a7c793619b922e47B849cb81e6",
-      stateView: "0x585906972e2C513cbbc97d9C159f27Df9daf3A21",
-      quoter: "0x35587Cd9Aee64Fe364438bBfD68033CA6aEC6906",
-      universalRouter: "0x5274B13F0B60425f403A84Dc85b58951E880664c",
-      positionManager: "0xF839356eA23e6799972C3685f5c7B60158e4e96d",
-      permit2: "0xA03bd7D6d7193051dB730AaD27BF25E46570c43F",
+      poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+      stateView: "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+      quoter: "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94",
+      universalRouter: "0x8876789976dEcBfCbBbe364623C63652db8C0904",
+      positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
     });
   });
 });

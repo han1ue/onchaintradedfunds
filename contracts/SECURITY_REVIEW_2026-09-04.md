@@ -101,8 +101,8 @@ fees, including pending expense fees and shutdown.
 
 ## Production dependency validation remains incomplete
 
-Follow-up, 5 September 2026: testnet source and runtime inspection confirmed that its configured
-Universal Router uses four fields. The adapter, collector, and application encoding now match it.
+Follow-up, 6 September 2026: the protocol now uses the Robinhood mainnet-address V4 deployment on
+testnet and the same five-field exact-input encoding. The deployment pins chain-46630 runtime hashes.
 The testnet fork also exposed and corrected the adapter's Permit2 cleanup expiration check.
 See [testnet routing validation](TESTNET_ROUTING_VALIDATION.md) for runtime bindings, execution
 coverage, and remaining mainnet work. The following paragraphs preserve the original review.
