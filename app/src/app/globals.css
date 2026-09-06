@@ -1635,6 +1635,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .valuationAllocation { min-width: 0; overflow: hidden; }
 .allocationPanelHeading { padding-top: 13px; padding-bottom: 13px; }
 .allocationHeadingMeta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
+.fundVerificationBadge { display: inline-flex; margin-right: 6px; color: var(--accent-text); vertical-align: -0.15em; }
 .fundTradePanel { min-width: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 20px; background: var(--card); }
 .fundTradeBody { min-width: 0; overflow: hidden; }
 .fundTradeHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 12px 14px; }

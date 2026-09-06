@@ -122,7 +122,7 @@ describe("$OTF page wiring", () => {
     expect(summary).toContain('className="fundsMetricSeparator"');
     expect(summary).toContain("{weeklyEmissionText}");
     expect(operate).toContain("weeklyEmissionOtf)} $OTF`");
-    expect(summary).toContain("Distributed in week");
+    expect(summary).toContain("Week ${rewardsApy.week} distribution");
     expect(summary).not.toContain("{rewardsApyText} APY");
     expect(css).toContain(".fundsMetricSeparator { width: 1px;");
   });

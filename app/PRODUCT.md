@@ -27,7 +27,7 @@ Percentages use 18-decimal fixed-point units, must be positive, and must sum to 
 
 `Market-cap weighted` means every final percentage unit matches its calculated default; any difference gives `Modified market-cap weighted`. Per-asset multipliers compare final and default percentages. Token rounding and vault balances do not affect the label.
 
-The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Missing or invalid snapshots display `Weighting method unavailable`.
+The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Fund details show each constituent’s name, ticker, and onchain units independently of this snapshot. The allocation table does not request prices or calculate weights.
 
 ### Submission state
 
@@ -65,7 +65,7 @@ Testnet basket execution uses `mintFromToken`, `mintFromNative`, `redeemToToken`
 
 `robinhood-testnet-assets.json` lists USDG and WETH quote assets, five constituents, and active V3 pools. Constituent pools support basket settlement and testnet liquidity, rather than general Swap pairs. `assets.json` supplies production discovery defaults, not an onchain allowlist.
 
-Verification labels cover identity and ordinary metadata only. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
+Verification labels cover identity and ordinary metadata only. An OTF receives a badge in the Funds directory and fund details when every constituent address is in the verification registry for that chain. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
 
 ## Fee settlement
 

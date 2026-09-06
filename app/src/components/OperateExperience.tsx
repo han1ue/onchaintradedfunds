@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   ArrowRight,
   BookOpenText,
+  BadgeCheck,
   Check,
   CheckCircle,
   ChevronDown,
@@ -34,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { decodeFunctionResult, encodeFunctionData, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type TransactionReceipt } from "viem";
+import { decodeFunctionResult, encodeFunctionData, erc20Abi, formatUnits, getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, useBalance, useChainId, usePublicClient, useReadContracts, useSwitchChain, useWalletClient } from "wagmi";
 import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFactoryAbi, otfLaunchManagerAbi, otfLaunchRouterAbi } from "@onchaintradedfunds/generated";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
@@ -96,14 +97,12 @@ import {
 import { readVaultSummary, useFactoryVaults, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
 import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
 import {
-  formatMarketCapMultiplier,
   formatStoredPercentage,
-  formatStoredPercentageExact,
   loadCreationMetadata,
-  multiplierPosition,
   weightingMethodLabel,
   type OtfCreationMetadata,
 } from "@/lib/creation-metadata";
+import { fundAllocationRows, fundAssetsVerified, type FundAllocationRow } from "@/lib/fund-composition";
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
@@ -2184,7 +2183,35 @@ const VALUATION_RANGES: { label: string; value: ValuationRange; duration?: numbe
   { label: "ALL", value: "all" },
 ];
 
-function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: string; valuation: FundValuation; creationMetadata: OtfCreationMetadata | null }) {
+function useFundAllocation(fund?: FactoryVaultSummary) {
+  const publicClient = usePublicClient();
+  const [allocation, setAllocation] = useState<{ state: "loading" | "ready" | "unavailable"; rows: FundAllocationRow[] }>({ state: "loading", rows: [] });
+  useEffect(() => {
+    let cancelled = false;
+    setAllocation({ state: "loading", rows: [] });
+    if (!fund || !publicClient) return;
+    void Promise.all([
+      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: fund.totalSupply === 0n ? "bootstrapBasketUnits" : "accountedBalances" }),
+      Promise.all(fund.assets.map(async (address) => {
+        const [symbol, name, decimals] = await Promise.all([
+          publicClient.readContract({ address, abi: erc20Abi, functionName: "symbol" }).catch(() => undefined),
+          publicClient.readContract({ address, abi: erc20Abi, functionName: "name" }).catch(() => undefined),
+          publicClient.readContract({ address, abi: erc20Abi, functionName: "decimals" }).catch(() => undefined),
+        ]);
+        return { address, symbol, name, decimals };
+      })),
+    ]).then(([quantities, tokens]) => {
+      if (!cancelled) setAllocation({ state: "ready", rows: fundAllocationRows(tokens, quantities) });
+    }).catch(() => {
+      if (!cancelled) setAllocation({ state: "unavailable", rows: [] });
+    });
+    return () => { cancelled = true; };
+  }, [fund, publicClient]);
+  return allocation;
+}
+
+function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valuation: FundValuation; fund?: FactoryVaultSummary }) {
+  const allocation = useFundAllocation(fund);
   const [mode, setMode] = useState<"share" | "nav">("share");
   const [range, setRange] = useState<ValuationRange>("30d");
   const allPoints = valuation.history;
@@ -2236,9 +2263,6 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
     : { month: "short", day: "numeric" };
   const firstDate = points.length ? new Date(firstTimestamp).toLocaleString(undefined, dateOptions) : "";
   const lastDate = points.length ? new Date(lastTimestamp).toLocaleString(undefined, dateOptions) : "";
-  const methodologyLabel = creationMetadata
-    ? weightingMethodLabel(creationMetadata.weightingMethod)
-    : "Weighting method unavailable";
 
   return (
     <div className="fundValuationColumn">
@@ -2266,23 +2290,25 @@ function FundValuationChart({ symbol, valuation, creationMetadata }: { symbol: s
         )}
       </section>
       <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
-        <div className="directoryPanelHeading allocationPanelHeading">
-          <div><h2 id="allocation-title">Allocation</h2></div>
-          <div className="allocationHeadingMeta"><span className="stateBadge muted methodologyBadge">{methodologyLabel}</span></div>
-        </div>
-        {creationMetadata ? (
+        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div></div>
+        {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
-              <thead><tr><th>Constituent</th><th>Market-cap weight</th><th>Creator-selected weight</th><th>Multiplier</th></tr></thead>
-              <tbody>{creationMetadata.constituents.map((asset) => { const position = multiplierPosition(BigInt(asset.multiplierUnits)); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name} · {shortAddress(asset.address)}</small></div></div></td><td data-label="Market-cap weight" title={`${formatStoredPercentageExact(asset.marketCapDefaultPercentageUnits)} exact default`}>{formatStoredPercentage(asset.marketCapDefaultPercentageUnits)}</td><td data-label="Creator-selected weight" title={`${formatStoredPercentageExact(asset.finalPercentageUnits)} exact selected weight`}>{formatStoredPercentage(asset.finalPercentageUnits)}</td><td data-label="Multiplier"><strong>{formatMarketCapMultiplier(BigInt(asset.multiplierUnits))}</strong>{position === "unchanged" ? null : <small>{position[0].toUpperCase()}{position.slice(1)}</small>}</td></tr>; })}</tbody>
+              <thead><tr><th>Asset</th><th>{fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}</th></tr></thead>
+              <tbody>{allocation.rows.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label={fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}>{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td></tr>)}</tbody>
             </table>
           </div>
         ) : (
-          <div className="creationMetadataUnavailable" role="status"><History size={17} /><div><strong>Weighting method unavailable</strong><span>It is not inferred or fabricated from current balances. The methodology can only be shown when this browser has the vault&apos;s creation metadata.</span></div></div>
+          <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading units…" : "Could not load units."}</span></div>
         )}
       </section>
     </div>
   );
+}
+
+function FundVerificationBadge({ chainId, assets }: { chainId: number; assets: readonly Address[] }) {
+  if (!fundAssetsVerified(chainId, assets)) return null;
+  return <span className="fundVerificationBadge" role="img" aria-label="All constituent assets verified" title="All constituent assets are in the verification registry"><BadgeCheck size={16} aria-hidden="true" /></span>;
 }
 
 function FundsSurface({ detail }: { detail: boolean }) {
@@ -2299,7 +2325,6 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [directorySearch, setDirectorySearch] = useState("");
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
-  const [creationMetadata, setCreationMetadata] = useState<OtfCreationMetadata | null>(null);
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
   const directoryAum = useDirectoryAum(vaults, !detail && factoryDirectoryState === "ready");
   const fundAumUsd = valuation.state === "ready" ? valuation.current?.aumUsd : undefined;
@@ -2315,15 +2340,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
     ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} $OTF`
     : rewardsApy.state === "loading" ? "…" : "—";
   const weeklyDistributionLabel = rewardsApy.state === "ready"
-    ? `${weeklyEmissionText} distributed in week ${rewardsApy.week}`
+    ? `Week ${rewardsApy.week} distribution: ${weeklyEmissionText}`
     : rewardsApy.state === "loading" ? "Weekly distribution loading" : "Weekly distribution unavailable";
-  useEffect(() => {
-    if (!detail || !routeAddress) {
-      setCreationMetadata(null);
-      return;
-    }
-    setCreationMetadata(loadCreationMetadata(window.localStorage, chainId, routeAddress) ?? null);
-  }, [chainId, detail, routeAddress]);
   useEffect(() => {
     let cancelled = false;
     if (!detail) return;
@@ -2374,7 +2392,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailIdentity">
                 <OtfTokenIcon className="fundDetailTokenIcon" size={48} ticker={vaultDetails?.symbol ?? "OTF"} />
                 <div>
-                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1></div>
+                  <div className="fundDetailTitleLine"><h1 id="fund-detail-title">{vaultDetails ? <FundVerificationBadge chainId={chainId} assets={vaultDetails.assets} /> : null}{vaultDetails?.name ?? (routeAddress ? shortAddress(routeAddress) : "No OTF connected")}</h1></div>
                   <div className="fundDetailMeta">
                     {routeAddress ? <a href={`${explorerUrl}/address/${routeAddress}`} target="_blank" rel="noreferrer"><code>{shortAddress(routeAddress)}</code><ExternalLink size={11} /></a> : <span>No valid fund address in this route</span>}
                   </div>
@@ -2390,7 +2408,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <section className="fundThesis" aria-labelledby="fund-thesis-title"><span className="fundThesisMark" aria-hidden="true"><BookOpenText size={17} /></span><div><h2 id="fund-thesis-title">Fund thesis</h2>{vaultDetails ? <p>{vaultDetails.fundThesis}</p> : null}</div></section>
           </section>
           <div className="fundDetailPrimaryGrid">
-            <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} creationMetadata={creationMetadata} />
+            <FundValuationChart symbol={vaultDetails?.symbol ?? "OTF"} valuation={valuation} fund={vaultDetails} />
             <div className="fundTradeColumn">
               <section className="fundTradePanel" aria-labelledby="fund-trade-title">
                 <div className="fundTradeBody">
@@ -2427,7 +2445,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <span className="fundsMetricSeparator" aria-hidden="true" />
             <div className="fundsHeadlineMetric fundsDistribution">
               <strong aria-label={weeklyDistributionLabel} title={weeklyDistributionLabel}>{weeklyEmissionText}</strong>
-              <span>{rewardsApy.week ? `Distributed in week ${rewardsApy.week}` : "Weekly distribution"}</span>
+              <span>{rewardsApy.week ? `Week ${rewardsApy.week} distribution` : "Weekly distribution"}</span>
             </div>
           </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
@@ -2447,10 +2465,10 @@ function FundsSurface({ detail }: { detail: boolean }) {
               </div>
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
-                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
+                  <table className="directoryTable" aria-label="Onchain traded funds"><thead><tr><th>OTF</th><th>Supply</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead><tbody>{filteredVaults.map((vault) => { const href = `/funds/${vault.address}`; return <tr className="clickableDirectoryRow" key={vault.address} role="link" tabIndex={0} onClick={() => router.push(href)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); router.push(href); } }}><td><div className="directoryFundLink"><AssetLogo symbol={vault.symbol} /><span><strong><FundVerificationBadge chainId={chainId} assets={vault.assets} />{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div></td><td data-label="Supply">{Number(formatUnits(vault.totalSupply, 18)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td><td data-label="Assets">{vault.assetCount}</td><td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td><td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td></tr>; })}</tbody></table>
                 </div>
               ) : (
-                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
+                <div className="directoryFundCards">{filteredVaults.map((vault) => <Link className="directoryFundCard" href={`/funds/${vault.address}`} key={vault.address}><div><AssetLogo symbol={vault.symbol} /><span><strong><FundVerificationBadge chainId={chainId} assets={vault.assets} />{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><dl><div><dt>Assets</dt><dd>{vault.assetCount}</dd></div><div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div><div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div></dl></Link>)}</div>
               ) : (
                 <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}
