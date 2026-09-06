@@ -1,6 +1,6 @@
 ---
 name: Onchain Traded Funds
-description: A Robinhood-native finance interface with light and charcoal-dark appearances.
+description: A Robinhood-native finance interface with a charcoal-dark appearance.
 colors:
   background: "#0d0f0c"
   nav: "#12150e"
@@ -66,7 +66,7 @@ components:
 
 ## Design principles
 
-Use compact controls, clear hierarchy, and the Robinhood palette in both appearances. Swap focuses on one exchange; creation, fund detail, and liquidity pages can use denser layouts.
+Use compact controls, clear hierarchy, and the Robinhood dark palette. Swap focuses on one exchange; creation, fund detail, and liquidity pages can use denser layouts.
 
 Color identifies actions and status. Surface tones and thin borders separate content.
 
@@ -80,7 +80,7 @@ The splash uses a large Instrument Sans title, animated convergence field, and l
 - `danger` is reserved for errors and failed transactions.
 - Splash colors apply only to the entry screen.
 
-The appearance selector offers Browser, Light, and Dark. Dark uses olive-charcoal surfaces. Light uses warm off-white surfaces with darker olive accents for readable text and focus states.
+The application always uses olive-charcoal surfaces, including wallet dialogs. Settings contains no appearance selector.
 
 ## Typography
 
@@ -102,7 +102,7 @@ The Swap card uses a 16 px radius and a diffuse shadow. Actions and inputs use 8
 
 Use lime primary buttons when the action can proceed. Name what blocks disabled controls. Secondary controls use bordered, transparent or card-toned surfaces. Keep focus visible without animation.
 
-Inputs use the raised surface and a border. Focus uses the appearance's accent color. Pair disabled and failed states with explicit text.
+Inputs use the raised surface and a border. Focus uses the accent color. Pair disabled and failed states with explicit text.
 
 Navigation contains Swap, Funds, `$OTF`, the Robinhood network selector, wallet control, and settings. The closed network selector shows only its icon.
 

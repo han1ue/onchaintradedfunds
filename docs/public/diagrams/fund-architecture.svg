@@ -3,24 +3,13 @@
   <desc id="description">The application converts offchain prices and creator weights into raw basket units. The creator calls OTFFactory, which deploys and registers a ManagedOTFVault clone. Holders mint or redeem through OTFEntryExitRouter, which settles the basket with the vault and calls approved Uniswap V3 or V4 trade adapters. Those adapters execute swaps through SwapRouter02 or Universal Router. Holders can also call the vault directly to redeem in kind. The vault holds the ERC-20 basket, accounts for balances, issues fund shares, and stores fixed fees and the fund thesis. Arrows show calls, not the direction of token transfers.</desc>
   <style>
     :root {
-      --background: #f5f8f7;
-      --surface: #eef3f1;
-      --foreground: #14201f;
-      --muted: #526460;
-      --border: #b2c2bd;
-      --line: #526460;
-      --accent: #187f76;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --background: #0e1218;
-        --surface: #131820;
-        --foreground: #edf2f7;
-        --muted: #9ba8ba;
-        --border: #465262;
-        --line: #9ba8ba;
-        --accent: #57cfc2;
-      }
+      --background: #0e1218;
+      --surface: #131820;
+      --foreground: #edf2f7;
+      --muted: #9ba8ba;
+      --border: #465262;
+      --line: #9ba8ba;
+      --accent: #57cfc2;
     }
     text { fill: var(--foreground); font-family: "Segoe UI", Helvetica, Arial, sans-serif; }
     .heading { font-size: 28px; font-weight: 650; letter-spacing: -0.5px; }

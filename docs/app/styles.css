@@ -8,19 +8,6 @@
 }
 
 :root {
-  --otf-background: #f5f8f7;
-  --otf-surface: #eef3f1;
-  --otf-foreground: #14201f;
-  --otf-muted: #526460;
-  --otf-border: rgb(31 58 54 / 18%);
-  --otf-teal: #187f76;
-  --otf-gold: #8b5a08;
-  --otf-chart-grid: rgb(31 58 54 / 14%);
-  --otf-chart-teal-fill: rgb(24 127 118 / 16%);
-  --otf-chart-gold-fill: rgb(139 90 8 / 20%);
-}
-
-html.dark {
   --otf-background: #0e1218;
   --otf-surface: #131820;
   --otf-foreground: #edf2f7;
@@ -35,12 +22,8 @@ html.dark {
 
 html {
   background: var(--otf-background);
-  color-scheme: light;
-  scrollbar-color: var(--otf-muted) var(--otf-background);
-}
-
-html.dark {
   color-scheme: dark;
+  scrollbar-color: var(--otf-muted) var(--otf-background);
 }
 
 body {

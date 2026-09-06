@@ -47,14 +47,14 @@ const footer = (
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" dir="ltr" suppressHydrationWarning>
+    <html lang="en" dir="ltr" className="dark" suppressHydrationWarning>
       <Head
         color={{
           hue: 174,
           saturation: 53,
-          lightness: { light: 30, dark: 57 },
+          lightness: 57,
         }}
-        backgroundColor={{ light: "#f5f8f7", dark: "#0e1218" }}
+        backgroundColor={{ light: "#0e1218", dark: "#0e1218" }}
       />
       <body>
         <template
@@ -76,7 +76,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           docsRepositoryBase="https://github.com/han1ue/onchaintradedfunds/tree/main/docs"
           footer={footer}
           copyPageButton={false}
-          nextThemes={{ defaultTheme: "dark" }}
+          darkMode={false}
+          nextThemes={{ forcedTheme: "dark", defaultTheme: "dark" }}
           sidebar={{ autoCollapse: true, defaultMenuCollapseLevel: 1 }}
           toc={{ title: "On this page", backToTop: "Back to top", float: false }}
           editLink="Edit this page"
