@@ -102,7 +102,7 @@ import {
   weightingMethodLabel,
   type OtfCreationMetadata,
 } from "@/lib/creation-metadata";
-import { fundAllocationRows, fundAssetsVerified, type FundAllocationRow } from "@/lib/fund-composition";
+import { fundAllocationRows, fundAllocationWeights, fundAssetsVerified, type FundAllocationRow, type FundAllocationWeights } from "@/lib/fund-composition";
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
@@ -1884,6 +1884,8 @@ function formatWethAmount(value: bigint): string {
 type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
 
 type FundValuation = {
+  fundAddress?: Address;
+  allocationWeights?: FundAllocationWeights;
   state: "loading" | "ready" | "unavailable";
   current?: FundValuationSnapshot;
   history: FundValuationSnapshot[];
@@ -1962,6 +1964,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       }, 0n);
       const aumUsdWad = usdWadFor(accountedBalances);
       const usesBootstrapNav = fund.totalSupply === 0n;
+      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], usesBootstrapNav ? bootstrapUnits : accountedBalances);
       const navUsdWad = usesBootstrapNav
         ? usdWadFor(bootstrapUnits)
         : aumUsdWad * 10n ** 18n / fund.totalSupply;
@@ -1995,8 +1998,12 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       const nextHistory = (previous && Math.abs(current.at - previous.at) < 5 * 60_000
         ? [...history.slice(0, -1), current]
         : [...history, current]).slice(-180);
-      window.localStorage.setItem(storageKey, JSON.stringify(nextHistory));
-      return { current, history: nextHistory, usesBootstrapNav };
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(nextHistory));
+      } catch {
+        // Live values remain available when browser storage is disabled.
+      }
+      return { current, history: nextHistory, usesBootstrapNav, allocationWeights, fundAddress: fund.address };
     }).then((result) => {
       if (!cancelled) {
         setValuation({ state: "ready", ...result });
@@ -2212,6 +2219,11 @@ function useFundAllocation(fund?: FactoryVaultSummary) {
 
 function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valuation: FundValuation; fund?: FactoryVaultSummary }) {
   const allocation = useFundAllocation(fund);
+  const weights = valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.allocationWeights : undefined;
+  const weightsByAddress = new Map(weights?.rows.map((row) => [row.address.toLowerCase(), row]));
+  const weightingLabel = weights?.matchesMarketCap === undefined
+    ? valuation.state === "loading" ? "Loading weights…" : "Market-cap comparison unavailable"
+    : weights.matchesMarketCap ? "Matches current market-cap weights" : "Differs from current market-cap weights";
   const [mode, setMode] = useState<"share" | "nav">("share");
   const [range, setRange] = useState<ValuationRange>("30d");
   const allPoints = valuation.history;
@@ -2290,12 +2302,12 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         )}
       </section>
       <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
-        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div></div>
+        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title="Compares each current allocation with its share of the constituents’ combined market cap. A match allows up to 0.01 percentage points difference per asset.">{weightingLabel}</span></div>
         {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
-              <thead><tr><th>Asset</th><th>{fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}</th></tr></thead>
-              <tbody>{allocation.rows.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label={fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}>{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td></tr>)}</tbody>
+              <thead><tr><th>Asset</th><th>{fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}</th><th>Allocation %</th><th>Market-cap %</th></tr></thead>
+              <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label={fund?.totalSupply === 0n ? "Initial units / share" : "Units held"}>{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation %">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Market-cap %">{weight?.marketCapPercentageUnits === undefined ? "—" : formatStoredPercentage(weight.marketCapPercentageUnits.toString())}</td></tr>; })}</tbody>
             </table>
           </div>
         ) : (

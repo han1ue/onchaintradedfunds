@@ -27,7 +27,7 @@ Percentages use 18-decimal fixed-point units, must be positive, and must sum to 
 
 `Market-cap weighted` means every final percentage unit matches its calculated default; any difference gives `Modified market-cap weighted`. Per-asset multipliers compare final and default percentages. Token rounding and vault balances do not affect the label.
 
-The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Fund details show each constituent’s name, ticker, and onchain units independently of this snapshot. The allocation table does not request prices or calculate weights.
+The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Fund details show each constituent’s name, ticker, and onchain units independently of this snapshot. The allocation table reuses the NAV pricing response for current allocation percentages and constituent market-cap percentages, with no additional price requests. A current market-cap match allows up to 0.01 percentage points difference per constituent; it does not classify the original launch settings.
 
 ### Submission state
 
