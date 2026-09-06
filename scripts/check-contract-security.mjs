@@ -441,7 +441,7 @@ for (const validation of [
 for (const setting of ["UNISWAP_V4_POOL_MANAGER_CODEHASH", "UNISWAP_V4_STATE_VIEW_CODEHASH", "UNISWAP_V4_POSITION_MANAGER_CODEHASH", "UNISWAP_V4_QUOTER_CODEHASH", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH", "PERMIT2_CODEHASH"]) {
   assert(deploySource.includes(setting), `deployment does not require ${setting}`);
 }
-for (const binding of ["StateView PoolManager", "PositionManager PoolManager", "Quoter PoolManager", "Universal Router PoolManager", "Universal Router PositionManager", "Universal Router WETH", "Universal Router Permit2"]) {
+for (const binding of ["StateView PoolManager", "PositionManager PoolManager", "Quoter PoolManager", "Universal Router PoolManager", "Universal Router PositionManager", "PositionManager native wrapper", "Universal Router native wrapper", "Universal Router Permit2"]) {
   assert(deploySource.includes(binding), `deployment does not verify ${binding}`);
 }
 assert(!existsSync(join(root, "scripts", "formation-snapshot.mjs")), "legacy formation snapshot CLI remains");

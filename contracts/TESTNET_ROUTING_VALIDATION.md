@@ -1,12 +1,12 @@
 # Uniswap V3 replacement on Robinhood testnet
 
-This is a historical testnet report. The maintained Foundry fork suite now targets
-Robinhood mainnet; see [mainnet fork tests](MAINNET_FORK_TESTS.md). Current source
-uses the mainnet V4 router encoding and cannot be redeployed against the old testnet router.
+The maintained Foundry fork suite targets Robinhood mainnet; see
+[mainnet fork tests](MAINNET_FORK_TESTS.md). The September 6 testnet deployment uses
+the same-address V4 stack and five-field router encoding as mainnet.
 
-All six pools and the complete fresh protocol are live on chain 46630. The previous V3 adapter
-is revoked, and the application configuration targets the new contracts. Live receipts, local checks, and
-fork simulations are recorded below. This task created no Git commit.
+All six RWA pools and the fresh protocol are live on chain 46630. The September 6
+redeployment reused the pools without creating or seeding replacements. Both adapters
+from the previous protocol deployment are revoked.
 
 ## Dependency authentication
 
@@ -78,7 +78,7 @@ and collector deployments. The collector, factory, and entry router have immutab
 bindings, so the script deploys the complete protocol with fresh allocations and both adapters.
 There are no compatibility aliases or alternate venue callbacks.
 
-The script approves the replacement adapters and revokes the previous V3 adapter on its original
+The script approves the replacement adapters and revokes both previous adapters on their original
 router. It checks the new adapter's router, factory, and SwapRouter02 bindings before publishing
 configuration. Existing launch positions stay untouched. No withdrawal, transfer, or recovery
 method is added to the locked launch position.
@@ -145,7 +145,15 @@ Production dependency validation is pending. Mainnet configuration lacks the req
 and venue bindings. Production checks must use a mainnet fork; these testnet results provide
 no mainnet validation.
 
-## Completed live operations
+## September 6 protocol redeployment
+
+The full protocol deployment and setup used 32,253,592 gas across 26 transactions,
+for 0.00032253592 ETH at 10,000,000 wei/gas. The deployment reused all six RWA pools.
+The live readback verified twelve protocol runtimes, both adapter revocations, all six
+owned liquidity positions, allowance cleanup, and the authorized funding caps. Current
+addresses and receipts are listed in [deployment addresses](../docs/content/deployment-addresses.mdx).
+
+## Historical September 5 live operations
 
 The user approved the exact seed amounts and 0.002 ETH combined gas cap. All 31 seed transactions
 and 23 deployment/setup transactions succeeded. Actual gas spending was 0.00063491562 ETH: 0.00032661645 ETH for seeding and 0.00030829917 ETH for deployment.
