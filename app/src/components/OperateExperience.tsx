@@ -1965,7 +1965,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
       }, 0n);
       const aumUsdWad = usdWadFor(accountedBalances);
       const usesBootstrapNav = fund.totalSupply === 0n;
-      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], accountedBalances);
+      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], usesBootstrapNav ? bootstrapUnits : accountedBalances);
       const navUsdWad = usesBootstrapNav
         ? usdWadFor(bootstrapUnits)
         : aumUsdWad * 10n ** 18n / fund.totalSupply;
@@ -2224,12 +2224,10 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
   const weights = valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.allocationWeights : undefined;
   const weightsByAddress = new Map(weights?.rows.map((row) => [row.address.toLowerCase(), row]));
   const pricesByAddress = new Map(valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.assetPrices?.map((asset) => [asset.address.toLowerCase(), Number(asset.priceUsd)]) : []);
-  const emptyFund = allocation.state === "ready" && allocation.rows.length > 0 && allocation.rows.every((asset) => asset.quantity === "0");
-  const weightingLabel = emptyFund
-    ? "Awaiting first deposit"
-    : weights?.matchesMarketCap === undefined
-      ? valuation.state === "loading" ? "Loading weights…" : "Pricing data unavailable"
-      : weights.matchesMarketCap ? "Market-cap weighted" : "Modified market-cap weighted";
+  const usesInitialAllocation = fund?.totalSupply === 0n;
+  const weightingLabel = weights?.matchesMarketCap === undefined
+    ? valuation.state === "loading" ? "Loading weights…" : "Pricing data unavailable"
+    : weights.matchesMarketCap ? "Market-cap weighted" : "Modified market-cap weighted";
   const [mode, setMode] = useState<"share" | "nav">("share");
   const [range, setRange] = useState<ValuationRange>("30d");
   const allPoints = valuation.history;
@@ -2308,14 +2306,14 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
         )}
       </section>
       <section className="sectionCard valuationAllocation" aria-labelledby="allocation-title">
-        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title={emptyFund ? "Allocation percentages require fund holdings." : "Compares each current allocation with its share of the constituents’ combined market cap. A match allows up to 0.01 percentage points difference per asset."}>{weightingLabel}</span></div>
+        <div className="directoryPanelHeading allocationPanelHeading"><div><h2 id="allocation-title">Allocation</h2></div><span className="stateBadge muted methodologyBadge" title="Compares each current allocation with its share of the constituents’ combined market cap. A match allows up to 0.01 percentage points difference per asset.">{weightingLabel}</span></div>
         {allocation.state === "ready" ? (
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
               <thead><tr><th>Asset</th><th>Amount</th><th>Allocation</th><th>Price</th></tr></thead>
               <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount">{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
             </table>
-            {emptyFund ? <p className="allocationEmptyNote">This fund has no holdings yet. Allocation percentages appear after the first deposit.</p> : null}
+            {usesInitialAllocation ? <p className="allocationEmptyNote">Allocation uses the initial basket until the first deposit. Amount shows current holdings.</p> : null}
           </div>
         ) : (
           <div className="creationMetadataUnavailable" role="status"><span>{allocation.state === "loading" ? "Loading amounts…" : "Could not load amounts."}</span></div>
