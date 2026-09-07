@@ -1,9 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
+import { getAddress, isAddress, type Address } from "viem";
 import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses } from "./deployment";
 import { quoteMainnetBasket } from "./mainnet-basket-api";
 import { type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
-import { ERC20_APPROVE_ABI, QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
+import { QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
 import { QuoteFailure, quoteStep } from "./quote-errors";
 import { unavailableQuoteResponse } from "./quote-diagnostics";
@@ -12,7 +12,7 @@ import { requestUniswapProvider } from "./uniswap-provider";
 const MAX_QUOTE_LIFETIME_MS = 300_000;
 
 type ObjectRecord = Record<string, unknown>;
-type ProviderRequest = (path: "check_approval" | "quote" | "swap", body: ObjectRecord, apiKey: string) => Promise<unknown>;
+type ProviderRequest = (path: "quote" | "swap", body: ObjectRecord, apiKey: string) => Promise<unknown>;
 
 export type SwapQuoteApiDependencies = {
   apiKey?: string;
@@ -53,7 +53,6 @@ type DirectQuotePayload = {
   expiresAtMs: number;
   providerQuote: unknown;
   permitData?: unknown;
-  approvalRequired: boolean;
   nativeInput: boolean;
   nativeOutput: boolean;
   nativeValue: string;
@@ -172,33 +171,8 @@ function validateQuoteRequest(value: unknown, now: number): ValidatedQuoteReques
   };
 }
 
-async function defaultProviderRequest(path: "check_approval" | "quote" | "swap", body: ObjectRecord, apiKey: string): Promise<unknown> {
+async function defaultProviderRequest(path: "quote" | "swap", body: ObjectRecord, apiKey: string): Promise<unknown> {
   return requestUniswapProvider(path, body, apiKey);
-}
-
-function canonicalApproval(caller: Address, token: Address, spender: Address, amount: bigint, chainId: number) {
-  return {
-    chainId,
-    from: caller,
-    to: token,
-    data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [spender, amount] }),
-    value: "0",
-  };
-}
-
-function validateProviderApproval(value: unknown, inputToken: Address, permit2: Address, amountIn: bigint): boolean {
-  if (value === undefined || value === null) return false;
-  const approval = record(value, "Uniswap approval");
-  const target = address(approval.to, "Uniswap approval.to");
-  if (!sameAddress(target, inputToken)) throw new Error("Uniswap approval has the wrong token target.");
-  const data = string(approval.data, "Uniswap approval.data") as Hex;
-  const decoded = decodeFunctionData({ abi: ERC20_APPROVE_ABI, data });
-  if (decoded.functionName !== "approve") throw new Error("Uniswap approval has unsupported calldata.");
-  const [spender, amount] = decoded.args;
-  if (!sameAddress(getAddress(spender), permit2) || amount < amountIn) throw new Error("Uniswap approval has the wrong spender or insufficient amount.");
-  const nativeValue = approval.value === undefined ? 0n : uint(String(approval.value), "Uniswap approval.value");
-  if (nativeValue !== 0n) throw new Error("Uniswap approval requests native value.");
-  return true;
 }
 
 function providerAddress(value: unknown): Address | undefined {
@@ -289,7 +263,7 @@ function openQuote(token: string, apiKey: string): DirectQuotePayload {
   return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as DirectQuotePayload;
 }
 
-function executionJson(payload: DirectQuotePayload, quoteToken: string, permit2: Address, universalRouter: Address, transaction?: ObjectRecord) {
+function executionJson(payload: DirectQuotePayload, quoteToken: string, universalRouter: Address, transaction?: ObjectRecord) {
   return {
     kind: "direct-api",
     chainId: payload.chainId,
@@ -304,12 +278,6 @@ function executionJson(payload: DirectQuotePayload, quoteToken: string, permit2:
     nativeInput: payload.nativeInput,
     nativeOutput: payload.nativeOutput,
     nativeValue: payload.nativeValue,
-    approval: payload.approvalRequired
-      ? canonicalApproval(payload.caller, payload.inputToken, permit2, BigInt(payload.amountIn), payload.chainId)
-      : undefined,
-    cancel: payload.approvalRequired
-      ? canonicalApproval(payload.caller, payload.inputToken, permit2, 0n, payload.chainId)
-      : undefined,
     permitData: payload.permitData,
     transaction,
   };
@@ -325,17 +293,8 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
   }
   const permit2 = robinhoodMainnetUniswap.permit2;
   const universalRouter = robinhoodMainnetUniswap.universalRouter;
-  let stage = "provider-approval";
+  let stage = "provider-quote";
   try {
-    const approvalResponse = request.input.kind === "native"
-      ? undefined
-      : record(await quoteStep("PROVIDER_UNAVAILABLE", () => dependencies.providerRequest("check_approval", {
-          amount: request.inputAmountRaw.toString(),
-          chainId: request.chainId,
-          token: request.input.address,
-          walletAddress: request.caller,
-        }, dependencies.apiKey)), "Uniswap approval response");
-    stage = "provider-quote";
     const quoteResponse = await quoteStep("PROVIDER_UNAVAILABLE", () => dependencies.providerRequest("quote", {
       type: "EXACT_INPUT",
       amount: request.inputAmountRaw.toString(),
@@ -351,9 +310,6 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
     stage = "quote-validation";
     const semantics = quoteSemantics(quoteResponse, request, dependencies.now());
     validatePermitData(semantics.permitData, request, permit2, universalRouter);
-    const approvalRequired = request.input.kind === "native"
-      ? false
-      : validateProviderApproval(approvalResponse?.approval, request.input.address, permit2, request.inputAmountRaw);
     const payload: DirectQuotePayload = {
       chainId: request.chainId,
       caller: request.caller,
@@ -365,7 +321,6 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
       expiresAtMs: semantics.expiresAtMs,
       providerQuote: semantics.providerQuote,
       permitData: semantics.permitData,
-      approvalRequired,
       nativeInput: request.input.kind === "native",
       nativeOutput: request.output.kind === "native",
       nativeValue: request.input.kind === "native" ? request.inputAmountRaw.toString() : "0",
@@ -389,7 +344,7 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
         minimumReceivedRaw: semantics.minAmountOut.toString(),
         routeLabel: "Direct pool",
         hops: [],
-        execution: executionJson(payload, quoteToken, permit2, universalRouter),
+        execution: executionJson(payload, quoteToken, universalRouter),
       },
     };
   } catch (error) {
@@ -460,7 +415,7 @@ async function finalizeDirect(value: unknown, dependencies: Required<Pick<SwapQu
   const transaction = validateSwapTransaction(swapResponse.swap ?? swapResponse.transaction, payload, robinhoodMainnetUniswap.universalRouter);
   return {
     status: 200,
-    body: { execution: executionJson(payload, quoteToken, robinhoodMainnetUniswap.permit2, robinhoodMainnetUniswap.universalRouter, transaction) },
+    body: { execution: executionJson(payload, quoteToken, robinhoodMainnetUniswap.universalRouter, transaction) },
   };
 }
 

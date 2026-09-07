@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
-import { encodeFunctionData, getAddress } from "viem";
+import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { ERC20_APPROVE_ABI } from "./swap-model";
 import { robinhoodMainnetAddresses } from "./deployment";
 import { handleSwapQuoteRequest } from "./uniswap-trading-api";
 
 const INPUT = "0x0000000000000000000000000000000000000001" as const;
 const OUTPUT = "0x0000000000000000000000000000000000000002" as const;
 const CALLER = "0x0000000000000000000000000000000000000003" as const;
-const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as const;
 const UNIVERSAL_ROUTER = "0x8876789976decbfcbbbe364623c63652db8c0904" as const;
 const NOW = 1_750_000_000_000;
 const AMOUNT = 10n * 10n ** 18n;
@@ -29,18 +27,10 @@ function request(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function approval() {
-  return {
-    to: INPUT,
-    data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [PERMIT2, AMOUNT] }),
-    value: "0",
-  };
-}
-
 function provider(overrides: Record<string, unknown> = {}) {
   return vi.fn(async (path: string, body: Record<string, unknown> = {}) => {
     void body;
-    if (path === "check_approval") return { approval: approval() };
+    if (path === "check_approval") throw new Error("Quotes must not check approvals");
     if (path === "quote") {
       return {
         routing: "CLASSIC",
@@ -83,7 +73,9 @@ describe("same-origin Uniswap quote API", () => {
     });
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
     expect(execution.universalRouter).toBe(getAddress(UNIVERSAL_ROUTER));
-    expect((execution.approval as Record<string, unknown>).to).toBe(INPUT);
+    expect(execution.approval).toBeUndefined();
+    expect(execution.cancel).toBeUndefined();
+    expect(requestProvider.mock.calls.map(([path]) => path)).toEqual(["quote"]);
   });
 
   it("uses the provider native identity, skips approvals, and seals the exact transaction value", async () => {
@@ -120,9 +112,7 @@ describe("same-origin Uniswap quote API", () => {
 
   it("keeps native output explicit and rejects a forged native input identity", async () => {
     const weth = robinhoodMainnetAddresses.weth!;
-    const outputProvider = vi.fn(async (path: string) => path === "check_approval"
-      ? { approval: approval() }
-      : path === "quote" ? { routing: "CLASSIC", quote: {
+    const outputProvider = vi.fn(async (path: string) => path === "quote" ? { routing: "CLASSIC", quote: {
           input: { token: INPUT, amount: AMOUNT.toString(), chainId: 4663 },
           output: { token: NATIVE, amount: "9500000000000000000", chainId: 4663 },
           amountOutMinimum: "9452500000000000000", swapper: CALLER,
@@ -176,18 +166,6 @@ describe("same-origin Uniswap quote API", () => {
     expect(result.status).toBe(503);
   });
 
-  it("rejects an approval with the wrong Permit2 target", async () => {
-    const requestProvider = provider();
-    requestProvider.mockImplementationOnce(async () => ({
-      approval: {
-        ...approval(),
-        data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [OUTPUT, AMOUNT] }),
-      },
-    }));
-    const result = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
-    expect(result.status).toBe(503);
-  });
-
   it("finalizes only a sealed unchanged plan and validates the Universal Router transaction", async () => {
     const requestProvider = provider();
     const quoted = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
@@ -198,6 +176,7 @@ describe("same-origin Uniswap quote API", () => {
     const finalized = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(finalized.status).toBe(200);
     expect(((finalized.body as Record<string, unknown>).execution as Record<string, unknown>).transaction).toMatchObject({ to: getAddress(UNIVERSAL_ROUTER), from: CALLER, value: "0" });
+    expect(requestProvider.mock.calls.map(([path]) => path)).toEqual(["quote", "swap"]);
     const tampered = await handleSwapQuoteRequest({ action: "finalize-direct", plan: { ...plan, minAmountOut: "1" } }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(tampered.status).toBe(400);
   });

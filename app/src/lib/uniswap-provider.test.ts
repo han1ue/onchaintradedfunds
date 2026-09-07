@@ -3,12 +3,12 @@ import { createUniswapProviderRequest } from "./uniswap-provider";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("Uniswap provider pacing", () => {
-  it("spaces concurrent basket and approval requests below six requests per second", async () => {
+  it("spaces concurrent quote and swap requests below six requests per second", async () => {
     vi.useFakeTimers(); vi.setSystemTime(0);
     const starts: number[] = [];
     vi.stubGlobal("fetch", vi.fn(async () => { starts.push(Date.now()); return Response.json({ ok: true }); }));
     const request = createUniswapProviderRequest();
-    const results = Promise.all(Array.from({ length: 8 }, (_, index) => request(index % 2 ? "quote" : "check_approval", {}, "test-key")));
+    const results = Promise.all(Array.from({ length: 8 }, (_, index) => request(index % 2 ? "quote" : "swap", {}, "test-key")));
     await vi.runAllTimersAsync(); await results;
     expect(starts).toEqual([0, 210, 420, 630, 840, 1050, 1260, 1470]);
     expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({

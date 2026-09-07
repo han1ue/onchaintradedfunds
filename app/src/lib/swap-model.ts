@@ -114,8 +114,6 @@ export type DirectApiExecution = {
   nativeInput: boolean;
   nativeOutput: boolean;
   nativeValue: bigint;
-  approval?: PlannedTransaction;
-  cancel?: PlannedTransaction;
   permitData?: PermitData;
   transaction?: PlannedTransaction;
 };
@@ -551,7 +549,7 @@ export function parseV3Path(path: Hex, venue: SwapRouteHop["venue"] = "Uniswap V
 function parseTransaction(
   value: unknown,
   label: string,
-  binding: { chainId: number; caller: Address; target: Address; value?: bigint; spender?: Address; amount?: bigint },
+  binding: { chainId: number; caller: Address; target: Address; value?: bigint },
 ): PlannedTransaction {
   const transaction = object(value, label);
   exactKeys(transaction, ["chainId", "from", "to", "data", "value"], label);
@@ -564,19 +562,6 @@ function parseTransaction(
   };
   if (parsed.chainId !== binding.chainId || !sameAddress(parsed.from, binding.caller)) throw new Error(`${label} has the wrong chain or sender.`);
   if (!sameAddress(parsed.to, binding.target) || parsed.value !== (binding.value ?? 0n)) throw new Error(`${label} has an unsupported target or native value.`);
-  if (binding.spender) {
-    let decoded: ReturnType<typeof decodeFunctionData<typeof ERC20_APPROVE_ABI>>;
-    try {
-      decoded = decodeFunctionData({ abi: ERC20_APPROVE_ABI, data: parsed.data });
-    } catch {
-      throw new Error(`${label} is not an ERC-20 approval.`);
-    }
-    if (decoded.functionName !== "approve") throw new Error(`${label} is not an ERC-20 approval.`);
-    const [spender, amount] = decoded.args;
-    if (!sameAddress(getAddress(spender), binding.spender) || amount !== binding.amount) {
-      throw new Error(`${label} has the wrong approval spender or amount.`);
-    }
-  }
   return parsed;
 }
 
@@ -608,7 +593,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   const execution = object(value, "execution");
   exactKeys(execution, [
     "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
-    "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "approval", "cancel", "permitData", "transaction",
+    "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "permitData", "transaction",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "direct-api") throw new Error("Direct quote has the wrong execution kind.");
   const plan: DirectApiExecution = {
@@ -639,26 +624,6 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Direct execution has the wrong exact input amount.");
   if (plan.nativeValue !== (plan.nativeInput ? plan.amountIn : 0n)) throw new Error("Direct execution has the wrong native transaction value.");
   if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Direct execution has an invalid expiry.");
-  if (execution.approval !== undefined) {
-    if (plan.nativeInput) throw new Error("Native input cannot contain an ERC-20 approval.");
-    plan.approval = parseTransaction(execution.approval, "execution.approval", {
-      chainId: context.chainId,
-      caller: plan.caller,
-      target: plan.inputToken,
-      spender: context.permit2,
-      amount: plan.amountIn,
-    });
-  }
-  if (execution.cancel !== undefined) {
-    if (plan.nativeInput) throw new Error("Native input cannot contain an ERC-20 approval reset.");
-    plan.cancel = parseTransaction(execution.cancel, "execution.cancel", {
-      chainId: context.chainId,
-      caller: plan.caller,
-      target: plan.inputToken,
-      spender: context.permit2,
-      amount: 0n,
-    });
-  }
   if (execution.permitData !== undefined) {
     if (plan.nativeInput) throw new Error("Native input cannot contain Permit2 data.");
     plan.permitData = parsePermitData(execution.permitData, {

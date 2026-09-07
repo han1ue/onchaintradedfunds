@@ -830,7 +830,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     setQuotes(loadingQuotes);
     setActiveQuote(undefined);
     let cancelled = false;
-    void (async () => {
+    const requestQuotes = async () => {
       let outputTotalSupply: bigint | undefined;
       if (output.kind === "otf") {
         const rejectUnconfirmedSupply = () => {
@@ -855,6 +855,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           return;
         }
       }
+      if (cancelled) return;
       const nextQuotes = enforceFirstPurchaseMinimum(
         await requestConcurrentQuotes(quoteService, request),
         output,
@@ -865,10 +866,13 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       setNow(receivedAt);
       setQuotes(nextQuotes);
       setActiveQuote(bestQueriedQuote(nextQuotes, receivedAt));
-    })().catch(() => {
-      if (!cancelled) setQuotes([unavailableQuote("direct", request, "Quote request failed.")]);
-    });
-    return () => { cancelled = true; };
+    };
+    const quoteTimer = window.setTimeout(() => {
+      void requestQuotes().catch(() => {
+        if (!cancelled) setQuotes([unavailableQuote("direct", request, "Quote request failed.")]);
+      });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(quoteTimer); };
   }, [address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, nativeWrapPair, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
 
   function selectAsset(which: "input" | "output", asset: SwapAsset) {
@@ -1113,11 +1117,26 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       let value = 0n;
       if (executionPlan.kind === "direct-api") {
         if (robinhoodMainnetUniswap.universalRouter?.toLowerCase() !== executionPlan.universalRouter.toLowerCase()) throw new Error("The direct plan has an unsupported Universal Router target.");
-        for (const authorization of [executionPlan.cancel, executionPlan.approval]) {
-          if (!authorization) continue;
-          const authorizationHash = await walletClient.sendTransaction({ account: address, to: authorization.to, data: authorization.data, value: authorization.value });
-          const authorizationReceipt = await publicClient.waitForTransactionReceipt({ hash: authorizationHash });
-          if (authorizationReceipt.status !== "success") throw new Error("The required Permit2 token authorization reverted.");
+        if (!executionPlan.nativeInput) {
+          const permit2 = robinhoodMainnetUniswap.permit2;
+          if (!permit2) throw new Error("The direct plan has no configured Permit2 target.");
+          const allowance = await publicClient.readContract({
+            address: executionPlan.inputToken,
+            abi: ERC20_APPROVE_ABI,
+            functionName: "allowance",
+            args: [address, permit2],
+          });
+          await ensureExactErc20Approval(allowance, executionPlan.amountIn, async (approvalAmount) => {
+            const approvalHash = await walletClient.writeContract({
+              account: address,
+              address: executionPlan.inputToken,
+              abi: ERC20_APPROVE_ABI,
+              functionName: "approve",
+              args: [permit2, approvalAmount],
+            });
+            const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
+            if (approvalReceipt.status !== "success") throw new Error("The required Permit2 token authorization reverted.");
+          });
         }
         const signature = executionPlan.permitData
           ? await walletClient.signTypedData({

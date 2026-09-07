@@ -1,7 +1,6 @@
-import { encodeFunctionData, getAddress } from "viem";
+import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
-  ERC20_APPROVE_ABI,
   assetHasExecutableMetadata,
   bestQueriedQuote,
   classifySwapDirection,
@@ -134,13 +133,6 @@ function directResponse(overrides: Record<string, unknown> = {}) {
       nativeInput: false,
       nativeOutput: false,
       nativeValue: "0",
-      approval: {
-        chainId: 4663,
-        from: CALLER,
-        to: USDG.address,
-        data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [PERMIT2, amount] }),
-        value: "0",
-      },
     },
     ...overrides,
   };
@@ -305,7 +297,7 @@ describe("swap state model", () => {
     expect(decimalAmount("1.25", 2)).toBe(125n);
   });
 
-  it("parses an exact direct API plan and its Permit2 approval", () => {
+  it("parses an exact direct API plan without an approval transaction", () => {
     const parsed = parseTypedQuoteResponse(directResponse(), directContext());
     expect(parsed.execution).toMatchObject({ kind: "direct-api", universalRouter: UNIVERSAL_ROUTER, amountIn: 10n * 10n ** 18n });
     expect(parsed.expectedOutputRaw).toBe(9_500_000_000_000_000_000n);
@@ -320,14 +312,12 @@ describe("swap state model", () => {
       outputToken: PROTOCOL_OTF.address,
       nativeInput: true,
       nativeValue: amount.toString(),
-      approval: undefined,
     };
     const context = { ...directContext(), request: request(ETH, PROTOCOL_OTF, 4663) };
     const parsed = parseTypedQuoteResponse({ ...response, execution }, context);
     expect(parsed.execution).toMatchObject({ nativeInput: true, nativeValue: amount });
-    expect(parsed.execution?.kind === "direct-api" ? parsed.execution.approval : undefined).toBeUndefined();
     expect(() => parseTypedQuoteResponse({ ...response, execution: { ...execution, nativeValue: "0" } }, context)).toThrow(/native transaction value/);
-    expect(() => parseTypedQuoteResponse({ ...response, execution: { ...execution, approval: (response.execution as Record<string, unknown>).approval } }, context)).toThrow(/Native input/);
+    expect(() => parseTypedQuoteResponse({ ...response, execution: { ...execution, permitData: {} } }, context)).toThrow(/Native input/);
   });
 
   it.each([
@@ -339,10 +329,12 @@ describe("swap state model", () => {
     expect(() => parseTypedQuoteResponse(directResponse(override), directContext())).toThrow();
   });
 
-  it("rejects wrong direct approval and transaction targets", () => {
-    const wrongApproval = directResponse();
-    const execution = { ...(wrongApproval.execution as Record<string, unknown>), approval: { ...((wrongApproval.execution as Record<string, unknown>).approval as Record<string, unknown>), to: TOKEN.address } };
-    expect(() => parseTypedQuoteResponse({ ...wrongApproval, execution }, directContext())).toThrow(/target/);
+  it.each(["approval", "cancel"])("rejects provider-supplied %s transactions in direct quotes", (field) => {
+    const execution = { ...directResponse().execution, [field]: { to: TOKEN.address, data: "0x1234", value: "0" } };
+    expect(() => parseTypedQuoteResponse(directResponse({ execution }), directContext())).toThrow(/unsupported field/);
+  });
+
+  it("rejects wrong direct transaction targets", () => {
     const wrongTransaction = {
       ...(directResponse().execution as Record<string, unknown>),
       transaction: { chainId: 4663, from: CALLER, to: ROUTER, data: "0x1234", value: "0" },

@@ -4,7 +4,7 @@ import { robinhoodMainnetUniswap } from "./deployment";
 const API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const REQUEST_SPACING_MS = 210; // Fewer than six starts in any one-second window per process.
 const MAX_QUEUE_WAIT_MS = 10_000;
-type RequestPath = "check_approval" | "quote" | "swap";
+type RequestPath = "quote" | "swap";
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Paces one server process; 429 handling also covers traffic from other processes using the key. */
