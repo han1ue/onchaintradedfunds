@@ -41,7 +41,7 @@ describe("fund rewards explanation", () => {
 
   it("explains no-OTF eligibility without showing division by zero", () => {
     const html = render({ hasOtf: false, fundWeightOtf: 0, totalWeightOtf: 0, apyText: "0%" });
-    expect(html).toContain("does not include protocol OTF");
+    expect(html).toContain("does not include the OTF token");
     expect(html).toContain("No eligible OTF means no share of the pool");
     expect(html).not.toMatch(/NaN|Infinity|0 ÷ 0/);
   });

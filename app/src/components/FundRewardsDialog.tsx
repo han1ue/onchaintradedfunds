@@ -55,7 +55,7 @@ export function FundRewardsDialog(props: Props) {
   const weeklyUsd = weeklyTokens === 0 ? 0 : weeklyTokens !== undefined && props.otfPriceUsd !== undefined
     ? weeklyTokens * props.otfPriceUsd : undefined;
   const reason = props.hasOtf === false
-    ? "This fund does not include protocol OTF, so it receives no share of the depositor rewards pool."
+    ? "This fund does not include the OTF token, so it receives no share of the depositor rewards pool."
     : props.zeroNav
     ? "This fund's NAV is zero. Its APY stays at 0% until it has positive NAV and holds OTF."
     : weight === 0

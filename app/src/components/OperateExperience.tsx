@@ -27,6 +27,7 @@ import {
   LoaderCircle,
   Network,
   ReceiptText,
+  RefreshCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -76,6 +77,8 @@ import {
   type SwapAssetKind,
   type SwapQuote,
 } from "@/lib/swap-model";
+import { formatSwapDisplay, quoteRefreshDelay } from "@/lib/swap-display";
+import { sortFunds, type FundSort, type FundSortKey } from "@/lib/fund-sort";
 import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { quoteCanonicalOtfSwap } from "@/lib/otf-market";
 import { canonicalV4Execution } from "@/lib/canonical-v4-execution";
@@ -290,7 +293,7 @@ function SwapBalance({ active, loading, balance, symbol, onUse }: {
   if (!active) return null;
   if (loading) return <ActivitySpinner size={12} />;
   if (!balance) return null;
-  const label = `${balance.formatted} ${symbol}`;
+  const label = `${formatSwapDisplay(balance.formatted)} ${symbol}`;
   if (!onUse || balance.value === 0n) return <>{label}</>;
   return <button type="button" className="swapBalanceButton" title={`Use the full ${label} balance`} aria-label={`Use full balance: ${label}`} onClick={onUse}>{label}</button>;
 }
@@ -414,21 +417,18 @@ function QuoteReview({
   activeQuote,
   onChoose,
   onRefresh,
-  inputSymbol,
   outputSymbol,
   now,
-  executionConfigured,
 }: {
   quotes: SwapQuote[];
   activeQuote?: SwapQuote;
   onChoose: (quote: SwapQuote) => void;
   onRefresh: () => void;
-  inputSymbol: string;
   outputSymbol: string;
   now: number;
-  executionConfigured: boolean;
 }) {
   const selectedValid = Boolean(activeQuote && quoteIsFresh(activeQuote, now));
+  const loading = quotes.some((quote) => quote.state === "loading");
   const executionTarget = activeQuote?.execution?.kind === "direct-api"
     ? activeQuote.execution.universalRouter
     : activeQuote?.execution?.kind === "direct-v3"
@@ -436,31 +436,31 @@ function QuoteReview({
       : activeQuote?.execution?.router;
   return (
     <details className="swapReview">
-      <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : "No executable quote"}</small><ChevronDown size={15} /></summary>
+      <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : loading ? "Refreshing quote…" : ""}</small><ChevronDown size={15} /></summary>
       <div className="swapReviewBody">
-        <div className="swapReviewHeader"><strong>Compared routes</strong><button type="button" onClick={onRefresh}><LoaderCircle size={13} />Refresh</button></div>
-        <div className="swapRoutes">
+        <div className="swapReviewHeader"><strong>{selectedValid || loading ? "Compared routes" : ""}</strong><button type="button" onClick={onRefresh} disabled={loading} aria-label={loading ? "Refreshing quote" : "Refresh quote"}><RefreshCw className={loading ? "createAssetSpinner" : undefined} size={13} aria-hidden="true" /><span>Refresh</span></button></div>
+        {selectedValid || loading ? <div className="swapRoutes">
           {quotes.map((quote) => {
             const valid = quoteIsFresh(quote, now);
             return (
               <button key={quote.id} type="button" className={`swapRoute ${activeQuote?.id === quote.id ? "selected" : ""}`} disabled={!valid} onClick={() => onChoose(quote)}>
-                <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (valid ? "Quoted route" : "Unavailable")}</small></span>
+                <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (quote.state === "loading" ? "Fetching quote…" : valid ? "Quoted route" : "Unavailable")}</small></span>
                 <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? activeQuote?.id === quote.id ? "Selected" : "Use route" : quote.state === "loading" ? <ActivitySpinner size={13} /> : quote.state}</span>
               </button>
             );
           })}
-        </div>
-        <dl className="swapQuoteMetrics">
-          <div><dt>Expected output</dt><dd>{selectedValid ? `${activeQuote?.expectedOutput ?? activeQuote?.outputAmount} ${outputSymbol}` : "—"}</dd></div>
-          <div><dt>Minimum received</dt><dd>{selectedValid ? `${activeQuote?.minimumReceived ?? "—"} ${outputSymbol}` : "—"}</dd></div>
-          <div><dt>Venue fees</dt><dd>{selectedValid && activeQuote?.venueFeeBps !== undefined ? `${activeQuote.venueFeeBps / 100}%` : "—"}</dd></div>
-          <div><dt>Price impact</dt><dd>{selectedValid && activeQuote?.priceImpactBps !== undefined ? `${activeQuote.priceImpactBps / 100}%` : "—"}</dd></div>
+        </div> : null}
+        {selectedValid ? <dl className="swapQuoteMetrics">
+          <div><dt>Expected output</dt><dd>{selectedValid ? `${formatSwapDisplay(activeQuote?.expectedOutput ?? activeQuote?.outputAmount)} ${outputSymbol}` : "—"}</dd></div>
+          <div><dt>Minimum received</dt><dd>{selectedValid ? `${formatSwapDisplay(activeQuote?.minimumReceived)} ${outputSymbol}` : "—"}</dd></div>
+          <div><dt>Venue fees</dt><dd>{selectedValid && activeQuote?.venueFeeBps !== undefined ? `${formatSwapDisplay(String(activeQuote.venueFeeBps / 100), 2)}%` : "—"}</dd></div>
+          <div><dt>Price impact</dt><dd>{selectedValid && activeQuote?.priceImpactBps !== undefined ? `${formatSwapDisplay(String(activeQuote.priceImpactBps / 100), 2)}%` : "—"}</dd></div>
           <div><dt>Route</dt><dd>{selectedValid ? activeQuote?.routeLabel : "No valid route selected"}</dd></div>
-          <div><dt>Network gas</dt><dd>{selectedValid ? activeQuote?.gasEstimate ?? "Unavailable" : "—"}</dd></div>
+          <div><dt>Network gas</dt><dd>{selectedValid ? formatSwapDisplay(activeQuote?.gasEstimate) : "—"}</dd></div>
           <div><dt>Execution target</dt><dd>{selectedValid && executionTarget ? shortAddress(executionTarget) : "—"}</dd></div>
-        </dl>
+        </dl> : null}
         <div className="swapRouteInspection">
-          <strong>Route inspection</strong>
+          {selectedValid ? <strong>Route inspection</strong> : null}
           {selectedValid && activeQuote?.hops?.length ? (
             <ol>
               {activeQuote.hops.map((hop, index) => (
@@ -476,19 +476,14 @@ function QuoteReview({
                 </li>
               ))}
             </ol>
-          ) : <p>No executable hop details are available for inspection.</p>}
+          ) : loading ? <p role="status"><ActivitySpinner size={13} /> Refreshing quote…</p> : <p>No executable hop details are available for inspection.</p>}
         </div>
         {selectedValid && activeQuote?.residualRefunds?.length ? (
           <div className="swapRouteRefunds">
             <strong>Expected residual refunds</strong>
-            <ul>{activeQuote.residualRefunds.map((refund) => <li key={refund.token}>{refund.displayAmount ?? refund.amount.toString()} · {shortAddress(refund.token)}</li>)}</ul>
+            <ul>{activeQuote.residualRefunds.map((refund) => <li key={refund.token}>{formatSwapDisplay(refund.displayAmount ?? refund.amount.toString())} · {shortAddress(refund.token)}</li>)}</ul>
           </div>
         ) : null}
-        <p className="swapRouteDisclosure">The selected result is the best queried route by integer expected output. It is not a claim of best price across all venues.</p>
-        <p className="swapRouteDisclosure">{executionConfigured
-          ? "The selected typed plan is bound to this wallet, chain, amount, expiry, and configured target. A stale quote is never actionable."
-          : "This route has no compatible execution target. No approval, simulation, or transaction can start."}</p>
-        <span className="swapPairLine">Input: {inputSymbol} · Output: {outputSymbol}</span>
       </div>
     </details>
   );
@@ -533,14 +528,14 @@ function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: (
         <h2 id="swap-receipt-title">Swap complete</h2>
       </div>
       <div className="swapReceiptResult" aria-live="polite">
-        {receipt.sold ? <p><span>You sold</span><strong>{receipt.sold.displayAmount} {receipt.sold.symbol}</strong></p> : null}
-        <p><span>You received</span><strong>{receipt.received.displayAmount} {receipt.received.symbol}</strong></p>
+        {receipt.sold ? <p><span>You sold</span><strong>{formatSwapDisplay(receipt.sold.displayAmount)} {receipt.sold.symbol}</strong></p> : null}
+        <p><span>You received</span><strong>{formatSwapDisplay(receipt.received.displayAmount)} {receipt.received.symbol}</strong></p>
       </div>
       {receipt.refunds.length ? (
         <section className="swapReceiptRefunds" aria-labelledby="swap-refunds-title">
           <div><h3 id="swap-refunds-title">Also returned</h3><p>Surplus from basket execution</p></div>
           <ul className={refundsExpanded ? "expanded" : undefined}>
-            {refundDisclosure.visible.map((refund) => <li key={refund.address}><span>{refund.displayAmount}</span><strong>{refund.symbol}</strong></li>)}
+            {refundDisclosure.visible.map((refund) => <li key={refund.address}><span>{formatSwapDisplay(refund.displayAmount)}</span><strong>{refund.symbol}</strong></li>)}
           </ul>
           {refundDisclosure.hiddenCount ? <button type="button" onClick={() => setRefundsExpanded(true)}>Show {refundDisclosure.hiddenCount} more</button> : refundsExpanded && receipt.refunds.length > 4 ? <button type="button" onClick={() => setRefundsExpanded(false)}>Show less</button> : null}
         </section>
@@ -702,6 +697,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           : "Unsupported network";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
+  const outputOtfLoading = isUnselectedOtf(output) && otfDirectoryState === "loading";
   const inputBalanceEnabled = Boolean(address && inputSelected && assetHasExecutableMetadata(input));
   const outputBalanceEnabled = Boolean(address && outputSelected && assetHasExecutableMetadata(output));
   const { data: inputBalance, isLoading: inputBalanceLoading, refetch: refetchInputBalance } = useBalance({
@@ -851,10 +847,12 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         outputTotalSupply,
       );
       if (cancelled) return;
+      const receivedAt = Date.now();
+      setNow(receivedAt);
       setQuotes(nextQuotes);
-      setActiveQuote(bestQueriedQuote(nextQuotes, Date.now()));
+      setActiveQuote(bestQueriedQuote(nextQuotes, receivedAt));
     })().catch(() => {
-      if (!cancelled) setQuotes([]);
+      if (!cancelled) setQuotes([unavailableQuote("direct", request, "Quote request failed.")]);
     });
     return () => { cancelled = true; };
   }, [address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, nativeWrapPair, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
@@ -1216,6 +1214,13 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   }
 
   const executionBusy = execution === "approval" || execution === "simulation" || execution === "submission";
+  useEffect(() => {
+    if (executionBusy || swapReceipt) return;
+    const delay = quoteRefreshDelay(quotes, Date.now());
+    if (delay === undefined) return;
+    const timer = window.setTimeout(() => setQuoteRequest((current) => current + 1), delay);
+    return () => window.clearTimeout(timer);
+  }, [quotes, executionBusy, swapReceipt]);
   const canonicalExecutionConfigured = Boolean(
     launchManager && (canonicalPhase === 1
       ? launchRouter
@@ -1284,9 +1289,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                       ? canonicalPhase === 2
                         ? "The canonical OTF pool is waiting for graduation finalization."
                         : "The canonical OTF pool could not quote this amount."
-                    : quotes.length && !usableQuote
-                      ? "No executable quote is currently available."
-                      : undefined);
+                    : undefined);
 
   function handlePrimaryAction() {
     if (!address) {
@@ -1305,7 +1308,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     if (lockedFund) {
       return <div className="swapAssetButton locked" aria-label={`${asset.symbol} fund token`}><AssetMark asset={asset} /><strong>{asset.symbol}</strong></div>;
     }
-    return <button type="button" className="swapAssetButton" aria-label={`Select token to ${which === "input" ? "pay" : "receive"}`} onClick={() => setPicker(which)}><AssetMark asset={asset} /><strong className={isUnselectedOtf(asset) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(asset) ? "—" : asset.symbol}</strong><ChevronDown size={15} /></button>;
+    return <button type="button" className="swapAssetButton" aria-label={`Select token to ${which === "input" ? "pay" : "receive"}`} onClick={() => setPicker(which)}><AssetMark asset={asset} /><strong className={isUnselectedOtf(asset) ? "swapAssetPlaceholder" : undefined}>{isUnselectedOtf(asset) ? otfDirectoryState === "loading" ? <ActivitySpinner size={16} /> : "—" : asset.symbol}</strong><ChevronDown size={15} /></button>;
   }
 
   function cappedSwapAmount(value: string, asset: SwapAsset) {
@@ -1337,14 +1340,14 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                 <button type="button" className="swapReverse" onClick={reverse} aria-label="Reverse swap direction"><ArrowDown size={20} /></button>
                 <div className="swapAmountBox receive">
                   <div className="swapAmountTop"><span>You receive</span></div>
-                  <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{cappedSwapAmount(usableQuote ? nativeWrapPair ? amount : canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0", output)}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot"><SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} /></span></div></div>
+                  <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{cappedSwapAmount(usableQuote ? nativeWrapPair ? amount : canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0", output)}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot">{outputOtfLoading ? <ActivitySpinner size={12} /> : !outputSelected ? "—" : <SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} />}</span></div></div>
                 </div>
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
               {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This amount crosses a launch price limit. Only the input needed to reach that limit will be used; unused {input.symbol} {input.kind === "native" ? "is refunded" : "stays in your wallet"}.</p> : null}
               {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
               {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
-              {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} inputSymbol={input.symbol} outputSymbol={output.symbol} now={now} executionConfigured={Boolean(executionConfigured)} /> : null}
+              {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} outputSymbol={output.symbol} now={now} /> : null}
             </div>
             {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} /></div> : null}
           </div>
@@ -2161,6 +2164,44 @@ function useIncentivePricing(): IncentivePricing {
   return pricing;
 }
 
+function fundApyPercent(fund: FactoryVaultSummary | undefined, aumUsd: number | undefined, pricing: IncentivePricing, directory: DirectoryAum): number | undefined {
+  const hasOtf = fund && robinhoodTestnetAddresses.otfToken
+    ? fund.assets.some((asset) => asset.toLowerCase() === robinhoodTestnetAddresses.otfToken!.toLowerCase()) : undefined;
+  const weight = fund ? directory.rewardWeights?.get(fund.address.toLowerCase()) : undefined;
+  if (hasOtf === false || fund?.totalSupply === 0n || aumUsd === 0 || weight === 0) return 0;
+  if (pricing.state !== "ready" || directory.state !== "ready" || aumUsd === undefined) return undefined;
+  return estimatedRewardsApy({
+    weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf!,
+    otfPriceUsd: pricing.otfPriceUsd!,
+    fundAumUsd: aumUsd,
+    fundRewardWeightOtf: weight!,
+    totalRewardWeightOtf: directory.totalRewardWeightOtf!,
+  })?.percent;
+}
+
+function fundSortValue(fund: FactoryVaultSummary, key: FundSortKey, pricing: IncentivePricing, directory: DirectoryAum) {
+  const nav = directory.byFund?.get(fund.address.toLowerCase());
+  return key === "assets" ? fund.assetCount : key === "nav" ? nav : fundApyPercent(fund, nav, pricing, directory);
+}
+
+function FundSortControl({ value, onChange }: { value: FundSort; onChange: (value: FundSort) => void }) {
+  return <label className="fundSortControl"><span>Sort by</span><span className="selectControl"><select aria-label="Sort OTFs" value={value} onChange={(event) => onChange(event.target.value as FundSort)}>
+    <option value="nav-desc">NAV: high to low</option><option value="nav-asc">NAV: low to high</option>
+    <option value="apy-desc">Rewards APY: high to low</option><option value="apy-asc">Rewards APY: low to high</option>
+    <option value="assets-desc">Assets: high to low</option><option value="assets-asc">Assets: low to high</option>
+  </select><ChevronDown size={14} aria-hidden="true" /></span></label>;
+}
+
+function FundSortHeader({ sortKey, sort, onChange, children }: { sortKey: FundSortKey; sort: FundSort; onChange: (value: FundSort) => void; children: ReactNode }) {
+  const active = sort.startsWith(sortKey + "-");
+  const ascending = sort.endsWith("-asc");
+  return <th aria-sort={active ? ascending ? "ascending" : "descending" : "none"}><button type="button" className="fundSortHeader" onClick={() => onChange(`${sortKey}-${active && !ascending ? "asc" : "desc"}`)}>{children}<ArrowDown size={12} className={active && ascending ? "ascending" : undefined} aria-hidden="true" /></button></th>;
+}
+
+function FundFees({ fund }: { fund: FactoryVaultSummary }) {
+  return <span className="fundFeesInline" title="Annual NAV fee / mint fee / redeem fee"><span>NAV {formatAnnualExpenseRatioPercentage(fund.annualCreatorExpenseRatioBps)}</span><span>Mint {formatAnnualExpenseRatioPercentage(fund.mintFeeBps)}</span><span>Redeem {formatAnnualExpenseRatioPercentage(fund.redeemFeeBps)}</span></span>;
+}
+
 function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
   pricing: IncentivePricing;
   valuationState: FundValuation["state"];
@@ -2175,13 +2216,8 @@ function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
   const zeroApy = hasOtf === false || fund?.totalSupply === 0n || aumUsd === 0 || fundRewardWeightOtf === 0;
   const unavailable = pricing.state === "unavailable" || valuationState === "unavailable" || directory.state === "unavailable";
   const loading = !zeroApy && !unavailable && (pricing.state === "loading" || valuationState === "loading" || directory.state === "loading");
-  const estimate = zeroApy ? { percent: 0 } : !unavailable && !loading && aumUsd !== undefined ? estimatedRewardsApy({
-    weeklyDepositorEmissionOtf: pricing.weeklyDepositorEmissionOtf!,
-    otfPriceUsd: pricing.otfPriceUsd!,
-    fundAumUsd: aumUsd,
-    fundRewardWeightOtf: fundRewardWeightOtf!,
-    totalRewardWeightOtf: directory.totalRewardWeightOtf!,
-  }) : undefined;
+  const percent = zeroApy ? 0 : !loading && !unavailable ? fundApyPercent(fund, aumUsd, pricing, directory) : undefined;
+  const estimate = percent === undefined ? undefined : { percent };
   const text = loading ? "…" : formatApy(estimate?.percent);
   const label = estimate
     ? `Estimated depositor rewards APY ${text}, paid in $OTF${pricing.week ? `, emission week ${pricing.week}` : ""}`
@@ -2382,6 +2418,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const { state: factoryDirectoryState, vaults } = useFactoryVaults();
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
   const [directorySearch, setDirectorySearch] = useState("");
+  const [fundSort, setFundSort] = useState<FundSort>("nav-desc");
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
@@ -2423,9 +2460,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
   }, [detail, directoryDeploymentReady, publicClient, routeAddress]);
   const directoryState = detail ? detailState : factoryDirectoryState;
   const normalizedSearch = directorySearch.trim().toLowerCase();
-  const filteredVaults = normalizedSearch
+  const filteredVaults = sortFunds(normalizedSearch
     ? vaults.filter((vault) => `${vault.name} ${vault.symbol} ${vault.address}`.toLowerCase().includes(normalizedSearch))
-    : vaults;
+    : vaults, fundSort, (fund, key) => fundSortValue(fund, key, rewardsApy, directoryAum));
   if (detail) {
     const embeddedFund: SwapAsset | undefined = vaultDetails ? {
       address: vaultDetails.address,
@@ -2510,6 +2547,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <section className="sectionCard directoryPanel">
               <div className="directoryToolbar">
                 <label className="searchField"><Search size={14} /><input aria-label="Search OTFs" placeholder="Search by OTF name, symbol, or address" value={directorySearch} onChange={(event) => setDirectorySearch(event.target.value)} disabled={directoryState !== "ready" || !vaults.length} /></label>
+                <FundSortControl value={fundSort} onChange={setFundSort} />
                 <div className="directoryViewToggle" role="group" aria-label="OTF directory view">
                   <button className={directoryView === "rows" ? "active" : ""} type="button" aria-label="Show OTFs as rows" aria-pressed={directoryView === "rows"} onClick={() => setDirectoryView("rows")}><List size={15} /></button>
                   <button className={directoryView === "cards" ? "active" : ""} type="button" aria-label="Show OTFs as cards" aria-pressed={directoryView === "cards"} onClick={() => setDirectoryView("cards")}><LayoutGrid size={15} /></button>
@@ -2518,7 +2556,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
                 <div className="directoryTableWrap">
                   <table className="directoryTable" aria-label="Onchain traded funds">
-                    <thead><tr><th>OTF</th><th>NAV</th><th title="Estimated annualized rewards paid in $OTF">Rewards APY</th><th>Assets</th><th>Creator fee</th><th>Creator</th></tr></thead>
+                    <thead><tr><th>OTF</th><FundSortHeader sortKey="nav" sort={fundSort} onChange={setFundSort}>NAV</FundSortHeader><FundSortHeader sortKey="apy" sort={fundSort} onChange={setFundSort}>Rewards APY</FundSortHeader><FundSortHeader sortKey="assets" sort={fundSort} onChange={setFundSort}>Assets</FundSortHeader><th>Fees</th><th>Creator</th></tr></thead>
                     <tbody>{filteredVaults.map((vault) => {
                       const href = `/funds/${vault.address}`;
                       const aumUsd = directoryAum.byFund?.get(vault.address.toLowerCase());
@@ -2528,7 +2566,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                           <td data-label="NAV">{directoryAum.state === "loading" ? "…" : formatUsd(aumUsd)}</td>
                           <td data-label="Rewards APY"><FundRewardsApy pricing={rewardsApy} valuationState={directoryAum.state} aumUsd={aumUsd} fund={vault} directory={directoryAum} /></td>
                           <td data-label="Assets">{vault.assetCount}</td>
-                          <td data-label="Creator fee">{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</td>
+                          <td data-label="Fees"><FundFees fund={vault} /></td>
                           <td data-label="Creator" className="monoValue">{shortAddress(vault.creator)}</td>
                         </tr>
                       );
@@ -2545,7 +2583,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                         <div><dt>NAV</dt><dd>{directoryAum.state === "loading" ? "…" : formatUsd(aumUsd)}</dd></div>
                         <div><dt>Rewards APY</dt><dd><FundRewardsApy pricing={rewardsApy} valuationState={directoryAum.state} aumUsd={aumUsd} fund={vault} directory={directoryAum} /></dd></div>
                         <div><dt>Assets</dt><dd>{vault.assetCount}</dd></div>
-                        <div><dt>Creator fee</dt><dd>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</dd></div>
+                        <div><dt>Fees</dt><dd><FundFees fund={vault} /></dd></div>
                         <div><dt>Creator</dt><dd>{shortAddress(vault.creator)}</dd></div>
                       </dl>
                     </div>
@@ -2600,11 +2638,16 @@ function WalletSurface() {
     contracts: balanceContracts,
     query: { enabled: Boolean(address && testnet && balanceContracts.length) },
   });
-  const positions = vaults.flatMap((vault, index) => {
-    const balance = vaultBalanceReads?.[index]?.result;
+  const [positionSort, setPositionSort] = useState<FundSort>("nav-desc");
+  const [managedSort, setManagedSort] = useState<FundSort>("nav-desc");
+  const walletAum = useDirectoryAum(vaults, vaultDirectoryState, Boolean(address && testnet));
+  const walletRewards = useIncentivePricing();
+  const orderedPositions = sortFunds(vaults, positionSort, (fund, key) => fundSortValue(fund, key, walletRewards, walletAum));
+  const positions = orderedPositions.flatMap((vault) => {
+    const balance = vaultBalanceReads?.[vaults.indexOf(vault)]?.result;
     return typeof balance === "bigint" && balance > 0n ? [{ vault, balance }] : [];
   });
-  const managedVaults = address ? vaults.filter((vault) => vault.creator.toLowerCase() === address.toLowerCase()) : [];
+  const managedVaults = sortFunds(address ? vaults.filter((vault) => vault.creator.toLowerCase() === address.toLowerCase()) : [], managedSort, (fund, key) => fundSortValue(fund, key, walletRewards, walletAum));
   const vaultDataLoading = vaultDirectoryState === "loading" || (vaultDirectoryState === "ready" && vaultBalancesLoading);
   const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
 
@@ -2620,11 +2663,13 @@ function WalletSurface() {
           <>
             <section className="sectionCard depositPositions">
               <div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Share-token balances held by the connected wallet.</p></div></div><span className="stateBadge muted">{vaultDataLoading ? <ActivitySpinner size={13} /> : `${positions.length} position${positions.length === 1 ? "" : "s"}`}</span></div>
+              {positions.length ? <FundSortControl value={positionSort} onChange={setPositionSort} /> : null}
               {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow walletPositionRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
             </section>
             <section className="sectionCard managedVaultsPanel">
               <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds launched by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/launch?from=wallet">Launch OTF</Link></div></div>
-              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Creator fee</span><strong>{formatAnnualExpenseRatioPercentage(vault.annualCreatorExpenseRatioBps)}</strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs launched by this wallet" : vaultDirectoryState === "failure" ? "Could not load launched OTFs" : "No launched OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet launches them through the factory."}</span></div></div>}
+              {managedVaults.length ? <FundSortControl value={managedSort} onChange={setManagedSort} /> : null}
+              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Fees</span><strong><FundFees fund={vault} /></strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs launched by this wallet" : vaultDirectoryState === "failure" ? "Could not load launched OTFs" : "No launched OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet launches them through the factory."}</span></div></div>}
             </section>
           </>
         ) : (

@@ -115,7 +115,7 @@ describe("$OTF page wiring", () => {
     expect(detail).toContain('className="fundThesis"');
     expect(css).toContain(".fundDetailHeader { display: grid;");
     expect(css).not.toContain(".valuationPerformance small");
-    expect(css).toContain(".valuationChartWrap { min-height: 218px; padding: 6px 16px 10px;");
+    expect(css).toContain(".valuationChartWrap { min-height: 242px; padding: 18px 16px 22px;");
   });
 
   it("places the weekly distribution after directory AUM with a visible separator", () => {
