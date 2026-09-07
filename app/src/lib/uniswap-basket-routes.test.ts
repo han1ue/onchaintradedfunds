@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { uniswapBasketRoutes } from "./uniswap-basket-routes";
 import { encodeV3Path } from "./v3-route";
 import { parseV4Path } from "./v4-route";
+import { QuoteFailure } from "./quote-errors";
 
 const addr = (n: number) => getAddress(`0x${n.toString(16).padStart(40, "0")}` as Address);
 const A = addr(1), B = addr(2), C = addr(3), ROUTER = addr(4), ADAPTER = addr(5);
@@ -37,9 +38,12 @@ describe("Uniswap basket route translation", () => {
     await expect(uniswapBasketRoutes({ ...dependencies, reservedTokens: [C] }).quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
   });
 
-  it.each(["EXACT_INPUT", "EXACT_OUTPUT"] as const)("compares native and WETH quotes for %s", async (type) => {
+  it.each([
+    ["EXACT_INPUT", false], ["EXACT_OUTPUT", false], ["EXACT_INPUT", true], ["EXACT_OUTPUT", true],
+  ] as const)("requests ETH only after WETH has no route: %s, fallback=%s", async (type, fallback) => {
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
       const native = body.tokenIn === zeroAddress;
+      if (!native && fallback) throw new QuoteFailure("NO_ROUTE");
       return { routing: "CLASSIC", quote: {
         chainId: 4663, tradeType: type, swapper: ROUTER,
         input: { token: body.tokenIn, amount: type === "EXACT_INPUT" ? "10000" : native ? "4000" : "5000" },
@@ -50,10 +54,53 @@ describe("Uniswap basket route translation", () => {
       } };
     });
     const quote = await uniswapBasketRoutes({ ...options(), weth: A, v4Adapter: addr(6), authenticateV4Pool: async () => {}, requestQuote }).quote(type, A, B, 10000n);
-    expect(requestQuote).toHaveBeenCalledTimes(2);
+    expect(requestQuote).toHaveBeenCalledTimes(fallback ? 2 : 1);
+    expect(requestQuote.mock.calls[0]![0].tokenIn).toBe(A);
+    expect(quote.legs[0]!.tokenIn).toBe(A);
+    expect(quote.legs[0]!.hops[0]!.tokenIn).toBe(fallback ? zeroAddress : A);
+    expect(type === "EXACT_INPUT" ? quote.amountOut : quote.amountIn).toBe(type === "EXACT_INPUT" ? fallback ? 25000n : 20000n : fallback ? 4020n : 5025n);
+  });
+
+  it.each(["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "POOL_VALIDATION_FAILED"] as const)("does not issue an ETH request after %s", async (code) => {
+    const requestQuote = vi.fn(async () => { throw new QuoteFailure(code); });
+    const routes = uniswapBasketRoutes({ ...options(), weth: A, v4Adapter: addr(6), requestQuote });
+    await expect(routes.quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
+    expect(requestQuote).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a native V4 pool returned for a WETH endpoint without a second request", async () => {
+    const response = fixture();
+    Object.assign(response.quote.route[0]![0]!, { type: "v4-pool", tokenIn: { address: zeroAddress, chainId: 4663 }, tickSpacing: 60, hooks: zeroAddress });
+    const deps = { ...options(response), weth: A, v4Adapter: addr(6), authenticateV4Pool: async () => {} };
+    const quote = await uniswapBasketRoutes(deps).quote("EXACT_INPUT", A, B, 10000n);
+    expect(deps.requestQuote).toHaveBeenCalledTimes(1);
     expect(quote.legs[0]!.tokenIn).toBe(A);
     expect(quote.legs[0]!.hops[0]!.tokenIn).toBe(zeroAddress);
-    expect(type === "EXACT_INPUT" ? quote.amountOut : quote.amountIn).toBe(type === "EXACT_INPUT" ? 25000n : 4020n);
+  });
+
+  it("shares identical in-flight and completed quotes only within one basket calculation", async () => {
+    const deps = options();
+    const routes = uniswapBasketRoutes(deps);
+    await Promise.all([routes.quote("EXACT_INPUT", A, B, 10000n), routes.quote("EXACT_INPUT", A, B, 10000n)]);
+    await routes.quote("EXACT_INPUT", A, B, 10000n);
+    expect(deps.requestQuote).toHaveBeenCalledTimes(1);
+    await uniswapBasketRoutes(deps).quote("EXACT_INPUT", A, B, 10000n);
+    expect(deps.requestQuote).toHaveBeenCalledTimes(2);
+  });
+
+  it("gets a fresh quote for changed amounts and does not cache failures", async () => {
+    const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
+      const response = fixture();
+      response.quote.input.amount = String(body.amount);
+      response.quote.route[0]![0]!.amountIn = String(body.amount);
+      return response;
+    });
+    requestQuote.mockRejectedValueOnce(new QuoteFailure("PROVIDER_UNAVAILABLE"));
+    const routes = uniswapBasketRoutes({ ...options(), requestQuote });
+    await expect(routes.quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
+    await routes.quote("EXACT_INPUT", A, B, 10000n);
+    await routes.quote("EXACT_INPUT", A, B, 10001n);
+    expect(requestQuote).toHaveBeenCalledTimes(3);
   });
 
   it("rejects native currencies in V3 pools", async () => {

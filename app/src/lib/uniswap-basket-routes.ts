@@ -1,9 +1,9 @@
 import { getAddress, isAddress, maxUint256, zeroAddress, type Address, type Hex } from "viem";
-import { applySlippageDown, applySlippageUp, sameAddress, type BasketRouteProvider } from "./basket-planner";
+import { applySlippageDown, applySlippageUp, sameAddress, type BasketRouteProvider, type BasketRouteQuote } from "./basket-planner";
 import { MAX_SWAP_LEGS, type AdapterSwapLeg } from "./swap-model";
 import { routeFrom } from "./v3-route";
 import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4-route";
-import { QuoteFailure, quoteStep } from "./quote-errors";
+import { quoteFailureCode, quoteStep } from "./quote-errors";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -141,22 +141,34 @@ export function uniswapBasketRoutes(options: {
       amountOut, legs,
     };
   };
+  const quoteWithFallback: BasketRouteProvider["quote"] = async (type, tokenIn, tokenOut, amount) => {
+    try {
+      return await quoteCandidate(type, tokenIn, tokenOut, amount);
+    } catch (cause) {
+      // Ask for the basket's WETH endpoints first. Only a missing route warrants
+      // another API call using ETH; provider and validation errors stay distinct.
+      if (quoteFailureCode(cause) === "NO_ROUTE" && options.v4Adapter
+        && (sameAddress(tokenIn, options.weth) || sameAddress(tokenOut, options.weth))) {
+        return quoteCandidate(type,
+          sameAddress(tokenIn, options.weth) ? zeroAddress : tokenIn,
+          sameAddress(tokenOut, options.weth) ? zeroAddress : tokenOut, amount);
+      }
+      throw cause;
+    }
+  };
+  // This cache lives for one basket calculation, including its sizing passes.
+  // Different amounts and later user requests always receive fresh quotes.
+  const quotes = new Map<string, Promise<BasketRouteQuote>>();
   return {
     async quote(type, tokenIn, tokenOut, amount) {
-      const candidates = [quoteCandidate(type, tokenIn, tokenOut, amount)];
-      // WETH remains the basket settlement token; compare the API's native-ETH
-      // endpoint routes too, since the adapter can perform the conversion.
-      if (options.v4Adapter && (sameAddress(tokenIn, options.weth) || sameAddress(tokenOut, options.weth))) {
-        candidates.push(quoteCandidate(type,
-          sameAddress(tokenIn, options.weth) ? zeroAddress : tokenIn,
-          sameAddress(tokenOut, options.weth) ? zeroAddress : tokenOut, amount));
+      const key = `${type}:${tokenIn.toLowerCase()}:${tokenOut.toLowerCase()}:${amount}`;
+      let pending = quotes.get(key);
+      if (!pending) {
+        pending = quoteStep("INVALID_PROVIDER_QUOTE", () => quoteWithFallback(type, tokenIn, tokenOut, amount), { tokenIn, tokenOut })
+          .catch((error) => { quotes.delete(key); throw error; });
+        quotes.set(key, pending);
       }
-      const results = await Promise.allSettled(candidates);
-      const quotes = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-      if (!quotes.length) throw new QuoteFailure("INVALID_PROVIDER_QUOTE", {
-        cause: new AggregateError(results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])),
-      }, { tokenIn, tokenOut });
-      return quotes.reduce((best, next) => (type === "EXACT_INPUT" ? next.amountOut > best.amountOut : next.amountIn < best.amountIn) ? next : best);
+      return pending;
     },
   };
 }

@@ -1,4 +1,5 @@
 import { QuoteFailure } from "./quote-errors";
+import { robinhoodMainnetUniswap } from "./deployment";
 
 const API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const REQUEST_SPACING_MS = 210; // Fewer than six starts in any one-second window per process.
@@ -29,12 +30,16 @@ export function createUniswapProviderRequest() {
   }
 
   return async (path: RequestPath, body: Record<string, unknown>, apiKey: string): Promise<unknown> => {
+    const routerVersion = robinhoodMainnetUniswap.universalRouterVersion;
+    if (!routerVersion) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
     const deadline = Date.now() + MAX_QUEUE_WAIT_MS;
     for (let attempt = 0; attempt < 3; attempt++) {
       await slot(deadline);
       const response = await fetch(`${API_BASE}/${path}`, {
         method: "POST", cache: "no-store",
-        headers: { accept: "application/json", "content-type": "application/json", "x-api-key": apiKey },
+        headers: { accept: "application/json", "content-type": "application/json", "x-api-key": apiKey,
+          "x-universal-router-version": routerVersion,
+          "x-agent-info": '{"integration_name":"swap-integration","decision_origin":"human_mediated","version":"1.5.0"}' },
         body: JSON.stringify(body), signal: AbortSignal.timeout(12_000),
       });
       if (response.ok) return response.json();

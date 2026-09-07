@@ -11,6 +11,9 @@ describe("Uniswap provider pacing", () => {
     const results = Promise.all(Array.from({ length: 8 }, (_, index) => request(index % 2 ? "quote" : "check_approval", {}, "test-key")));
     await vi.runAllTimersAsync(); await results;
     expect(starts).toEqual([0, 210, 420, 630, 840, 1050, 1260, 1470]);
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ "x-universal-router-version": "2.1.1" }),
+    }));
   });
   it("honors Retry-After before retrying a 429", async () => {
     vi.useFakeTimers(); vi.setSystemTime(0);

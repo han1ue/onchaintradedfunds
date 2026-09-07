@@ -36,7 +36,9 @@ await check("oracle", async () => {
 async function quote(tokenIn, tokenOut, type, amount) {
   await delay(1100);
   const response = await fetch("https://trade-api.gateway.uniswap.org/v1/quote", {
-    method: "POST", headers: { "content-type": "application/json", "x-api-key": process.env.UNISWAP_API_KEY.trim() },
+    method: "POST", headers: { "content-type": "application/json", "x-api-key": process.env.UNISWAP_API_KEY.trim(),
+      "x-universal-router-version": config.uniswapTradingApi.universalRouterVersion,
+      "x-agent-info": '{"integration_name":"swap-integration","decision_origin":"human_mediated","version":"1.5.0"}' },
     body: JSON.stringify({ type, amount, tokenInChainId: 4663, tokenOutChainId: 4663, tokenIn, tokenOut, swapper: process.env.DEPLOYER_ADDRESS?.trim() || zeroAddress, slippageTolerance: 0.5, protocols: ["V3", "V4"], routingPreference: "BEST_PRICE" }),
     signal: AbortSignal.timeout(12000),
   });

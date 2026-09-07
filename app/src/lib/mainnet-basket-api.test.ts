@@ -7,6 +7,7 @@ import { parseTypedQuoteResponse, type BasketRouterExecution } from "./swap-mode
 import { handleSwapQuoteRequest } from "./uniswap-trading-api";
 import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { encodeV4Path, parseV4Path } from "./v4-route";
+import { QuoteFailure } from "./quote-errors";
 
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const INPUT = addr(1), A = addr(2), B = addr(3), VAULT = addr(4), CALLER = addr(5);
@@ -70,7 +71,7 @@ describe("mainnet basket planner", () => {
   it.each([false, true])("uses native V4 pools behind WETH router endpoints (burn=%s)", async (burn) => {
     const base = provider();
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
-      if (body.tokenIn !== zeroAddress && body.tokenOut !== zeroAddress) throw new Error("Only native liquidity");
+      if (body.tokenIn !== zeroAddress && body.tokenOut !== zeroAddress) throw new QuoteFailure("NO_ROUTE");
       const response = await base(body);
       response.quote.route = response.quote.route.map((path) => path.map((pool) => ({ ...pool, type: "v4-pool", tickSpacing: 60, hooks: zeroAddress })));
       return response;
