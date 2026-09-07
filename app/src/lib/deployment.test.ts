@@ -15,21 +15,21 @@ describe("Robinhood Testnet V4 deployment", () => {
     expect(robinhoodTestnetDeploymentReady).toBe(true);
     expect(robinhoodTestnetV4AdapterReady).toBe(true);
     expect(robinhoodTestnetNativeEntryReady).toBe(true);
-    expect(robinhoodTestnetRewardsDeploymentBlock).toBe(114586061n);
-    expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-07T03:57:13.000Z"));
+    expect(robinhoodTestnetRewardsDeploymentBlock).toBe(114598826n);
+    expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-07T04:21:42.000Z"));
     expect(robinhoodTestnetAddresses).toMatchObject({
-      otfToken: "0x5C4596210A4264888c998242D2c8A4DE52da8BB3",
-      launchManager: "0x72b83e9507a3fc3FE720B6b01267b3409379E840",
-      launchRouter: "0xb20411678cEAD7ca99F46b2F9086c821ECf6Cc14",
-      teamVesting: "0x59188Df426C4d84bA2091E74A86bcACd9aa2Eb43",
-      buybackCollector: "0x66686A6C0a8F13b869E7Ac5f43fE9d4A19465903",
-      merkleRewardsDistributor: "0x4DBE1500A068a27C07E21d55a467f4635322B60E",
-      ethUsdOracle: "0xdE9a6BBe8E55D66cB89EeEB4E42915165DB21F4b",
-      vaultImplementation: "0x3e676A27AaEd549081eF10184344Ca420E53d682",
-      factory: "0xd7a720fcA84A824b8065b5F792052D95C5E3fb6B",
-      entryRouter: "0x306f036164A2ff04604d964daB9d35554be3dABF",
-      uniswapV3Adapter: "0x9cABBAC0074b04C39F97e9406e574c067C47dA51",
-      uniswapV4Adapter: "0x87f9de2D7f3E0b6CA931Db53949cc8ef647e628C",
+      otfToken: "0x5CbBb475721aD3C4aB61bD241818E6774782DF88",
+      launchManager: "0xA5435c7c0e0C105b3687D72307F313EF1F7f2840",
+      launchRouter: "0xFFF782973e7AF25a88a482F1F81911eDB378c8e9",
+      teamVesting: "0xB79aB3c64C8072Dd2768C6bF40F8DEdEFd002268",
+      buybackCollector: "0x86E4B9e08646F576E7Bb364789B708515DD8d69d",
+      merkleRewardsDistributor: "0xAe7c1020152E850A94c02e939336C245573467bd",
+      ethUsdOracle: "0xBCD4443af58C13797c9a67993AD24E29B925386a",
+      vaultImplementation: "0xC6C816FB6a72751B33F71439ef44d471f06DC0EB",
+      factory: "0xb4776316FABbC70Aa72976e6E1AB0b4f5e05dAc1",
+      entryRouter: "0x347B75576a2D105bE4a13390b5888C339e3D9623",
+      uniswapV3Adapter: "0xa82dBD04dE8d266375aB92442279f33A5e327841",
+      uniswapV4Adapter: "0x502C85F4652B37c7cde44730283072Cd3b8A582a",
     });
     expect(robinhoodTestnetV4).toEqual({
       poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
