@@ -2205,7 +2205,7 @@ function FundSortHeader({ sortKey, sort, onChange, children }: { sortKey: FundSo
 }
 
 function FundFees({ fund }: { fund: FactoryVaultSummary }) {
-  return <span className="fundFeesInline" title="Annual NAV fee / mint fee / redeem fee">{formatAnnualExpenseRatioPercentage(fund.annualCreatorExpenseRatioBps)}/{formatAnnualExpenseRatioPercentage(fund.mintFeeBps)}/{formatAnnualExpenseRatioPercentage(fund.redeemFeeBps)}</span>;
+  return <span className="fundFeesInline" title="Annual NAV fee / mint fee / redeem fee">{formatAnnualExpenseRatioPercentage(fund.annualCreatorExpenseRatioBps)}/<wbr />{formatAnnualExpenseRatioPercentage(fund.mintFeeBps)}/<wbr />{formatAnnualExpenseRatioPercentage(fund.redeemFeeBps)}</span>;
 }
 
 function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
@@ -2423,6 +2423,14 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
   const { state: factoryDirectoryState, vaults } = useFactoryVaults();
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
+  const [mobileDirectory, setMobileDirectory] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const update = () => setMobileDirectory(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [directorySearch, setDirectorySearch] = useState("");
   const [fundSort, setFundSort] = useState<FundSort>("nav-desc");
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
@@ -2558,7 +2566,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   <button className={directoryView === "cards" ? "active" : ""} type="button" aria-label="Show OTFs as cards" aria-pressed={directoryView === "cards"} onClick={() => setDirectoryView("cards")}><LayoutGrid size={15} /></button>
                 </div>
               </div>
-              {directoryState === "ready" && filteredVaults.length ? directoryView === "rows" ? (
+              {directoryState === "ready" && filteredVaults.length ? mobileDirectory || directoryView === "rows" ? (
                 <div className="directoryTableWrap">
                   <table className="directoryTable" aria-label="Onchain traded funds">
                     <thead><tr><th>OTF</th><FundSortHeader sortKey="nav" sort={fundSort} onChange={setFundSort}>NAV</FundSortHeader><FundSortHeader sortKey="apy" sort={fundSort} onChange={setFundSort}>Rewards APY</FundSortHeader><FundSortHeader sortKey="assets" sort={fundSort} onChange={setFundSort}>Assets</FundSortHeader><th>Fees</th><th>Creator</th></tr></thead>
