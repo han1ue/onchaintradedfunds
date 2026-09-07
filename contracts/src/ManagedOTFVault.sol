@@ -222,7 +222,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
 
     /// @notice ERC-1046 share metadata containing the canonical onchain OTF SVG.
     function tokenURI() external view returns (string memory) {
-        return IOTFFactoryTokenPolicy(_factory).otfTokenURI();
+        return IOTFFactoryTokenPolicy(_factory).otfTokenURI(symbol());
     }
 
     /// @notice Returns false (rather than crediting donations) if any constituent is under-backed.

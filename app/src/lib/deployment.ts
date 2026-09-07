@@ -165,11 +165,28 @@ const mainnetAssets = mainnetConfigValid ? productionAssetsForChain(4663) : [];
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({
+  factory: address(record(mainnetProtocolContracts.factory).address),
+  entryRouter: address(record(mainnetProtocolContracts.entryRouter).address),
+  uniswapV3Adapter: address(record(mainnetProtocolContracts.uniswapV3Adapter).address),
+  uniswapV4Adapter: address(record(mainnetProtocolContracts.uniswapV4Adapter).address),
   otfToken: address(record(mainnetProtocolContracts.otfToken).address),
   usdg: mainnetAssets.find((asset) => asset.id === "usdg")?.address,
   weth: mainnetAssets.find((asset) => asset.id === "weth")?.address,
   ethUsdOracle: address(mainnetExternalContracts.ethUsdOracle),
 });
+
+export const robinhoodMainnetBasketDeployment = (() => {
+  const { factory, entryRouter, uniswapV3Adapter, uniswapV4Adapter, weth } = robinhoodMainnetAddresses;
+  const uniswapV3Factory = address(mainnetExternalContracts.uniswapV3Factory);
+  const uniswapV3Router = address(mainnetExternalContracts.uniswapV3SwapRouter02);
+  const uniswapV4PoolManager = address(mainnetExternalContracts.uniswapV4PoolManager);
+  const uniswapV4StateView = address(mainnetExternalContracts.uniswapV4StateView);
+  const universalRouter = address(mainnetTradingApi.universalRouter);
+  const permit2 = address(mainnetTradingApi.permit2);
+  if (!factory || !entryRouter || !uniswapV3Adapter || !uniswapV4Adapter || !weth || !uniswapV3Factory || !uniswapV3Router
+    || !uniswapV4PoolManager || !uniswapV4StateView || !universalRouter || !permit2) return undefined;
+  return { factory, entryRouter, uniswapV3Adapter, uniswapV4Adapter, weth, uniswapV3Factory, uniswapV3Router, uniswapV4PoolManager, uniswapV4StateView, universalRouter, permit2 };
+})();
 
 export const robinhoodMainnetLiquidity = Object.freeze({
   venue: mainnetLiquidity.venue === "Uniswap" ? "Uniswap" : undefined,

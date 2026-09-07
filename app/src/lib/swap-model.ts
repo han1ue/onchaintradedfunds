@@ -15,6 +15,7 @@ import {
   robinhoodTestnetLiquidity,
 } from "./deployment";
 import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
+import { parseV4Path } from "./v4-route";
 
 export type SwapAssetKind = "native" | "erc20" | "otf";
 
@@ -141,6 +142,7 @@ export type BasketRouterExecution = {
   adapter: Address;
   approval?: { token: Address; spender: Address; amount: bigint };
   nativeValue: bigint;
+  v4Adapter?: Address;
   funding: readonly { token: Address; amount: bigint }[];
   call: TypedRouterCall;
 };
@@ -465,6 +467,7 @@ type TypedQuoteParseContext = {
   request: SwapQuoteRequest;
   entryRouter?: Address;
   adapter?: Address;
+  v4Adapter?: Address;
   permit2?: Address;
   universalRouter?: Address;
   swapRouter02?: Address;
@@ -746,17 +749,19 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
   return { ...plan, approval, transaction };
 }
 
-function parseLeg(value: unknown, index: number, adapter: Address, venue: SwapRouteHop["venue"]): AdapterSwapLeg {
+function parseLeg(value: unknown, index: number, adapter: Address, v4Adapter?: Address): AdapterSwapLeg {
   const leg = object(value, `legs[${index}]`);
   exactKeys(leg, ["adapter", "tokenIn", "tokenOut", "amountIn", "minAmountOut", "data"], `legs[${index}]`);
   const parsedAdapter = address(leg.adapter, `legs[${index}].adapter`);
-  if (!sameAddress(parsedAdapter, adapter)) throw new Error("Route uses an unknown adapter.");
+  const isV4 = v4Adapter !== undefined && sameAddress(parsedAdapter, v4Adapter);
+  if (!isV4 && !sameAddress(parsedAdapter, adapter)) throw new Error("Route uses an unknown adapter.");
   const tokenIn = address(leg.tokenIn, `legs[${index}].tokenIn`);
   const tokenOut = address(leg.tokenOut, `legs[${index}].tokenOut`);
   const amountIn = uint(leg.amountIn, `legs[${index}].amountIn`, false);
   const minAmountOut = uint(leg.minAmountOut, `legs[${index}].minAmountOut`, false);
   const data = hex(leg.data, `legs[${index}].data`);
-  const hops = parseV3Path(data, venue);
+  if (isV4 && ((amountIn !== maxUint256 && amountIn > (1n << 128n) - 1n) || minAmountOut > (1n << 128n) - 1n)) throw new Error("V4 amount exceeds adapter limits.");
+  const hops = isV4 ? parseV4Path(data, tokenIn) : parseV3Path(data);
   if (!sameAddress(hops[0]!.tokenIn, tokenIn) || !sameAddress(hops.at(-1)!.tokenOut, tokenOut)) {
     throw new Error("Adapter data endpoints do not match the leg.");
   }
@@ -794,13 +799,13 @@ function parseBasketCall(
   context: TypedQuoteParseContext,
   adapter: Address,
   deadline: bigint,
+  v4Adapter?: Address,
 ): { call: TypedRouterCall; funding: readonly { token: Address; amount: bigint }[] } {
   const method = string(execution.method, "execution.method");
   const request = object(execution.request, "execution.request");
   const legsValue = array(execution.legs, "execution.legs");
   if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
-  const venue: SwapRouteHop["venue"] = "Uniswap V3";
-  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, venue));
+  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, v4Adapter));
   const funding = parseFunding(execution.funding);
   assertLegFunding(legs, funding);
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -858,7 +863,7 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   if (!context.entryRouter || !context.adapter || !context.request.caller) throw new Error("Basket execution is not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "router", "adapter", "approval", "nativeValue", "funding",
+    "kind", "chainId", "caller", "router", "adapter", "v4Adapter", "approval", "nativeValue", "funding",
     "method", "request", "legs", "minBasketAmounts",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "basket-router") throw new Error("Basket quote has the wrong execution kind.");
@@ -866,6 +871,8 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   const caller = address(execution.caller, "execution.caller");
   const router = address(execution.router, "execution.router");
   const adapter = address(execution.adapter, "execution.adapter");
+  const v4Adapter = execution.v4Adapter === undefined ? undefined : address(execution.v4Adapter, "execution.v4Adapter");
+  if (v4Adapter && (!context.v4Adapter || !sameAddress(v4Adapter, context.v4Adapter) || sameAddress(v4Adapter, adapter))) throw new Error("Unknown V4 adapter.");
   if (chainId !== context.chainId || !sameAddress(caller, context.request.caller)) throw new Error("Basket execution has the wrong chain or caller.");
   if (!sameAddress(router, context.entryRouter) || !sameAddress(adapter, context.adapter)) throw new Error("Basket execution has a deployment mismatch.");
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -893,8 +900,8 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
     || deadline > nowSeconds + BigInt(QUOTE_MAX_FUTURE_DEADLINE_SECONDS)
     || BigInt(Math.ceil(expiresAt / 1_000)) > deadline
   ) throw new Error("Basket execution deadline is invalid.");
-  const { call, funding } = parseBasketCall(execution, context, adapter, deadline);
-  return { kind: "basket-router", chainId, caller, router, adapter, approval, nativeValue, funding, call };
+  const { call, funding } = parseBasketCall(execution, context, adapter, deadline, v4Adapter);
+  return { kind: "basket-router", chainId, caller, router, adapter, v4Adapter, approval, nativeValue, funding, call };
 }
 
 function callDeadline(requestValue: unknown): bigint {
@@ -1054,6 +1061,7 @@ export type TypedQuoteServiceConfig = {
   chainId: number;
   entryRouter?: Address;
   adapter?: Address;
+  v4Adapter?: Address;
   permit2?: Address;
   universalRouter?: Address;
   swapRouter02?: Address;
@@ -1067,6 +1075,7 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     request,
     entryRouter: config.entryRouter,
     adapter: config.adapter,
+    v4Adapter: config.v4Adapter,
     permit2: config.permit2,
     universalRouter: config.universalRouter,
     swapRouter02: config.swapRouter02,
@@ -1179,6 +1188,9 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       chainId,
       permit2: robinhoodMainnetUniswap.permit2,
       universalRouter: robinhoodMainnetUniswap.universalRouter,
+      entryRouter: robinhoodMainnetAddresses.entryRouter,
+      adapter: robinhoodMainnetAddresses.uniswapV3Adapter,
+      v4Adapter: robinhoodMainnetAddresses.uniswapV4Adapter,
     });
   }
   if (chainId === 46630) {

@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
-import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
+import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses } from "./deployment";
+import { quoteMainnetBasket } from "./mainnet-basket-api";
+import { type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
 import { ERC20_APPROVE_ABI, QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
 
@@ -15,6 +17,8 @@ export type SwapQuoteApiDependencies = {
   now?: () => number;
   providerRequest?: ProviderRequest;
   testnetClient?: TestnetRoutingClient;
+  mainnetClient?: MainnetBasketClient;
+  mainnetDeployment?: MainnetBasketDeployment;
 };
 
 type ValidatedAsset = {
@@ -485,10 +489,11 @@ export async function handleSwapQuoteRequest(value: unknown, dependencies: SwapQ
       return quoteTestnetSwap(request, { now, client: dependencies.testnetClient });
     }
     if (request.route === "basket") {
-      if (!robinhoodTestnetDeploymentReady || !robinhoodTestnetAddresses.entryRouter || !robinhoodTestnetAddresses.uniswapV3Adapter) {
-        return unavailable("basket", "Basket writes require a fresh generic router and approved Uniswap V3 adapter deployment.");
-      }
-      return unavailable("basket", "The basket route planner is not configured.");
+      if (!apiKey) return unavailable("basket", "The Uniswap Trading API key is not configured.");
+      return await quoteMainnetBasket(request, {
+        now, client: dependencies.mainnetClient, deployment: dependencies.mainnetDeployment,
+        requestQuote: (body) => providerRequest("quote", body, apiKey),
+      });
     }
     if (!apiKey) return unavailable("direct", "The Uniswap Trading API key is not configured.");
     return await directQuote(request, { apiKey, now, providerRequest });

@@ -11,7 +11,7 @@ interface IOTFFactoryTokenPolicy {
     function otfToken() external view returns (address);
     function buybackCollector() external view returns (address);
     function entryExitRouter() external view returns (address);
-    function otfTokenURI() external pure returns (string memory);
+    function otfTokenURI(string memory ticker) external pure returns (string memory);
 }
 
 /// @dev Clone-safe vault storage. Bootstrap basket units and fee policy have no mutation path.

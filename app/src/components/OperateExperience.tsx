@@ -42,6 +42,7 @@ import { buybackCollectorAbi, managedOtfVaultAbi, otfEntryExitRouterAbi, otfFact
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
+  robinhoodMainnetBasketDeployment,
   robinhoodMainnetUniswap,
   robinhoodTestnetAddresses,
   robinhoodTestnetCreationReady,
@@ -505,19 +506,19 @@ function QuoteReview({
 function SwapCelebration({ active }: { active: boolean }) {
   if (!active) return null;
   return (
-    <svg className="swapCelebration" viewBox="0 0 320 112" aria-hidden="true">
+    <svg className="swapCelebration" viewBox="0 0 320 160" aria-hidden="true">
       {Array.from({ length: 8 }, (_, index) => {
         const left = index < 4;
-        const y = 14 + index % 4 * 28;
-        const path = `M ${left ? 8 : 312} ${y} C ${left ? 80 : 240} ${y}, ${left ? 104 : 216} 56, 160 56`;
-        return <g key={index} style={{ "--stream-delay": `${index % 4 * 110}ms` } as CSSProperties}>
+        const y = 38 + index % 4 * 28;
+        const path = `M ${left ? 8 : 312} ${y} C ${left ? 80 : 240} ${y}, ${left ? 104 : 216} 80, 160 80`;
+        return <g key={index} style={{ "--stream-delay": `${index % 4 * 180}ms` } as CSSProperties}>
           <path className="swapCelebrationRail" d={path} />
           <path className="swapCelebrationStream" d={path} pathLength="100" />
         </g>;
       })}
       <g className="swapCelebrationOrbits">
-        <ellipse cx="160" cy="56" rx="72" ry="24" transform="rotate(-18 160 56)" />
-        <ellipse cx="160" cy="56" rx="94" ry="34" transform="rotate(18 160 56)" />
+        <ellipse cx="160" cy="80" rx="72" ry="24" transform="rotate(-18 160 80)" />
+        <ellipse cx="160" cy="80" rx="94" ry="34" transform="rotate(18 160 80)" />
       </g>
     </svg>
   );
@@ -538,7 +539,7 @@ function SwapReceiptPanel({ receipt, onBack, celebrating }: { receipt: SwapRecei
         <h2 id="swap-receipt-title">Swap complete</h2>
       </div>
       <div className="swapReceiptResult" aria-live="polite">
-        {receipt.sold ? <p><span>You sold</span><strong>{formatSwapDisplay(receipt.sold.displayAmount)} {receipt.sold.symbol}</strong></p> : null}
+        {receipt.sold ? <p><span>You paid</span><strong>{formatSwapDisplay(receipt.sold.displayAmount)} {receipt.sold.symbol}</strong></p> : null}
         <p><span>You received</span><strong>{formatSwapDisplay(receipt.received.displayAmount)} {receipt.received.symbol}</strong></p>
       </div>
       {receipt.refunds.length ? (
@@ -654,7 +655,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
     { address: canonicalReadAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapSqrtPriceBounds" },
   ] as const;
-  const { data: canonicalPoolReads, refetch: refetchCanonicalPool } = useReadContracts({
+  const { data: canonicalPoolReads, isFetching: canonicalPoolFetching, refetch: refetchCanonicalPool } = useReadContracts({
     contracts: canonicalReadContracts,
     query: { enabled: canonicalOtfPair && Boolean(launchManager), refetchInterval: 12_000 },
   });
@@ -701,7 +702,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     ? chainId === robinhoodChain.id && robinhoodMainnetUniswap.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase()
     : executionPlan?.kind === "direct-v3"
       ? chainId === robinhoodChainTestnet.id && executionPlan.swapRouter02.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
-      : executionPlan?.kind === "basket-router" && robinhoodTestnetDeploymentReady;
+      : executionPlan?.kind === "basket-router" && (chainId === robinhoodChain.id ? Boolean(robinhoodMainnetBasketDeployment) : chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady);
   const quoteNetworkConfigured = nativeWrapPair ? Boolean(configuredWeth) : chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
   const routingLabel = nativeWrapPair
     ? "Native wrap · 1:1"
@@ -935,6 +936,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       knownAssets: [...configuredAssets, ...otfAssets, input, output],
       refundSender,
       confirmedOutputAmount,
+      transactionValue,
+      transactionTarget: transactionReceipt.to ?? undefined,
     });
 
     setExecution("success");
@@ -1161,7 +1164,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         await publicClient.call({ account: address, to: target, data, value });
         await publicClient.estimateGas({ account: address, to: target, data, value });
       } else {
-        if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) throw new Error("The basket plan has an unsupported entry-router target.");
+        const basketDeployment = chainId === robinhoodChain.id ? robinhoodMainnetBasketDeployment : chainId === robinhoodChainTestnet.id ? robinhoodTestnetAddresses : undefined;
+        if (basketDeployment?.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()
+          || basketDeployment?.uniswapV3Adapter?.toLowerCase() !== executionPlan.adapter.toLowerCase()
+          || (executionPlan.v4Adapter && basketDeployment?.uniswapV4Adapter?.toLowerCase() !== executionPlan.v4Adapter.toLowerCase())) throw new Error("The basket plan has an unsupported router or adapter target.");
         if (executionPlan.approval) {
           const allowance = await publicClient.readContract({
             address: executionPlan.approval.token,
@@ -1241,6 +1247,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       ? canonicalQuoteUsable && canonicalExecutionConfigured
       : executionPlan && executionConfigured
   ));
+  const quoteLoading = !nativeWrapPair && (canonicalOtfPair
+    ? !usableQuote && canonicalPoolFetching
+    : !quotes.length || quotes.some((quote) => quote.state === "loading"));
   const primaryLabel = missingOtfAsset
     ? "Only for OTF assets"
     : !address
@@ -1259,6 +1268,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                 ? hasOtfSide ? "Unsupported OTF pair" : "Only for OTF assets"
                 : !quoteNetworkConfigured
                   ? "Testnet routing unavailable"
+                  : quoteLoading
+                    ? "Finding quote…"
                   : !usableQuote
                     ? canonicalOtfPair ? "Canonical quote unavailable" : "Quotes unavailable"
                     : execution === "approval"
@@ -1291,8 +1302,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                     : chainId === robinhoodChainTestnet.id
                       ? "On testnet, OTFs can swap only against USDG, WETH, or another OTF."
                       : "This OTF pair is unsupported."
-                  : quotes.some((quote) => quote.state === "loading")
-                    ? "Finding the best available queried route…"
+                  : quoteLoading
+                    ? undefined
                     : canonicalOtfPair && amountValid && !usableQuote
                       ? canonicalPhase === 2
                         ? "The canonical OTF pool is waiting for graduation finalization."
@@ -1350,9 +1361,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                   <div className="swapAmountEntry"><output aria-label={`Expected ${output.symbol} output`}>{cappedSwapAmount(usableQuote ? nativeWrapPair ? amount : canonicalOtfPair && canonicalQuote ? formatUnits(canonicalQuote.amountOut, output.decimals) : activeQuote?.outputAmount ?? "0" : "0", output)}</output><div className="swapAssetColumn">{assetControl("output", output)}<span className="swapBalanceSlot">{outputOtfLoading ? <ActivitySpinner size={12} /> : !outputSelected ? "—" : <SwapBalance active={outputBalanceEnabled} loading={outputBalanceLoading} balance={outputBalance} symbol={output.symbol} />}</span></div></div>
                 </div>
               </div>
-              <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
+              <button type="button" className="swapPrimary" aria-busy={executionBusy || primaryLabel === "Finding quote…"} disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy || primaryLabel === "Finding quote…" ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
               {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This amount crosses a launch price limit. Only the input needed to reach that limit will be used; unused {input.symbol} {input.kind === "native" ? "is refunded" : "stays in your wallet"}.</p> : null}
-              {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}{executionMessage && executionHash ? <a href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${executionHash}`} target="_blank" rel="noreferrer">View transaction<ExternalLink size={11} /></a> : null}</p> : null}
+              {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{statusMessage}{executionMessage && executionHash ? <a href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${executionHash}`} target="_blank" rel="noreferrer">View transaction<ExternalLink size={11} /></a> : null}</p> : null}
               {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} outputSymbol={output.symbol} now={now} quoteStartedAt={quoteStartedAt} executionBusy={executionBusy} /> : null}
             </div>
             {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} celebrating={celebrationActive} /></div> : null}
@@ -2428,7 +2439,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
   useEffect(() => {
-    if (detail) document.title = `${vaultDetails?.symbol ?? "OTF"} - OnchainTradedFunds`;
+    if (detail) document.title = `${vaultDetails?.symbol ?? "OTF"} - Onchain Traded Funds`;
   }, [detail, vaultDetails?.symbol]);
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
   const directoryAum = useDirectoryAum(vaults, factoryDirectoryState, !detail);
@@ -2570,7 +2581,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                       const aumUsd = directoryAum.byFund?.get(vault.address.toLowerCase());
                       return (
                         <tr className="clickableDirectoryRow" key={vault.address} onClick={(event) => { if (!(event.target as Element).closest("a, button")) router.push(href); }}>
-                          <td><Link className="directoryFundLink" href={href}><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></Link></td>
+                          <td><Link className="directoryFundLink" href={href}><AssetLogo symbol={vault.symbol} /><span><strong className="fundNameWithBadge"><span className="fundNameText">{mobileDirectory ? vault.symbol : vault.name}</span><FundVerificationBadge chainId={chainId} assets={vault.assets} /></strong>{!mobileDirectory ? <small>{vault.symbol} · {shortAddress(vault.address)}</small> : null}</span></Link></td>
                           <td data-label="NAV">{directoryAum.state === "loading" ? "…" : formatUsd(aumUsd)}</td>
                           <td data-label="Rewards APY"><FundRewardsApy pricing={rewardsApy} valuationState={directoryAum.state} aumUsd={aumUsd} fund={vault} directory={directoryAum} /></td>
                           <td data-label="Assets">{vault.assetCount}</td>

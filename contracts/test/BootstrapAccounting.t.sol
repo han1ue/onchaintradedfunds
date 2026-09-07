@@ -49,6 +49,15 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         }
     }
 
+    function testShareMetadataUsesTheVaultTicker() public {
+        VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
+        params.symbol = "ABCDEFGH";
+        vm.prank(CREATOR);
+        ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
+        assertEq(vault.tokenURI(), factory.otfTokenURI("ABCDEFGH"));
+        assertNotEq(vault.tokenURI(), factory.otfTokenURI("OTF"));
+    }
+
     function testInvalidTickersAreRejectedAtomically() public {
         VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
         string[16] memory tickers = [

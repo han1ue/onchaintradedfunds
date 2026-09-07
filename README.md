@@ -58,6 +58,16 @@ corepack pnpm build
 
 Run the main application with `corepack pnpm --filter @onchaintradedfunds/app dev`, or the documentation site with `corepack pnpm docs:dev`.
 
+### Basket quote configuration
+
+Testnet basket quotes use the configured V3 pools and combine USDG proceeds before a final WETH swap. Mainnet quotes use `UNISWAP_API_KEY` to request independent V3/V4 routes for each constituent. Mint quotes request exact output, then budget exact-input adapter swaps to cover those amounts. Burn quotes request exact input. The planner translates split routes and mixed V3/V4 paths into approved adapter calls, with ETH wrapping and unwrapping in the basket router.
+
+Mainnet basket quotes require deployment addresses in `app/src/config/robinhood-mainnet.json`: `protocolContracts.factory.address`, `protocolContracts.entryRouter.address`, `protocolContracts.uniswapV3Adapter.address`, and `protocolContracts.uniswapV4Adapter.address`. The `externalContracts` section must identify `uniswapV3Factory`, `uniswapV3SwapRouter02`, `uniswapV4PoolManager`, and `uniswapV4StateView`. Universal Router and Permit2 come from `uniswapTradingApi`; WETH comes from the production asset catalog. Protocol deployment addresses are not populated yet.
+
+The V4 adapter accepts ERC-20 pool hops. Native-currency pool hops are unavailable. The planner preserves hook data when supplied and otherwise uses empty bytes. If a hook needs data the API does not supply, simulation rejects the route. Mixed-protocol boundaries cannot consume a token reserved for another basket constituent.
+
+Set `RH_MAINNET_RPC_URL` to an RPC supporting `eth_simulateV1`; otherwise the app uses its configured mainnet RPC. Before returning an executable quote, the server checks deployment bindings and simulates approvals followed by the entire basket transaction using the caller's actual balances. Unsupported simulation or a reverted call makes the quote unavailable. The wallet repeats preflight after approval and before submission.
+
 ## Further reading
 
 - [Protocol overview](docs/content/overview.mdx)

@@ -141,7 +141,7 @@ for (const fragment of [
   assert(otfMetadataSource.includes(fragment), `onchain OTF metadata is missing ${fragment}`);
   assert(squareIconSource.includes(fragment), `square brand SVG is missing ${fragment}`);
 }
-assert(/Base64\.encode\(bytes\(SQUARE_ICON_SVG\)\)/u.test(otfMetadataSource), "onchain OTF image is not SVG base64");
+assert(/Base64\.encode\(bytes\(iconSvg\)\)/u.test(otfMetadataSource), "onchain OTF image is not SVG base64");
 assert(/OTFMetadata\.protocolTokenURI\(\)/u.test(otfTokenSource), "OTFToken does not use canonical onchain metadata");
 
 const expectedConstructors = {
@@ -202,8 +202,8 @@ const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "ut
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
 assert(!/registerVault/u.test(factorySource), "factory retains collector vault registration");
-assert(/OTFMetadata\.shareTokenURI\(\)/u.test(factorySource), "vault shares do not use canonical onchain metadata");
-assert(/IOTFFactoryTokenPolicy\(_factory\)\.otfTokenURI\(\)/u.test(vaultSource), "vault tokenURI does not resolve factory metadata");
+assert(/OTFMetadata\.shareTokenURI\(ticker\)/u.test(factorySource), "vault shares do not use canonical onchain metadata");
+assert(/IOTFFactoryTokenPolicy\(_factory\)\.otfTokenURI\(symbol\(\)\)/u.test(vaultSource), "vault tokenURI does not resolve factory metadata");
 const routerConfigurationSource = factorySource.match(
   /function\s+configureEntryExitRouter[\s\S]*?\n\s*function\s+vaultCount/u,
 )?.[0] ?? "";

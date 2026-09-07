@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 export const metadata: Metadata = {
   title: {
     default: "Onchain Traded Funds",
-    template: "%s - OnchainTradedFunds",
+    template: "%s - Onchain Traded Funds",
   },
   description: "Managed onchain traded funds with enforceable portfolio safety limits.",
   icons: { icon: { url: otfFavicon.src, type: "image/svg+xml", sizes: "any" } },

@@ -1,3 +1,5 @@
+import { encodeV3Path } from "./v3-route";
+import { type BasketPlannerRequest } from "./basket-planner";
 import { decodeFunctionData, maxUint256, type Address, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,10 +9,8 @@ import {
 } from "./asset-catalog";
 import { parseTypedQuoteResponse, type SwapAsset, type SwapQuoteRequest } from "./swap-model";
 import {
-  encodeV3Path,
   quoteTestnetSwap,
   uniswapV3SwapRouterAbi,
-  type TestnetPlannerRequest,
   type TestnetRoutingClient,
 } from "./testnet-uniswap-v3-api";
 
@@ -40,10 +40,10 @@ function otf(address: Address) {
 }
 
 function plannerRequest(
-  input: TestnetPlannerRequest["input"] = asset(usdg),
-  output: TestnetPlannerRequest["output"] = otf(OTF_A),
+  input: BasketPlannerRequest["input"] = asset(usdg),
+  output: BasketPlannerRequest["output"] = otf(OTF_A),
   route: "direct" | "basket" = "direct",
-): TestnetPlannerRequest {
+): BasketPlannerRequest {
   return {
     route,
     chainId: 46630,
@@ -87,7 +87,7 @@ function dependencies(client = routingClient()) {
   return { now: () => NOW, client, deployment: TEST_DEPLOYMENT };
 }
 
-function swapAsset(value: TestnetPlannerRequest["input"], symbol: string): SwapAsset {
+function swapAsset(value: BasketPlannerRequest["input"], symbol: string): SwapAsset {
   return {
     address: value.address,
     symbol,
@@ -99,7 +99,7 @@ function swapAsset(value: TestnetPlannerRequest["input"], symbol: string): SwapA
   };
 }
 
-function parseResponse(response: unknown, request: TestnetPlannerRequest) {
+function parseResponse(response: unknown, request: BasketPlannerRequest) {
   const modelRequest: SwapQuoteRequest = {
     chainId: request.chainId,
     caller: request.caller,

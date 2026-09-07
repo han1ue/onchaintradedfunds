@@ -1,9 +1,10 @@
-import { formatUnits, getAddress, type Address, type Hex } from "viem";
+import { formatUnits, getAddress, decodeEventLog, type Address, type Hex } from "viem";
+import { otfEntryExitRouterAbi, otfLaunchRouterAbi } from "@onchaintradedfunds/generated";
 import type { SwapAsset } from "./swap-model";
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 export const SWAP_RECEIPT_REFUND_PREVIEW_COUNT = 4;
-export const SWAP_CELEBRATION_DURATION_MS = 3_800;
+export const SWAP_CELEBRATION_DURATION_MS = 6_400;
 
 export type SwapReceiptDirection = "asset-to-otf" | "otf-to-asset" | "otf-to-otf";
 
@@ -131,6 +132,8 @@ export function confirmedSwapReceipt(input: {
   knownAssets: readonly SwapAsset[];
   refundSender?: Address;
   confirmedOutputAmount?: bigint;
+  transactionValue?: bigint;
+  transactionTarget?: Address;
 }): SwapReceipt | undefined {
   if (input.status !== "success") return undefined;
   const direction = receiptDirection(input.pair.input, input.pair.output);
@@ -149,9 +152,39 @@ export function confirmedSwapReceipt(input: {
   );
   if (receivedValue === undefined) return undefined;
 
-  const soldValue = inputFlow && inputFlow.sent > inputFlow.received
+  let soldValue = inputFlow && inputFlow.sent > inputFlow.received
     ? inputFlow.sent - inputFlow.received
     : undefined;
+  if (input.pair.input.kind === "native") {
+    soldValue = input.transactionValue;
+    const events = input.logs.flatMap((log) => {
+      if (log.address.toLowerCase() !== input.transactionTarget?.toLowerCase() || !log.topics[0]) return [];
+      try {
+        return [decodeEventLog({
+          abi: [...otfEntryExitRouterAbi, ...otfLaunchRouterAbi],
+          topics: [log.topics[0], ...log.topics.slice(1)],
+          data: log.data,
+        })];
+      } catch {
+        return [];
+      }
+    });
+    for (const event of events) {
+      if (event.eventName === "NativeBasketMinted"
+        && event.args.caller.toLowerCase() === input.owner.toLowerCase()
+        && event.args.vault.toLowerCase() === input.pair.output.address.toLowerCase()
+        && event.args.amountIn === input.transactionValue
+        && event.args.nativeRefunded <= event.args.amountIn) {
+        soldValue = event.args.amountIn - event.args.nativeRefunded;
+      } else if (event.eventName === "BootstrapSwap"
+        && event.args.payer.toLowerCase() === input.owner.toLowerCase()
+        && event.args.recipient.toLowerCase() === input.owner.toLowerCase()
+        && event.args.buyOtf && input.pair.output.isProtocolToken
+        && input.transactionValue !== undefined && event.args.amountIn <= input.transactionValue) {
+        soldValue = event.args.amountIn;
+      }
+    }
+  }
   if (direction !== "asset-to-otf" && soldValue === undefined) return undefined;
 
   const excluded = new Set([

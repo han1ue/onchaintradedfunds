@@ -644,12 +644,12 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   from { opacity: 0; clip-path: inset(0 0 0 10%); transform: translateX(24%); }
 }
 
-.swapReceiptMark { position: relative; display: grid; width: 100%; height: 112px; place-items: center; }
-.swapCelebration { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; fill: none; stroke: var(--lime); }
-.swapCelebrationRail { stroke-width: .8; opacity: 0; animation: swapRailReveal 3200ms ease-out both; }
-.swapCelebrationStream { stroke-width: 2; stroke-linecap: round; stroke-dasharray: 12 100; stroke-dashoffset: 12; opacity: 0; animation: swapStreamConverge 1800ms cubic-bezier(.16, 1, .3, 1) var(--stream-delay) both; }
-.swapCelebrationOrbits { transform-origin: 160px 56px; opacity: 0; stroke-width: 1; animation: swapOrbitBloom 2400ms cubic-bezier(.16, 1, .3, 1) 1000ms both; }
-.swapReceiptMark.celebrating .swapReceiptConfirmedIcon { animation: swapConfirmationBloom 3400ms ease-out both; }
+.swapReceiptMark { position: relative; display: grid; width: 100%; height: 160px; place-items: center; }
+.swapCelebration { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; fill: none; stroke: var(--lime); }
+.swapCelebrationRail { stroke-width: .8; opacity: 0; animation: swapRailReveal 5600ms ease-out both; }
+.swapCelebrationStream { stroke-width: 2; stroke-linecap: round; stroke-dasharray: 12 100; stroke-dashoffset: 12; opacity: 0; animation: swapStreamConverge 3200ms ease-in-out var(--stream-delay) both; }
+.swapCelebrationOrbits { transform-origin: 160px 80px; opacity: 0; stroke-width: 1; animation: swapOrbitBloom 4200ms cubic-bezier(.22, .61, .36, 1) 1600ms both; }
+.swapReceiptMark.celebrating .swapReceiptConfirmedIcon { animation: swapConfirmationBloom 5800ms ease-out both; }
 
 @keyframes swapRailReveal {
   0%, 100% { opacity: 0; }
@@ -1514,6 +1514,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .stateBadge.muted { background: var(--card-raised); color: var(--text-muted); }
 
 .directoryTableWrap { overflow-x: auto; }
+.directoryPanel .directoryTable { table-layout: fixed; }
+.directoryPanel .directoryTable th:first-child { width: 30%; }
+.directoryPanel .directoryFundLink { max-width: 100%; }
 .fundSortHeader { border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .fundSortHeader:hover,
 .fundSortHeader:active,
@@ -2591,6 +2594,30 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .allocationChartPanel { position: static; }
 }
 
+@media (max-width: 1120px) {
+  .directoryPanel .directoryTableWrap { overflow: visible; }
+  .directoryPanel .directoryTable { min-width: 0; table-layout: fixed; font-size: 0.66rem; }
+  .directoryPanel .directoryTable th,
+  .directoryPanel .directoryTable td { padding: 12px 6px; white-space: normal; overflow-wrap: anywhere; vertical-align: middle; }
+  .directoryPanel .directoryTable th { font-size: 0.57rem; }
+  .directoryPanel .directoryTable th:first-child,
+  .directoryPanel .directoryTable td:first-child { width: 37%; padding-left: 10px; }
+  .directoryPanel .directoryTable th:nth-child(2) { width: 15%; }
+  .directoryPanel .directoryTable th:nth-child(3) { width: 22%; }
+  .directoryPanel .directoryTable th:nth-child(5),
+  .directoryPanel .directoryTable td:nth-child(5) { width: 26%; padding-right: 10px; }
+  .directoryPanel .directoryTable th:nth-child(4),
+  .directoryPanel .directoryTable td:nth-child(4),
+  .directoryPanel .directoryTable th:nth-child(6),
+  .directoryPanel .directoryTable td:nth-child(6) { display: none; }
+  .directoryPanel .directoryFundLink { width: 100%; }
+  .directoryPanel .directoryFundLink > .assetLogoFallback { display: none; }
+  .directoryPanel .directoryFundLink > span { width: 100%; }
+  .directoryPanel .directoryFundLink strong { max-width: 100%; }
+  .directoryPanel .directoryFundLink small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .directoryPanel .fundFeesInline { white-space: normal; }
+}
+
 @media (max-width: 760px) {
   .dashboardMain { padding-right: 14px; padding-left: 14px; }
   .swapFooterFrame { padding-right: 14px; padding-left: 14px; }
@@ -2664,27 +2691,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
   .creationAllocationTable td[data-label]::before { flex: 0 0 auto; color: var(--text-muted); content: attr(data-label); font-size: 0.62rem; font-weight: 600; }
   .creationAllocationTable td:first-child { grid-column: 1 / -1; justify-content: flex-start; text-align: left; }
   .directoryPanel .directoryViewToggle { display: none; }
-  .directoryPanel .directoryTableWrap { overflow: visible; }
-  .directoryPanel .directoryTable { min-width: 0; table-layout: fixed; font-size: 0.66rem; }
-  .directoryPanel .directoryTable th,
-  .directoryPanel .directoryTable td { padding: 12px 6px; white-space: normal; overflow-wrap: anywhere; vertical-align: middle; }
-  .directoryPanel .directoryTable th { font-size: 0.57rem; }
-  .directoryPanel .directoryTable th:first-child,
-  .directoryPanel .directoryTable td:first-child { width: 37%; padding-left: 10px; }
-  .directoryPanel .directoryTable th:nth-child(2) { width: 15%; }
-  .directoryPanel .directoryTable th:nth-child(3) { width: 22%; }
-  .directoryPanel .directoryTable th:nth-child(5),
-  .directoryPanel .directoryTable td:nth-child(5) { width: 26%; padding-right: 10px; }
-  .directoryPanel .directoryTable th:nth-child(4),
-  .directoryPanel .directoryTable td:nth-child(4),
-  .directoryPanel .directoryTable th:nth-child(6),
-  .directoryPanel .directoryTable td:nth-child(6) { display: none; }
-  .directoryPanel .directoryFundLink { width: 100%; }
-  .directoryPanel .directoryFundLink > .assetLogoFallback { display: none; }
-  .directoryPanel .directoryFundLink > span { width: 100%; }
-  .directoryPanel .directoryFundLink strong { max-width: 100%; }
-  .directoryPanel .directoryFundLink small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .directoryPanel .fundFeesInline { white-space: normal; }
   .walletAssets .directoryTableWrap { overflow: visible; }
   .walletAssets .directoryTable { display: block; min-width: 0; }
   .walletAssets .directoryTable thead { display: none; }

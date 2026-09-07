@@ -1,4 +1,5 @@
-import { parseUnits, zeroAddress, type Address, type Hex } from "viem";
+import { encodeAbiParameters, encodeEventTopics, parseUnits, zeroAddress, type Address, type Hex } from "viem";
+import { otfEntryExitRouterAbi, otfLaunchRouterAbi } from "@onchaintradedfunds/generated";
 import { describe, expect, it } from "vitest";
 import {
   claimSwapCelebration,
@@ -35,7 +36,7 @@ function transfer(token: Address, from: Address, to: Address, value: bigint): Re
   };
 }
 
-function receipt(pair: { input: SwapAsset; output: SwapAsset }, logs: ReceiptLog[], status: "pending" | "success" | "reverted" = "success") {
+function receipt(pair: { input: SwapAsset; output: SwapAsset }, logs: ReceiptLog[], status: "pending" | "success" | "reverted" = "success", overrides: Partial<Parameters<typeof confirmedSwapReceipt>[0]> = {}) {
   return confirmedSwapReceipt({
     status,
     hash: HASH,
@@ -47,10 +48,46 @@ function receipt(pair: { input: SwapAsset; output: SwapAsset }, logs: ReceiptLog
     logs,
     knownAssets: [USDC, TECH, NEXT, AMZN, NVDA],
     refundSender: ROUTER,
+    ...overrides,
   });
 }
 
 describe("confirmed swap receipt", () => {
+  const ETH: SwapAsset = { ...USDC, address: zeroAddress, kind: "native", symbol: "ETH", decimals: 18 };
+
+  it("shows native ETH paid separately from gas", () => {
+    const result = receipt({ input: ETH, output: TECH }, [transfer(TECH.address, zeroAddress, OWNER, 1n)], "success", { transactionValue: parseUnits("0.01", 18) });
+    expect(result?.sold?.displayAmount).toBe("0.01");
+    expect(result?.sold?.symbol).toBe("ETH");
+  });
+
+  it("deducts confirmed native refunds from the payment and ignores unrelated emitters", () => {
+    const log: ReceiptLog = {
+      address: ROUTER,
+      topics: encodeEventTopics({ abi: otfEntryExitRouterAbi, eventName: "NativeBasketMinted", args: { caller: OWNER, vault: TECH.address } }) as Hex[],
+      data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }, { type: "uint256" }], [parseUnits("0.01", 18), 1n, parseUnits("0.002", 18)]),
+    };
+    const logs = [transfer(TECH.address, zeroAddress, OWNER, 1n), log];
+    const options = { transactionValue: parseUnits("0.01", 18), transactionTarget: ROUTER };
+    expect(receipt({ input: ETH, output: TECH }, logs, "success", options)?.sold?.displayAmount).toBe("0.008");
+    expect(receipt({ input: ETH, output: TECH }, logs, "success", { ...options, transactionTarget: OWNER })?.sold?.displayAmount).toBe("0.01");
+  });
+
+  it("uses the consumed native amount for a partially filled launch swap", () => {
+    const token = { ...TECH, kind: "erc20" as const, isProtocolToken: true };
+    const log: ReceiptLog = {
+      address: ROUTER,
+      topics: encodeEventTopics({ abi: otfLaunchRouterAbi, eventName: "BootstrapSwap", args: { payer: OWNER, recipient: OWNER, buyOtf: true } }) as Hex[],
+      data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [parseUnits("0.007", 18), 1n]),
+    };
+    expect(receipt({ input: ETH, output: token }, [transfer(token.address, zeroAddress, OWNER, 1n), log], "success", { transactionValue: parseUnits("0.01", 18), transactionTarget: ROUTER })?.sold?.displayAmount).toBe("0.007");
+  });
+
+  it("shows the ERC-20 payment net of returned input", () => {
+    const result = receipt({ input: USDC, output: TECH }, [transfer(USDC.address, OWNER, ROUTER, 10_000_000n), transfer(USDC.address, ROUTER, OWNER, 1_000_000n), transfer(TECH.address, zeroAddress, OWNER, 1n)]);
+    expect(result?.sold?.displayAmount).toBe("9");
+  });
+
   it("calculates the paid gas fee from confirmed gas usage and effective price", () => {
     const result = receipt({ input: USDC, output: TECH }, [transfer(TECH.address, zeroAddress, OWNER, 1n)]);
     expect(result).toMatchObject({ chainId: 46630, gasUsed: 2_357_790n, gasFee: 235_779_000_000_000n });
