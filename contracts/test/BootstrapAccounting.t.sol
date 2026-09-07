@@ -49,13 +49,14 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         }
     }
 
-    function testShareMetadataUsesTheVaultTicker() public {
+    function testShareMetadataUsesTheVaultNameAndTicker() public {
         VaultCreationParams memory params = _creationParams(_assets(), _units(3, 5), 0);
         params.symbol = "ABCDEFGH";
         vm.prank(CREATOR);
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
-        assertEq(vault.tokenURI(), factory.otfTokenURI("ABCDEFGH"));
-        assertTrue(keccak256(bytes(vault.tokenURI())) != keccak256(bytes(factory.otfTokenURI("OTF"))));
+        assertEq(vault.tokenURI(), factory.otfTokenURI(vault.name(), "ABCDEFGH"));
+        assertTrue(keccak256(bytes(vault.tokenURI())) != keccak256(bytes(factory.otfTokenURI(vault.name(), "OTF"))));
+        assertTrue(keccak256(bytes(vault.tokenURI())) != keccak256(bytes(factory.otfTokenURI("Other OTF", vault.symbol()))));
     }
 
     function testInvalidTickersAreRejectedAtomically() public {

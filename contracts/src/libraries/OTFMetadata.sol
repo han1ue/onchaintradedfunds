@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @notice Canonical fully onchain metadata for the protocol token and OTF vault shares.
 library OTFMetadata {
@@ -19,9 +20,13 @@ library OTFMetadata {
         );
     }
 
-    function shareTokenURI(string memory ticker) internal pure returns (string memory) {
+    function shareTokenURI(string memory tokenName, string memory ticker)
+        internal
+        pure
+        returns (string memory)
+    {
         return _tokenURI(
-            "Onchain Traded Fund Share",
+            tokenName,
             ticker,
             "A share token issued by an Onchain Traded Funds vault.",
             _shareIcon(ticker)
@@ -93,7 +98,7 @@ library OTFMetadata {
         );
         string memory json = string.concat(
             '{"name":"',
-            tokenName,
+            Strings.escapeJSON(tokenName),
             '","symbol":"',
             tokenSymbol,
             '","interop":{"erc1046":true},"description":"',

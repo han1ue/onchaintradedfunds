@@ -202,8 +202,8 @@ const factorySource = readFileSync(join(contracts, "src", "OTFFactory.sol"), "ut
 assert(/Clones\.clone\(vaultImplementation\)/u.test(factorySource), "factory creation does not use nondeterministic clones");
 assert(!/(?:cloneDeterministic|predictDeterministicAddress|salt)/iu.test(factorySource), "factory retains deterministic clone machinery");
 assert(!/registerVault/u.test(factorySource), "factory retains collector vault registration");
-assert(/OTFMetadata\.shareTokenURI\(ticker\)/u.test(factorySource), "vault shares do not use canonical onchain metadata");
-assert(/IOTFFactoryTokenPolicy\(_factory\)\.otfTokenURI\(symbol\(\)\)/u.test(vaultSource), "vault tokenURI does not resolve factory metadata");
+assert(/OTFMetadata\.shareTokenURI\(tokenName, ticker\)/u.test(factorySource), "vault shares do not use canonical onchain metadata");
+assert(/IOTFFactoryTokenPolicy\(_factory\)\.otfTokenURI\(name\(\), symbol\(\)\)/u.test(vaultSource), "vault tokenURI does not resolve factory metadata");
 const routerConfigurationSource = factorySource.match(
   /function\s+configureEntryExitRouter[\s\S]*?\n\s*function\s+vaultCount/u,
 )?.[0] ?? "";

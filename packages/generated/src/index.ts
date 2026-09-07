@@ -1964,6 +1964,11 @@ export const otfFactoryAbi = [
     "name": "otfTokenURI",
     "inputs": [
       {
+        "name": "tokenName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
         "name": "ticker",
         "type": "string",
         "internalType": "string"

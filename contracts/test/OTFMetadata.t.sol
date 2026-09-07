@@ -7,7 +7,7 @@ import { OTFMetadata } from "../src/libraries/OTFMetadata.sol";
 
 contract MetadataHarness {
     function share(string memory ticker) external pure returns (string memory) {
-        return OTFMetadata.shareTokenURI(ticker);
+        return OTFMetadata.shareTokenURI("Example OTF", ticker);
     }
 }
 
@@ -52,6 +52,22 @@ contract OTFMetadataTest is Test {
         assertTrue(_contains(_svg(uri), ">DEF</text>"));
     }
 
+    function testShareMetadataFollowsErc1046IdentityAndInterop() public pure {
+        string memory uri = OTFMetadata.shareTokenURI("Balanced Growth OTF", "bAlAnCe");
+        string memory json = _decode(uri, "data:application/json;base64,");
+        assertEq(vm.parseJsonString(json, ".name"), "Balanced Growth OTF");
+        assertEq(vm.parseJsonString(json, ".symbol"), "bAlAnCe");
+        assertTrue(vm.parseJsonBool(json, ".interop.erc1046"));
+        assertFalse(_contains(json, '"decimals"'));
+    }
+
+    function testShareNameRoundTripsQuotesBackslashesAndUnicode() public pure {
+        string memory tokenName = unicode'Growth "A" \\ Café OTF';
+        string memory uri = OTFMetadata.shareTokenURI(tokenName, "GROWTH");
+        string memory json = _decode(uri, "data:application/json;base64,");
+        assertEq(vm.parseJsonString(json, ".name"), tokenName);
+    }
+
     function testInvalidTickerBoundariesAreRejected() public {
         vm.expectRevert(OTFMetadata.InvalidTicker.selector);
         renderer.share("");
@@ -63,6 +79,9 @@ contract OTFMetadataTest is Test {
 
     function testProtocolMetadataStillUsesItsSingleLineMark() public view {
         string memory uri = OTFMetadata.protocolTokenURI();
+        string memory json = _decode(uri, "data:application/json;base64,");
+        assertEq(vm.parseJsonString(json, ".name"), "Onchain Traded Funds");
+        assertTrue(vm.parseJsonBool(json, ".interop.erc1046"));
         assertEq(
             vm.parseJsonString(_decode(uri, "data:application/json;base64,"), ".symbol"), "OTF"
         );
