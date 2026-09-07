@@ -15,13 +15,12 @@ contract OTFTokenTest is TestBase {
         token = new OTFToken(INITIAL_HOLDER);
     }
 
-    function testConstructorIssuesTheMaximumSupplyExactlyOnce() public view {
-        assertEq(token.MAX_SUPPLY(), INITIAL_SUPPLY);
+    function testConstructorIssuesTheInitialSupplyExactlyOnce() public view {
         assertEq(token.totalSupply(), INITIAL_SUPPLY);
         assertEq(token.balanceOf(INITIAL_HOLDER), INITIAL_SUPPLY);
         assertEq(
             100_000_000 ether + 150_000_000 ether + 50_000_000 ether + 700_000_000 ether,
-            token.MAX_SUPPLY()
+            INITIAL_SUPPLY
         );
     }
 

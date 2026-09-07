@@ -99,7 +99,7 @@ const normalizeStorage = (layout) => layout.storage.map((entry) => ({
 }));
 assert(JSON.stringify(normalizeStorage(vaultStorage)) === JSON.stringify(normalizeStorage(vaultLayout)), "vault storage differs from canonical fresh layout");
 const expectedStorage = [
-  "_shutdown", "_entered", "_factory", "_creator", "_expenseBeneficiary",
+  "_shutdown", "_factory", "_creator", "_expenseBeneficiary",
   "_buybackCollector", "_entryExitRouter", "_otfToken", "_fundThesis", "_annualCreatorExpenseRatioBps",
   "_mintFeeBps", "_redeemFeeBps", "_shutdownAt",
   "_assets", "_bootstrapBasketUnitsPerOTF", "_accountedBalance", "_feeEpochTimestamp",
@@ -167,7 +167,7 @@ for (const [name, expected] of Object.entries(expectedConstructors)) {
 }
 
 const teamVestingNames = functionNames(compiled.TeamMarketCapVesting);
-for (const name of ["beneficiary", "pendingBeneficiary", "initiateBeneficiaryTransfer", "cancelBeneficiaryTransfer", "acceptBeneficiaryTransfer", "claim"]) {
+for (const name of ["owner", "pendingOwner", "transferOwnership", "acceptOwnership", "renounceOwnership", "claim"]) {
   assert(teamVestingNames.has(name), `team vesting beneficiary-transfer surface ${name} is absent`);
 }
 const teamVestingMutating = functions(compiled.TeamMarketCapVesting)
@@ -175,18 +175,17 @@ const teamVestingMutating = functions(compiled.TeamMarketCapVesting)
   .map((item) => item.name)
   .sort();
 assert(JSON.stringify(teamVestingMutating) === JSON.stringify([
-  "acceptBeneficiaryTransfer", "cancelBeneficiaryTransfer", "checkpoint", "claim", "initiateBeneficiaryTransfer",
+  "acceptOwnership", "checkpoint", "claim", "transferOwnership",
 ].sort()), "team vesting exposes an unexpected mutating entrypoint");
 const teamVestingEvents = new Set(
   compiled.TeamMarketCapVesting.abi.filter((item) => item.type === "event").map((item) => item.name),
 );
-for (const name of ["BeneficiaryTransferInitiated", "BeneficiaryTransferCancelled", "BeneficiaryTransferAccepted"]) {
+for (const name of ["OwnershipTransferStarted", "OwnershipTransferred"]) {
   assert(teamVestingEvents.has(name), `team vesting event ${name} is absent`);
 }
 const teamVestingSource = readFileSync(join(contracts, "src", "TeamMarketCapVesting.sol"), "utf8");
-assert(/address public beneficiary;/u.test(teamVestingSource), "team beneficiary is not mutable storage");
-assert(/address public pendingBeneficiary;/u.test(teamVestingSource), "pending team beneficiary storage is absent");
-assert(!/immutable\s+beneficiary/u.test(teamVestingSource), "team beneficiary remains immutable");
+assert(/TeamMarketCapVesting is Ownable2Step/u.test(teamVestingSource), "team beneficiary does not use OpenZeppelin ownership");
+assert(/function renounceOwnership\(\) public view override onlyOwner\s*\{\s*revert OwnershipRenunciationDisabled\(\);/u.test(teamVestingSource), "team ownership renunciation is not disabled");
 
 const factoryNames = functionNames(compiled.OTFFactory);
 for (const name of ["configureEntryExitRouter", "vaultCount", "vaultAt", "createVault", "buybackCollector", "otfToken", "otfTokenURI", "isVault"]) {
@@ -286,7 +285,8 @@ assert(/IV4Router\.ExactInputParams/u.test(v4AdapterSource), "V4 adapter does no
 assert(/SWAP_EXACT_IN_ACTION,\s*SETTLE_ALL_ACTION,\s*TAKE_ALL_ACTION/u.test(v4AdapterSource), "V4 adapter does not construct the fixed swap/settle/take action stream");
 
 const tokenNames = functionNames(compiled.OTFToken);
-assert(tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "fixed OTF supply surface is incomplete");
+assert(!tokenNames.has("MAX_SUPPLY") && tokenNames.has("totalSupply") && tokenNames.has("balanceOf") && tokenNames.has("tokenURI"), "OTF token must expose live supply without an original-supply getter");
+assert(/_mint\(initialHolder, ProtocolConstants\.OTF_INITIAL_SUPPLY\)/u.test(otfTokenSource), "OTF token does not mint the shared initial supply");
 assert(tokenNames.has("burn") && tokenNames.has("burnFrom"), "OTF token is missing inherited burn functions");
 assert(![...tokenNames].some((name) => /^(mint|set.*Supply|increaseSupply|decreaseSupply)$/iu.test(name)), "OTF token exposes a post-construction supply function");
 assert(!functions(compiled.OTFToken).some((item) => item.name === "burn" && item.inputs.length !== 1), "OTF token exposes a privileged burn overload");
@@ -299,7 +299,7 @@ for (const removed of ["FeeCollector", "protocolFeeShareBps", "claimTreasury", "
 const buybackSource = readFileSync(join(contracts, "src", "BuybackCollector.sol"), "utf8");
 assert(!/function\s+(?:withdraw|rescue|sweep)/iu.test(buybackSource), "buyback collector exposes an asset withdrawal path");
 assert(!/delegatecall|\.call\s*\{/u.test(buybackSource), "buyback collector exposes arbitrary execution");
-assert(/IOTFBurnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
+assert(/ERC20Burnable\(otf\)\.burn\(otfBurned\)/u.test(buybackSource), "buyback collector does not burn purchased OTF");
 const buybackNames = functionNames(compiled.BuybackCollector);
 for (const name of ["configureFactory", "recordFeeShares", "settleFeesViaRedemption", "settleFeesViaShareSale", "feeAccounts"]) {
   assert(buybackNames.has(name), `buyback collector function ${name} is absent`);
@@ -333,7 +333,7 @@ const launchSource = readFileSync(join(contracts, "src", "OTFLaunchManager.sol")
 assert(!/function\s+(?:withdraw|removeLiquidity|reprice|rebalance|migrate)/iu.test(launchSource), "launch manager exposes permanent-liquidity control");
 assert(/LP_FEE\s*=\s*0/u.test(launchSource), "OTF V4 pool fee is not statically zero");
 assert(/TICK_SPACING\s*=\s*1/u.test(launchSource), "OTF V4 pool tick spacing is not statically one");
-assert(!/\bMAX_SUPPLY\s*=/u.test(launchSource), "launch manager duplicates the token's original supply");
+assert(/ProtocolConstants\.OTF_INITIAL_SUPPLY/u.test(launchSource) && !/MAX_SUPPLY/u.test(launchSource), "launch manager does not use the shared initial supply");
 assert(!/LAUNCH_REFERENCE_FDV_WEI|TARGET_REFERENCE_FDV_WEI/u.test(launchSource), "launch manager retains display-only FDV constants");
 assert(/MAX_BOOTSTRAP_BUDGET\s*=\s*150_000_000 ether/u.test(launchSource), "bootstrap safety cap changed");
 assert(/PERMANENT_OTF_CAP\s*=\s*50_000_000 ether/u.test(launchSource), "permanent OTF cap changed");
@@ -387,11 +387,11 @@ assert(/uniswapV3SwapRouter02/u.test(deploySource), "deployment does not require
 assert(/deploy\("UniswapV3Adapter"/u.test(deploySource), "deployment does not deploy UniswapV3Adapter");
 assert(/deploy\("UniswapV4Adapter"/u.test(deploySource), "deployment does not deploy UniswapV4Adapter");
 assert(/deploy\("OTFLaunchRouter"/u.test(deploySource), "deployment does not deploy OTFLaunchRouter");
-assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 3 && deploySource.includes("revokePreviousAdapters"), "deployment must approve both replacements and revoke both previous adapters");
+assert((deploySource.match(/"setAdapterApproved"/gu) ?? []).length === 2, "deployment must approve only the current adapters");
 for (const name of ["OTFToken", "TeamMarketCapVesting", "BuybackCollector", "MerkleRewardsDistributor", "FakeETHUSDOracle"]) {
   assert(deploySource.includes(`deploy(\"${name}\"`), `deployment does not deploy ${name}`);
 }
-assert(/functionName:\s*"beneficiary"/u.test(deploySource) && /functionName:\s*"pendingBeneficiary"/u.test(deploySource), "deployment does not verify initial team beneficiary state");
+assert(/functionName:\s*"owner"/u.test(deploySource) && /functionName:\s*"pendingOwner"/u.test(deploySource), "deployment does not verify initial team beneficiary state");
 const testnetConfig = JSON.parse(readFileSync(join(root, "app", "src", "config", "robinhood-testnet.json"), "utf8"));
 const testnetRoutingPin = JSON.parse(readFileSync(join(root, "scripts", "fixtures", "robinhood-testnet-routing.json"), "utf8"));
 assertTestnetRoutingConfiguration(testnetConfig, testnetRoutingPin);
@@ -406,7 +406,7 @@ const v4RouterSource = readFileSync(
 const exactInputFields = v4RouterSource.match(/struct ExactInputParams\s*\{([^}]+)\}/u)?.[1]
   .trim().split(/\s*;\s*/u).filter(Boolean);
 assert(JSON.stringify(exactInputFields) === JSON.stringify(["Currency currencyIn", "PathKey[] path", "uint256[] minHopPriceX36", "uint128 amountIn", "uint128 amountOutMinimum"]), "canonical V4 exact-input tuple differs from Universal Router 2.1.1");
-assert(/verifyTestnetRoutingRuntime\(publicClient, previous, routingPin\)/u.test(deploySource), "deployment does not enforce the validated testnet runtime binding");
+assert(/verifyTestnetRoutingRuntime\(publicClient, networkConfig, routingPin\)/u.test(deploySource), "deployment does not enforce the validated testnet runtime binding");
 assert(testnetConfig.trustedRoles.teamBeneficiary === "0xc340D7085E321B82CF550904310EE44bae9e4CD2", "configured testnet team beneficiary changed");
 assert(!("architecture" in testnetConfig), "testnet configuration must not use an architecture version gate");
 assert(testnetConfig.status === "not-deployed" || testnetConfig.status === "deployed", "testnet configuration has an invalid deployment status");

@@ -14,7 +14,7 @@ import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
 import { UniswapV4Adapter } from "../../src/UniswapV4Adapter.sol";
 import { TeamMarketCapVesting } from "../../src/TeamMarketCapVesting.sol";
 import { MerkleRewardsDistributor } from "../../src/MerkleRewardsDistributor.sol";
-import { IERC20 } from "../../src/interfaces/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { AggregatorV3Interface } from "../../src/interfaces/AggregatorV3Interface.sol";
 
 interface RehearsalWeth is IERC20 {

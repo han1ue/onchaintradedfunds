@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { ManagedOTFVault } from "./ManagedOTFVault.sol";
 import { OTFMetadata } from "./libraries/OTFMetadata.sol";
@@ -16,7 +17,7 @@ interface ICanonicalBuybackCollector {
 }
 
 /// @notice Permissionless OTF creation from creator-supplied immutable bootstrap basket units.
-contract OTFFactory {
+contract OTFFactory is ReentrancyGuard {
     uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
     uint16 public constant MAX_ANNUAL_CREATOR_EXPENSE_RATIO_BPS =
@@ -30,7 +31,6 @@ contract OTFFactory {
     error RouterNotConfigured();
     error UnauthorizedRouterConfigurator(address caller);
     error RouterFactoryMismatch(address expected, address actual);
-    error Reentrancy();
 
     event EntryExitRouterConfigured(address indexed router);
     event VaultCreated(address indexed creator, address indexed vault, string name, string symbol);
@@ -43,7 +43,6 @@ contract OTFFactory {
     address public entryExitRouter;
     address[] private _vaults;
     mapping(address => bool) public isVault;
-    bool private _creating;
 
     constructor(address vaultImplementation_, address buybackCollector_, address otfToken_) {
         if (vaultImplementation_.code.length == 0) revert InvalidImplementation();
@@ -54,13 +53,6 @@ contract OTFFactory {
         buybackCollector = buybackCollector_;
         otfToken = otfToken_;
         routerConfigurator = msg.sender;
-    }
-
-    modifier nonReentrantCreation() {
-        if (_creating) revert Reentrancy();
-        _creating = true;
-        _;
-        _creating = false;
     }
 
     /// @notice Breaks the factory/router constructor cycle. This can succeed exactly once.
@@ -110,7 +102,7 @@ contract OTFFactory {
 
     function createVault(VaultCreationParams calldata params)
         external
-        nonReentrantCreation
+        nonReentrant
         returns (address vault)
     {
         if (entryExitRouter == address(0)) revert RouterNotConfigured();

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { IWETH } from "./interfaces/IWETH.sol";
 import {
     IUniswapV4PoolManager,
     UniswapV4PoolKey,
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface ILaunchManagerRouter {
     function otf() external view returns (address);
@@ -28,8 +31,8 @@ interface ILaunchManagerRouter {
 }
 
 /// @notice Boundary-aware OTF/WETH bootstrap swaps with exact-input partial fills.
-contract OTFLaunchRouter {
-    using SafeTransferLib for address;
+contract OTFLaunchRouter is ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
     uint8 private constant BOOTSTRAP_ACTIVE = 1;
     uint8 private constant GRADUATION_READY = 2;
@@ -54,7 +57,6 @@ contract OTFLaunchRouter {
     error RefundFailed();
     error UnexpectedNativeSender(address sender);
     error NativeTransferFailed(address recipient, uint256 amount);
-    error Reentrancy();
 
     event BootstrapSwap(
         address indexed payer,
@@ -70,7 +72,6 @@ contract OTFLaunchRouter {
     address public immutable weth;
     bool public immutable otfIsCurrency0;
     UniswapV4PoolKey public poolKey;
-    bool private _entered;
 
     constructor(address launchManager_) {
         if (launchManager_ == address(0)) revert ZeroAddress();
@@ -96,13 +97,6 @@ contract OTFLaunchRouter {
         weth = weth_;
         otfIsCurrency0 = otfIsCurrency0_;
         poolKey = UniswapV4PoolKey(currency0, currency1, fee, tickSpacing, hooks);
-    }
-
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
     }
 
     receive() external payable {
@@ -210,9 +204,9 @@ contract OTFLaunchRouter {
         IUniswapV4PoolManager(poolManager).sync(inputToken);
         if (callback.nativeInput) {
             IWETH(weth).deposit{ value: amountIn }();
-            weth.safeTransfer(poolManager, amountIn);
+            IERC20(weth).safeTransfer(poolManager, amountIn);
         } else {
-            inputToken.safeTransferFrom(callback.payer, poolManager, amountIn);
+            IERC20(inputToken).safeTransferFrom(callback.payer, poolManager, amountIn);
         }
         IUniswapV4PoolManager(poolManager).settle();
         IUniswapV4PoolManager(poolManager)

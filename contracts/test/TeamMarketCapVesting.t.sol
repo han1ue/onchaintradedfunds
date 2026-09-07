@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { FakeETHUSDOracle } from "../src/mocks/FakeETHUSDOracle.sol";
 import { OTFToken } from "../src/OTFToken.sol";
@@ -84,15 +85,15 @@ contract TeamMarketCapVestingTest is TestBase {
     }
 
     function testInitialBeneficiaryIsConfiguredAddress() public view {
-        assertEq(vesting.beneficiary(), BENEFICIARY);
-        assertEq(vesting.pendingBeneficiary(), address(0));
+        assertEq(vesting.owner(), BENEFICIARY);
+        assertEq(vesting.pendingOwner(), address(0));
     }
 
     function testOnlyCurrentBeneficiaryCanCheckpoint() public {
         _setDirectFdv(1_000_000 ether);
 
         vm.prank(STRANGER);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         vesting.checkpoint();
 
         vm.prank(BENEFICIARY);
@@ -101,13 +102,13 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testCheckpointAuthorityFollowsBeneficiarySuccession() public {
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(NEXT_BENEFICIARY);
-        vesting.acceptBeneficiaryTransfer();
+        vesting.acceptOwnership();
         _setDirectFdv(1_000_000 ether);
 
         vm.prank(BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         vesting.checkpoint();
 
         vm.prank(NEXT_BENEFICIARY);
@@ -183,7 +184,7 @@ contract TeamMarketCapVestingTest is TestBase {
         _setDirectFdv(1_000_000 ether);
         _checkpointAsBeneficiary();
         vm.prank(address(0xBAD));
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         vesting.claim();
         vm.prank(BENEFICIARY);
         assertEq(vesting.claim(), 10_000_000 ether);
@@ -193,30 +194,48 @@ contract TeamMarketCapVestingTest is TestBase {
         vesting.claim();
     }
 
-    function testOnlyCurrentBeneficiaryCanNominateCancelAndNominationRejectsZero() public {
+    function testOnlyCurrentBeneficiaryCanNominateOrCancel() public {
         vm.prank(STRANGER);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
 
         vm.prank(BENEFICIARY);
-        vm.expectRevert(TeamMarketCapVesting.ZeroAddress.selector);
-        vesting.initiateBeneficiaryTransfer(address(0));
-
-        vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(STRANGER);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
-        vesting.cancelBeneficiaryTransfer();
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.transferOwnership(address(0));
+    }
+
+    function testRenunciationCannotStrandUnclaimedTokensOrClearPendingOwner() public {
+        _setDirectFdv(1_000_000 ether);
+        _checkpointAsBeneficiary();
+        vm.prank(BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
+
+        vm.prank(STRANGER);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.renounceOwnership();
+        vm.prank(BENEFICIARY);
+        vm.expectRevert(TeamMarketCapVesting.OwnershipRenunciationDisabled.selector);
+        vesting.renounceOwnership();
+
+        assertEq(vesting.owner(), BENEFICIARY);
+        assertEq(vesting.pendingOwner(), NEXT_BENEFICIARY);
+        vm.prank(NEXT_BENEFICIARY);
+        vesting.acceptOwnership();
+        vm.prank(NEXT_BENEFICIARY);
+        assertEq(vesting.claim(), 10_000_000 ether);
+        assertEq(token.balanceOf(NEXT_BENEFICIARY), 10_000_000 ether);
     }
 
     function testCurrentBeneficiaryRetainsClaimAuthorityWhileTransferIsPending() public {
         _setDirectFdv(1_000_000 ether);
         _checkpointAsBeneficiary();
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
 
         vm.prank(NEXT_BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         vesting.claim();
         vm.prank(BENEFICIARY);
         assertEq(vesting.claim(), 10_000_000 ether);
@@ -224,45 +243,45 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testOnlyPendingBeneficiaryCanAccept() public {
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
 
         vm.prank(STRANGER);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotPendingBeneficiary.selector);
-        vesting.acceptBeneficiaryTransfer();
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.acceptOwnership();
         vm.prank(NEXT_BENEFICIARY);
-        vesting.acceptBeneficiaryTransfer();
-        assertEq(vesting.beneficiary(), NEXT_BENEFICIARY);
-        assertEq(vesting.pendingBeneficiary(), address(0));
+        vesting.acceptOwnership();
+        assertEq(vesting.owner(), NEXT_BENEFICIARY);
+        assertEq(vesting.pendingOwner(), address(0));
     }
 
     function testCancellationPreventsAcceptance() public {
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(BENEFICIARY);
-        vesting.cancelBeneficiaryTransfer();
+        vesting.transferOwnership(address(0));
 
-        assertEq(vesting.pendingBeneficiary(), address(0));
+        assertEq(vesting.pendingOwner(), address(0));
         vm.prank(NEXT_BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotPendingBeneficiary.selector);
-        vesting.acceptBeneficiaryTransfer();
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.acceptOwnership();
     }
 
     function testBeneficiaryTransferEmitsLifecycleEvents() public {
         vm.recordLogs();
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(BENEFICIARY);
-        vesting.cancelBeneficiaryTransfer();
+        vesting.transferOwnership(address(0));
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(NEXT_BENEFICIARY);
-        vesting.acceptBeneficiaryTransfer();
+        vesting.acceptOwnership();
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertEq(logs.length, 4);
-        assertEq(logs[0].topics[0], keccak256("BeneficiaryTransferInitiated(address,address)"));
-        assertEq(logs[1].topics[0], keccak256("BeneficiaryTransferCancelled(address,address)"));
-        assertEq(logs[3].topics[0], keccak256("BeneficiaryTransferAccepted(address,address)"));
+        assertEq(logs[0].topics[0], keccak256("OwnershipTransferStarted(address,address)"));
+        assertEq(logs[1].topics[0], keccak256("OwnershipTransferStarted(address,address)"));
+        assertEq(logs[3].topics[0], keccak256("OwnershipTransferred(address,address)"));
         assertEq(logs[3].emitter, address(vesting));
         assertEq(logs[3].topics[1], bytes32(uint256(uint160(BENEFICIARY))));
         assertEq(logs[3].topics[2], bytes32(uint256(uint160(NEXT_BENEFICIARY))));
@@ -270,14 +289,14 @@ contract TeamMarketCapVestingTest is TestBase {
 
     function testReplacingNominationInvalidatesPreviousPendingBeneficiary() public {
         vm.startPrank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(REPLACEMENT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
+        vesting.transferOwnership(REPLACEMENT_BENEFICIARY);
         vm.stopPrank();
 
-        assertEq(vesting.pendingBeneficiary(), REPLACEMENT_BENEFICIARY);
+        assertEq(vesting.pendingOwner(), REPLACEMENT_BENEFICIARY);
         vm.prank(NEXT_BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotPendingBeneficiary.selector);
-        vesting.acceptBeneficiaryTransfer();
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.acceptOwnership();
     }
 
     function testAcceptedTransferChangesAuthorityWithoutChangingAccounting() public {
@@ -291,24 +310,24 @@ contract TeamMarketCapVestingTest is TestBase {
         uint256 unlockedBefore = vesting.unlockedAmount();
         uint256 claimedBefore = vesting.claimedAmount();
         vm.prank(BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(NEXT_BENEFICIARY);
+        vesting.transferOwnership(NEXT_BENEFICIARY);
         vm.prank(NEXT_BENEFICIARY);
-        vesting.acceptBeneficiaryTransfer();
+        vesting.acceptOwnership();
 
         assertEq(vesting.unlockedAmount(), unlockedBefore);
         assertEq(vesting.claimedAmount(), claimedBefore);
         assertEq(vesting.claimable(), unlockedBefore - claimedBefore);
         vm.prank(BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         vesting.claim();
         vm.prank(BENEFICIARY);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
-        vesting.initiateBeneficiaryTransfer(REPLACEMENT_BENEFICIARY);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vesting.transferOwnership(REPLACEMENT_BENEFICIARY);
         vm.prank(NEXT_BENEFICIARY);
         assertEq(vesting.claim(), 10_000_000 ether);
         vm.prank(NEXT_BENEFICIARY);
-        vesting.initiateBeneficiaryTransfer(REPLACEMENT_BENEFICIARY);
-        assertEq(vesting.pendingBeneficiary(), REPLACEMENT_BENEFICIARY);
+        vesting.transferOwnership(REPLACEMENT_BENEFICIARY);
+        assertEq(vesting.pendingOwner(), REPLACEMENT_BENEFICIARY);
     }
 
     function _setDirectFdv(uint256 fdvUsdWad) private {
@@ -410,35 +429,33 @@ contract TeamVestingSequencePropertiesTest is TestBase {
             }
             address successor = address(uint160(0xC000 + step));
             vm.prank(beneficiary);
-            vesting.initiateBeneficiaryTransfer(successor);
+            vesting.transferOwnership(successor);
             vm.prank(successor);
             vm.expectRevert(
-                abi.encodeWithSelector(TeamMarketCapVesting.NotBeneficiary.selector, successor)
+                abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, successor)
             );
             vesting.checkpoint();
             if (entropy & 2 == 0) {
                 vm.prank(beneficiary);
-                vesting.cancelBeneficiaryTransfer();
+                vesting.transferOwnership(address(0));
                 vm.prank(successor);
                 vm.expectRevert(
-                    abi.encodeWithSelector(
-                        TeamMarketCapVesting.NotPendingBeneficiary.selector, successor
-                    )
+                    abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, successor)
                 );
-                vesting.acceptBeneficiaryTransfer();
+                vesting.acceptOwnership();
             } else {
                 address old = beneficiary;
                 vm.prank(successor);
-                vesting.acceptBeneficiaryTransfer();
+                vesting.acceptOwnership();
                 beneficiary = successor;
                 vm.prank(old);
                 vm.expectRevert(
-                    abi.encodeWithSelector(TeamMarketCapVesting.NotBeneficiary.selector, old)
+                    abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, old)
                 );
                 vesting.claim();
             }
-            assertEq(vesting.beneficiary(), beneficiary);
-            assertEq(vesting.pendingBeneficiary(), address(0));
+            assertEq(vesting.owner(), beneficiary);
+            assertEq(vesting.pendingOwner(), address(0));
             assertEq(vesting.unlockedAmount(), unlocked);
             assertEq(vesting.claimedAmount(), claimed);
             assertEq(vesting.claimable(), unlocked - claimed);

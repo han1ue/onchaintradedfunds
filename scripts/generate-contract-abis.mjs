@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const generatedPath = resolve(root, "packages", "generated", "src", "index.ts");
+const constantsSource = readFileSync(resolve(root, "contracts/src/libraries/ProtocolConstants.sol"), "utf8");
+const initialSupplyMatch = constantsSource.match(/uint256 internal constant OTF_INITIAL_SUPPLY = ([\d_]+) ether;/u);
+if (!initialSupplyMatch) throw new Error("Missing OTF_INITIAL_SUPPLY constant in ProtocolConstants.sol");
+const initialSupply = BigInt(initialSupplyMatch[1].replaceAll("_", "")) * 10n ** 18n;
 const contracts = [
   ["ManagedOTFVault", "managedOtfVaultAbi"],
   ["OTFFactory", "otfFactoryAbi"],
@@ -31,5 +35,5 @@ const exports = contracts.map(([contract, exportName]) => {
   return `export const ${exportName} = ${JSON.stringify(abi, null, 2)} as const;`;
 });
 
-writeFileSync(generatedPath, `${exports.join("\n\n")}\n`);
+writeFileSync(generatedPath, `// Generated from ProtocolConstants.sol.\nexport const OTF_INITIAL_SUPPLY = ${initialSupply}n;\n\n${exports.join("\n\n")}\n`);
 console.log(`Generated ${contracts.length} ABI exports in ${generatedPath}.`);

@@ -1,7 +1,7 @@
 "use client";
 
 import { OtfCoinIcon } from "@onchaintradedfunds/brand";
-import { fakeEthUsdOracleAbi, merkleRewardsDistributorAbi, otfLaunchManagerAbi, otfTokenAbi } from "@onchaintradedfunds/generated";
+import { OTF_INITIAL_SUPPLY, fakeEthUsdOracleAbi, merkleRewardsDistributorAbi, otfLaunchManagerAbi, otfTokenAbi } from "@onchaintradedfunds/generated";
 import { CheckCircle, CircleAlert, ExternalLink, Flame, LoaderCircle, LockKeyhole, ReceiptText } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { formatUnits, zeroAddress, type Address, type Hex } from "viem";
@@ -114,15 +114,14 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const configured = testnet && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
   const query = { enabled: configured, refetchInterval: 12_000 } as const;
   const totalSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "totalSupply", query });
-  const maxSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "MAX_SUPPLY", query });
   const phaseRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "phase", query });
   const priceRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "currentOtfPriceWethWad", query });
   const progressRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "bootstrapProgress", query });
   const oracleRead = useReadContract({ address: oracle, abi: fakeEthUsdOracleAbi, functionName: "latestRoundData", query: { ...query, enabled: configured && oracle !== zeroAddress } });
   const totalSupply = totalSupplyRead.data;
-  const supply = totalSupply === undefined || maxSupplyRead.data === undefined
+  const supply = totalSupply === undefined
     ? undefined
-    : burnedSupply(maxSupplyRead.data, totalSupply);
+    : burnedSupply(OTF_INITIAL_SUPPLY, totalSupply);
   const phase = phaseRead.data === undefined ? undefined : Math.min(3, Math.max(0, Number(phaseRead.data)));
   const ethUsd = oracleRead.data && oracleRead.data[1] > 0n ? BigInt(oracleRead.data[1]) * 10n ** 10n : undefined;
   const priceUsd = priceRead.data !== undefined && ethUsd !== undefined ? priceRead.data * ethUsd / 10n ** 18n : undefined;

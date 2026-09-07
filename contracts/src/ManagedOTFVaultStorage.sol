@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {
     ERC20Upgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -14,7 +15,7 @@ interface IOTFFactoryTokenPolicy {
 }
 
 /// @dev Clone-safe vault storage. Bootstrap basket units and fee policy have no mutation path.
-abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
+abstract contract ManagedOTFVaultStorage is ERC20Upgradeable, ReentrancyGuard {
     uint256 internal constant BPS = ProtocolConstants.BPS;
     uint256 internal constant WAD = ProtocolConstants.WAD;
     uint256 internal constant YEAR = ProtocolConstants.YEAR;
@@ -25,7 +26,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     error UnauthorizedRouter(address caller);
     error UnauthorizedShutdown(address caller);
     error InvalidDependency(address dependency);
-    error Reentrancy();
     error ZeroAddress();
     error InvalidReceiver(address receiver);
     error InvalidVaultMetadata();
@@ -98,7 +98,6 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     event LowSupplyShutdown(address indexed caller, uint64 timestamp, uint256 remainingSupply);
 
     bool internal _shutdown;
-    uint256 internal _entered;
 
     address internal _factory;
     address internal _creator;
@@ -133,12 +132,5 @@ abstract contract ManagedOTFVaultStorage is ERC20Upgradeable {
     modifier onlyRouter() {
         if (msg.sender != _entryExitRouter) revert UnauthorizedRouter(msg.sender);
         _;
-    }
-
-    modifier nonReentrant() {
-        if (_entered == 1) revert Reentrancy();
-        _entered = 1;
-        _;
-        _entered = 0;
     }
 }

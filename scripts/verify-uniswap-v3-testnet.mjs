@@ -116,13 +116,13 @@ for (const market of catalog.pools) {
   const quote = assets.find((item) => item.id === market.assetB);
   const token0 = BigInt(asset.address) < BigInt(quote.address) ? asset.address : quote.address;
   const token1 = token0 === asset.address ? quote.address : asset.address;
-  // The replacement factory has the standard fee tiers; its 100 tier is disabled.
+  // The configured factory has the standard fee tiers; its 100 tier is disabled.
   const fee = market.assetA === "weth" && market.fee === 100 ? 500 : market.fee;
   const spacing = await client.readContract({ address: factory, abi: factoryAbi, functionName: "feeAmountTickSpacing", args: [fee] });
   if (spacing <= 0) throw new Error(`${market.id} fee is not enabled`);
   const predicted = getCreate2Address({ from: factory, salt: keccak256(encodeAbiParameters(parseAbiParameters("address,address,uint24"), [token0, token1, fee])), bytecodeHash: poolInitCodehash });
   const existing = await client.readContract({ address: factory, abi: factoryAbi, functionName: "getPool", args: [token0, token1, fee] });
-  if (existing !== zeroAddress && existing.toLowerCase() !== predicted.toLowerCase()) throw new Error("Replacement pool CREATE2 mismatch");
+  if (existing !== zeroAddress && existing.toLowerCase() !== predicted.toLowerCase()) throw new Error("Pool CREATE2 mismatch");
   const prior = priorPrices?.markets.find((item) => item.id === market.id);
   const sourcePool = prior?.sourcePool || market.address;
   const source = await Promise.all(["token0", "token1", "fee", "liquidity", "slot0"].map((functionName) => client.readContract({ address: sourcePool, abi: poolAbi, functionName })));

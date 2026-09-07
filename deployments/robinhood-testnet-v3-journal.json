@@ -202,28 +202,10 @@
       "data": "0xe54e9849",
       "transactionHash": "0x517e94205c959bc8ff9062aff6da26f28d31190775863e45decef28d9dae7b5e",
       "gasUsed": "618792"
-    },
-    {
-      "kind": "call",
-      "name": "OTFEntryExitRouter",
-      "functionName": "setAdapterApproved",
-      "to": "0x3DEFb0ABeb7081B36f7421601e1689c5EA8aaE10",
-      "data": "0x3d312f6d00000000000000000000000038051b37d196c201745ce0189de92b50a69ed3f70000000000000000000000000000000000000000000000000000000000000000",
-      "transactionHash": "0x2e769bec89bcb207db11990647c49dd0de8c211c376281e5fd42c697cffd0062",
-      "gasUsed": "32092"
-    },
-    {
-      "kind": "call",
-      "name": "OTFEntryExitRouter",
-      "functionName": "setAdapterApproved",
-      "to": "0x3DEFb0ABeb7081B36f7421601e1689c5EA8aaE10",
-      "data": "0x3d312f6d000000000000000000000000697bffa6fadbffb85d4ea430a0be0a2d148758480000000000000000000000000000000000000000000000000000000000000000",
-      "transactionHash": "0xd85b3dde01e5acb3b26a1152166847fd062798cd6b15caf498ff7e80324a79de",
-      "gasUsed": "32058"
     }
   ],
-  "totalGas": "32972867",
-  "gasSpend": "329728670000000",
+  "totalGas": "32908717",
+  "gasSpend": "329087170000000",
   "seedMarketSnapshot": {
     "capturedAt": "2026-09-06T23:20:58.234Z",
     "assets": [

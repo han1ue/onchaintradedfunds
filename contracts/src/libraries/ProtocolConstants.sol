@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 library ProtocolConstants {
+    uint256 internal constant OTF_INITIAL_SUPPLY = 1_000_000_000 ether;
     uint256 internal constant BPS = 10_000;
     uint256 internal constant WAD = 1e18;
     uint256 internal constant YEAR = 365 days;

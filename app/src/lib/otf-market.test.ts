@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { OTF_INITIAL_SUPPLY } from "@onchaintradedfunds/generated";
 import { burnedSupply, feeBenefitRows, quoteCanonicalOtfSwap } from "./otf-market";
 
 describe("OTF market model", () => {
   it("calculates current and burned supply from the immutable original supply", () => {
-    expect(burnedSupply(1_000_000_000n, 975_000_000n)).toEqual({ burned: 25_000_000n, burnedBps: 250 });
+    expect(burnedSupply(OTF_INITIAL_SUPPLY, 975_000_000n * 10n ** 18n)).toEqual({ burned: 25_000_000n * 10n ** 18n, burnedBps: 250 });
   });
 
   it("quotes both token orderings consistently", () => {

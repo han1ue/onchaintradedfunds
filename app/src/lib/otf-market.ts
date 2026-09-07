@@ -75,10 +75,10 @@ export function quoteCanonicalOtfSwap(input: {
   };
 }
 
-export function burnedSupply(maxSupply: bigint, totalSupply: bigint) {
-  if (totalSupply > maxSupply) throw new Error("Current supply exceeds original supply.");
-  const burned = maxSupply - totalSupply;
-  return { burned, burnedBps: maxSupply === 0n ? 0 : Number(burned * 10_000n / maxSupply) };
+export function burnedSupply(initialSupply: bigint, totalSupply: bigint) {
+  if (totalSupply > initialSupply) throw new Error("Current supply exceeds original supply.");
+  const burned = initialSupply - totalSupply;
+  return { burned, burnedBps: initialSupply === 0n ? 0 : Number(burned * 10_000n / initialSupply) };
 }
 
 export function feeBenefitRows() {

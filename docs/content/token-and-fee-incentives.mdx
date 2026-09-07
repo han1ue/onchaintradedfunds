@@ -9,13 +9,13 @@ import { RewardsUnlockChart, TeamUnlockChart } from "../components/TokenUnlockCh
 
 OTF is the protocol token, used for rewards and fee buybacks. Each fund issues its own shares, which represent a claim on that fund's basket.
 
-The active September 5 deployment runs on Robinhood Chain Testnet with the 15/135 ETH launch curve. See [Deployment addresses](/deployment-addresses) for the current contracts.
+The active deployment runs on Robinhood Chain Testnet with the 15/135 ETH launch curve. See [Deployment addresses](/deployment-addresses) for the current contracts.
 
 ## Supply and allocation
 
-`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Its constructor mints one billion OTF (`MAX_SUPPLY = 1,000,000,000 ether`). It has no later mint, tax, blacklist, seizure, or upgrade function. Holders can burn their own OTF; `burnFrom` requires allowance.
+`OTFToken` is an 18-decimal ERC-20 named `Onchain Traded Funds` with symbol `OTF`. Its constructor mints one billion OTF using `ProtocolConstants.OTF_INITIAL_SUPPLY`. It has no later mint, tax, blacklist, seizure, or upgrade function. Holders can burn their own OTF; `burnFrom` requires allowance.
 
-`MAX_SUPPLY` records the original issuance. `totalSupply()` records live supply after burns. The deployment script allocates every token and leaves the deployer with none:
+The shared constant records the original issuance; the token exposes only `totalSupply()` for live supply after burns. The frontend's issuance constant is generated from the same Solidity definition. The deployment script allocates every token and leaves the deployer with none:
 
 | Destination | OTF | Use |
 | --- | ---: | --- |
@@ -42,7 +42,7 @@ The launch has four phases:
 | `GraduationReady` | The pool has reached the exact final price. Further swaps revert until finalization. |
 | `Graduated` | The manager has replaced bootstrap liquidity with a permanently locked full-range position. Normal Uniswap trading resumes. |
 
-Graduation depends on price, with no schedule or countdown. Launch reference FDV uses `OTFToken.MAX_SUPPLY()`, so burns do not change the launch targets.
+Graduation depends on price, with no schedule or countdown. Launch reference FDV uses `ProtocolConstants.OTF_INITIAL_SUPPLY`, so burns do not change the launch targets and no token supply read is required for this calculation.
 
 `OTFLaunchRouter` is the supported bootstrap route. It partially fills buys or sells at the boundaries, takes only the input used, and refunds unused native ETH. A purchase that reaches the final boundary also finalizes graduation after PoolManager returns control. Both steps succeed or the entire transaction reverts. Anyone can also call finalization separately once the pool is ready.
 
@@ -82,6 +82,8 @@ The calculation handles either currency order with full-precision integer arithm
 <TeamUnlockChart />
 
 The beneficiary can claim unlocked tokens minus prior claims and nominate a successor. They can replace or cancel the nomination. Authority transfers only when the nominee accepts, preserving unlocked and claimed amounts.
+
+The beneficiary is the contract's OpenZeppelin `owner()`. Call `transferOwnership(newOwner)` to nominate a successor, `transferOwnership(address(0))` to cancel, and `acceptOwnership()` from the nominee to complete the transfer. Ownership renunciation is disabled so unclaimed tokens cannot be stranded by abandoning the role.
 
 ## Immutable fund fees
 

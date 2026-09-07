@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { IERC20, IERC20Metadata, IOTFToken } from "./interfaces/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {
     IPermit2AllowanceTransfer,
     IUniswapV4ImmutableState,
@@ -14,7 +17,7 @@ import {
     UniswapV4SwapParams
 } from "./interfaces/IUniswapV4.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
 import { SqrtPriceMath } from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -22,7 +25,7 @@ import { TickMath } from "@uniswap/v4-core/src/libraries/TickMath.sol";
 /// @notice Canonical OTF/WETH V4 bootstrap hook and permanent-liquidity lock.
 /// @dev The after-swap hook only marks graduation ready. Permissionless finalization runs after the
 ///      PoolManager unlock, either later in the router's outer transaction or as a standalone call.
-contract OTFLaunchManager {
+contract OTFLaunchManager is ReentrancyGuard {
     enum Phase {
         NotInitialized,
         BootstrapActive,
@@ -84,7 +87,6 @@ contract OTFLaunchManager {
     error InsufficientBootstrapWeth(uint256 required, uint256 received);
     error PermanentDebitInvalid(uint256 otfDebit, uint256 wethDebit);
     error ApprovalFailed(address token, address spender, uint256 amount);
-    error Reentrancy();
 
     event BootstrapInitialized(
         bytes32 indexed poolId,
@@ -133,7 +135,6 @@ contract OTFLaunchManager {
     uint256 public permanentOtfLiquidity;
     uint256 public permanentWethLiquidity;
     uint256 public finalOtfBurned;
-    bool private _entered;
     InternalMint private _internalMint;
 
     constructor(
@@ -187,13 +188,6 @@ contract OTFLaunchManager {
         }
     }
 
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
-    }
-
     function hookPermissionsValid() public view returns (bool) {
         return uint160(address(this)) & ALL_HOOK_MASK == REQUIRED_HOOK_FLAGS;
     }
@@ -242,7 +236,7 @@ contract OTFLaunchManager {
     function initializeLaunch() external nonReentrant {
         if (phase != Phase.NotInitialized) revert InvalidPhase(Phase.NotInitialized, phase);
         if (!hookPermissionsValid()) revert InvalidHookAddress(address(this));
-        SafeTransferLib.safeTransferFrom(otf, msg.sender, address(this), REQUIRED_OTF_BALANCE);
+        SafeERC20.safeTransferFrom(IERC20(otf), msg.sender, address(this), REQUIRED_OTF_BALANCE);
         uint256 otfBalance = IERC20(otf).balanceOf(address(this));
         if (otfBalance < REQUIRED_OTF_BALANCE) {
             revert InsufficientLaunchTokens(REQUIRED_OTF_BALANCE, otfBalance);
@@ -357,7 +351,7 @@ contract OTFLaunchManager {
         ) revert PermanentDebitInvalid(permanentOtfLiquidity, permanentWethLiquidity);
 
         finalOtfBurned = IERC20(otf).balanceOf(address(this));
-        IOTFToken(otf).burn(finalOtfBurned);
+        ERC20Burnable(otf).burn(finalOtfBurned);
         emit RemainingOtfBurned(finalOtfBurned);
         phase = Phase.Graduated;
         graduationBlock = block.number;
@@ -390,10 +384,9 @@ contract OTFLaunchManager {
     }
 
     function currentLaunchReferenceFdvWeth() external view returns (uint256) {
-        return
-            Math.mulDiv(
-                currentOtfPriceWethWad(), IOTFToken(otf).MAX_SUPPLY(), ProtocolConstants.WAD
-            );
+        return Math.mulDiv(
+            currentOtfPriceWethWad(), ProtocolConstants.OTF_INITIAL_SUPPLY, ProtocolConstants.WAD
+        );
     }
 
     function bootstrapSqrtPriceBounds()
@@ -555,9 +548,7 @@ contract OTFLaunchManager {
         if (amount > type(uint160).max || amount > type(uint128).max) {
             revert ApprovalFailed(token, positionManager, amount);
         }
-        if (!IERC20(token).approve(permit2, amount)) {
-            revert ApprovalFailed(token, permit2, amount);
-        }
+        SafeERC20.forceApprove(IERC20(token), permit2, amount);
         // amount is explicitly bounded to uint128 above, so it also fits uint160.
         // forge-lint: disable-next-line(unsafe-typecast)
         uint160 permitAmount = uint160(amount);

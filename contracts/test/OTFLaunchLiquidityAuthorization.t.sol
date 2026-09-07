@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
-import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
+import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {
     UniswapV4PoolKey,
     UniswapV4SwapParams,
@@ -129,9 +129,21 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
         assertEq(launch.bootstrapLiquidity(), launch.BOOTSTRAP_LIQUIDITY());
     }
 
+    function testReferenceFdvUsesFixedIssuanceWithoutTokenSupplyGetter() public {
+        dependencies.setPrice(launch.initialSqrtPriceX96());
+        uint256 referenceFdv = launch.currentLaunchReferenceFdvWeth();
+        assertGt(referenceFdv, 0);
+        assertEq(referenceFdv, launch.currentOtfPriceWethWad() * 1_000_000_000);
+
+        otf.burn(1 ether);
+        assertEq(launch.currentLaunchReferenceFdvWeth(), referenceFdv);
+        otf.mint(address(this), 5 ether);
+        assertEq(launch.currentLaunchReferenceFdvWeth(), referenceFdv);
+    }
+
     function testInitializationRequiresFullCallerBalance() public {
         otf.transfer(address(0xBEEF), 1);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
         launch.initializeLaunch();
         assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE() - 1);
         assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE());
@@ -140,10 +152,10 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
 
     function testInitializationRequiresFullCallerAllowance() public {
         otf.approve(address(launch), 0);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientAllowance.selector);
         launch.initializeLaunch();
         otf.approve(address(launch), launch.REQUIRED_OTF_BALANCE() - 1);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientAllowance.selector);
         launch.initializeLaunch();
         assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE());
         assertEq(otf.allowance(address(this), address(launch)), launch.REQUIRED_OTF_BALANCE() - 1);
@@ -154,7 +166,7 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
         address caller = makeAddr("another caller");
         otf.mint(caller, launch.REQUIRED_OTF_BALANCE());
         vm.prank(caller);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientAllowance.selector);
         launch.initializeLaunch();
         assertEq(otf.balanceOf(caller), launch.REQUIRED_OTF_BALANCE());
         assertEq(otf.balanceOf(address(this)), launch.REQUIRED_OTF_BALANCE());
@@ -168,7 +180,7 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
     function testPrefundingCannotReplaceCallerFunding() public {
         uint256 required = launch.REQUIRED_OTF_BALANCE();
         otf.transfer(address(launch), required);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
         launch.initializeLaunch();
         assertEq(otf.balanceOf(address(launch)), required);
         assertEq(otf.balanceOf(address(this)), 0);
@@ -179,7 +191,7 @@ contract OTFLaunchLiquidityAuthorizationTest is Test {
 
         otf.mint(address(this), required);
         otf.approve(address(launch), 0);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientAllowance.selector);
         launch.initializeLaunch();
         assertEq(otf.balanceOf(address(launch)), required);
         assertEq(otf.balanceOf(address(this)), required);

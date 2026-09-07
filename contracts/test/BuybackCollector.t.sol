@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { BuybackCollector } from "../src/BuybackCollector.sol";
 import { ManagedOTFVault } from "../src/ManagedOTFVault.sol";
 import { OTFFactory } from "../src/OTFFactory.sol";
 import { OTFToken } from "../src/OTFToken.sol";
 import { BasketRedeemRequest, FeeShareSwapRequest, SwapLeg } from "../src/OTFEntryExitRouter.sol";
-import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { VaultCreationParams } from "../src/VaultTypes.sol";
 import {
     MockPermit2,
@@ -83,7 +84,7 @@ contract MockFeeVault is ERC20 {
 }
 
 contract MockBuybackEntryRouter {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     address public immutable factory;
     address public immutable weth;
@@ -121,10 +122,10 @@ contract MockBuybackEntryRouter {
         for (uint256 i = 0; i < legs.length; i++) {
             require(isAdapterApproved[legs[i].adapter], "ADAPTER");
         }
-        request.vault.safeTransferFrom(msg.sender, address(this), request.shares);
+        IERC20(request.vault).safeTransferFrom(msg.sender, address(this), request.shares);
         amountOut = request.shares * outputMultiplier;
         require(amountOut >= request.minAmountOut, "MINIMUM");
-        weth.safeTransfer(msg.sender, amountOut);
+        IERC20(weth).safeTransfer(msg.sender, amountOut);
         if (misreportOutput) amountOut++;
         return (amountOut, new address[](0), new uint256[](0));
     }
@@ -139,10 +140,10 @@ contract MockBuybackEntryRouter {
         for (uint256 i = 0; i < legs.length; i++) {
             require(isAdapterApproved[legs[i].adapter], "ADAPTER");
         }
-        request.vault.safeTransferFrom(msg.sender, address(this), request.shares);
+        IERC20(request.vault).safeTransferFrom(msg.sender, address(this), request.shares);
         amountOut = request.shares * outputMultiplier;
         require(amountOut >= request.minAmountOut, "MINIMUM");
-        weth.safeTransfer(msg.sender, amountOut);
+        IERC20(weth).safeTransfer(msg.sender, amountOut);
         usedShareSale = true;
         if (misreportOutput) amountOut++;
     }

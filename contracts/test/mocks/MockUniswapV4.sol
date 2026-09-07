@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
@@ -9,12 +11,12 @@ import {
 import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
-import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract MockUniswapV4PoolManager { }
 
 contract MockPermit2 is IPermit2AllowanceTransfer {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     struct StoredAllowance {
         uint160 amount;
@@ -46,7 +48,7 @@ contract MockPermit2 is IPermit2AllowanceTransfer {
         require(value.amount >= amount, "PERMIT2_ALLOWANCE");
         require(value.expiration >= block.timestamp, "PERMIT2_EXPIRED");
         value.amount -= amount;
-        token.safeTransferFrom(from, to, amount);
+        IERC20(token).safeTransferFrom(from, to, amount);
     }
 }
 
@@ -82,7 +84,7 @@ contract MockUniswapV4StateView is IUniswapV4StateView {
 }
 
 contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     address public poolManager;
     IPermit2AllowanceTransfer public immutable permit2;
@@ -148,6 +150,6 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
         }
         uint256 amountOut = uint256(params.amountIn) * outputMultiplier;
         require(amountOut >= params.amountOutMinimum, "SLIPPAGE");
-        takeToken.safeTransfer(msg.sender, amountOut);
+        IERC20(takeToken).safeTransfer(msg.sender, amountOut);
     }
 }

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IWETH } from "./interfaces/IWETH.sol";
 import { IOTFSettlementFactory, IOTFSettlementVault } from "./interfaces/IOTFSettlement.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
@@ -57,8 +58,8 @@ struct FeeShareSwapRequest {
 /// @dev Route discovery and comparison are offchain. The adapter manager is trusted only to
 ///      authorize adapters; adapters are trusted execution boundaries whose balance deltas are
 ///      independently checked here.
-contract OTFEntryExitRouter is Ownable2Step {
-    using SafeTransferLib for address;
+contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
     uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
@@ -105,7 +106,6 @@ contract OTFEntryExitRouter is Ownable2Step {
     error NativeTransferFailed(address recipient, uint256 amount);
     error NativeBalanceMismatch(uint256 expected, uint256 observed);
     error UnauthorizedFeeCollector(address caller);
-    error Reentrancy();
 
     event AdapterApprovalChanged(address indexed adapter, bool approved);
     event BasketMinted(
@@ -159,7 +159,6 @@ contract OTFEntryExitRouter is Ownable2Step {
     address public immutable factory;
     address public immutable weth;
     mapping(address => bool) public isAdapterApproved;
-    bool private _entered;
 
     constructor(address factory_, address initialAdapterManager, address weth_)
         Ownable(initialAdapterManager)
@@ -172,13 +171,6 @@ contract OTFEntryExitRouter is Ownable2Step {
 
     receive() external payable {
         if (msg.sender != weth) revert UnexpectedNativeSender(msg.sender);
-    }
-
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
     }
 
     /// @notice Adds or immediately revokes an adapter execution boundary.
@@ -696,7 +688,6 @@ contract OTFEntryExitRouter is Ownable2Step {
                 revert InsufficientRouteBalance(assets[i], maxima[i], required[i]);
             }
             balancesBefore[i] = IERC20(assets[i]).balanceOf(address(this));
-            _approveExact(assets[i], vault, 0);
             _approveExact(assets[i], vault, required[i]);
         }
         uint256[] memory reported =
@@ -906,7 +897,7 @@ contract OTFEntryExitRouter is Ownable2Step {
     function _pullExact(address token, address from, uint256 amount) private {
         uint256 senderBefore = IERC20(token).balanceOf(from);
         uint256 receiverBefore = IERC20(token).balanceOf(address(this));
-        token.safeTransferFrom(from, address(this), amount);
+        IERC20(token).safeTransferFrom(from, address(this), amount);
         _verifyTransfer(
             token,
             amount,
@@ -918,7 +909,7 @@ contract OTFEntryExitRouter is Ownable2Step {
     }
 
     function _approveExact(address token, address spender, uint256 amount) private {
-        token.safeApprove(spender, amount);
+        IERC20(token).forceApprove(spender, amount);
         uint256 observed = IERC20(token).allowance(address(this), spender);
         if (observed != amount) revert ApprovalMismatch(token, spender, amount, observed);
     }
@@ -926,7 +917,7 @@ contract OTFEntryExitRouter is Ownable2Step {
     function _pushExact(address token, address to, uint256 amount) private {
         uint256 senderBefore = IERC20(token).balanceOf(address(this));
         uint256 receiverBefore = IERC20(token).balanceOf(to);
-        token.safeTransfer(to, amount);
+        IERC20(token).safeTransfer(to, amount);
         _verifyTransfer(
             token,
             amount,

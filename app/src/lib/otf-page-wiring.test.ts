@@ -62,8 +62,8 @@ describe("$OTF page wiring", () => {
     expect(component).toContain("partially fills an order at either bootstrap boundary");
     expect(component).toContain("Initialization deposits 150 million OTF.");
     expect(component).toContain("50 million OTF are locked as full-range liquidity.");
-    expect(component).toContain('functionName: "MAX_SUPPLY"');
-    expect(component).not.toContain("const MAX_SUPPLY =");
+    expect(component).not.toContain('functionName: "MAX_SUPPLY"');
+    expect(component).toContain("burnedSupply(OTF_INITIAL_SUPPLY, totalSupply)");
     expect(component).toContain('<ol className="launchLifecycle"');
     expect(component).toContain('aria-current={phase === index ? "step" : undefined}');
     expect(component).toContain("Current phase");

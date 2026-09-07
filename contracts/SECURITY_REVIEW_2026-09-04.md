@@ -20,7 +20,7 @@ The five-field V4 tuple and Permit2 cleanup corrections are also present. The se
 [routing validation report](TESTNET_ROUTING_VALIDATION.md) records four successful testnet fork tests;
 those network-dependent tests were not rerun during this follow-up.
 
-The fresh testnet deployment now includes these corrections and the Uniswap V3 replacement;
+The current testnet deployment includes these corrections and the configured Uniswap V3 contracts;
 application configuration points to its new contracts. Mainnet dependency and ABI validation is still
 outstanding. The deficient-asset forfeiture wording remains broader than the implementation, and
 spot-price vesting remains an explicitly accepted beneficiary trust assumption.

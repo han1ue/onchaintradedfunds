@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import { IUniswapV3Factory, IUniswapV3PoolImmutables } from "./interfaces/IUniswapV3Factory.sol";
 import { IUniswapV3SwapRouter } from "./interfaces/IUniswapV3SwapRouter.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { UniswapV3Path } from "./libraries/UniswapV3Path.sol";
 
 /// @notice Bounded Uniswap V3 exact-input adapter for one OTF entry/exit router.
-contract UniswapV3Adapter is ITradeAdapter {
-    using SafeTransferLib for address;
+contract UniswapV3Adapter is ITradeAdapter, ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
     uint256 public constant MAX_HOPS = ProtocolConstants.MAX_SWAP_HOPS;
 
@@ -28,12 +29,10 @@ contract UniswapV3Adapter is ITradeAdapter {
     error AdapterBalanceMismatch(address token, uint256 expected, uint256 observed);
     error ApprovalMismatch(address token, address spender, uint256 expected, uint256 observed);
     error MinimumOutputNotMet(uint256 minimum, uint256 actual);
-    error Reentrancy();
 
     address public immutable entryExitRouter;
     address public immutable uniswapV3Factory;
     address public immutable uniswapV3Router;
-    bool private _entered;
 
     constructor(address entryExitRouter_, address uniswapV3Factory_, address uniswapV3Router_) {
         _requireContract(entryExitRouter_);
@@ -51,13 +50,6 @@ contract UniswapV3Adapter is ITradeAdapter {
     modifier onlyEntryExitRouter() {
         if (msg.sender != entryExitRouter) revert UnauthorizedCaller(msg.sender);
         _;
-    }
-
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
     }
 
     function executeSwap(
@@ -82,7 +74,6 @@ contract UniswapV3Adapter is ITradeAdapter {
         uint256 adapterOutputBefore = IERC20(tokenOut).balanceOf(address(this));
         uint256 routerOutputBefore = IERC20(tokenOut).balanceOf(entryExitRouter);
 
-        _approveExact(tokenIn, uniswapV3Router, 0);
         _approveExact(tokenIn, uniswapV3Router, amountIn);
         uint256 reported = IUniswapV3SwapRouter(uniswapV3Router)
             .exactInput(
@@ -149,7 +140,7 @@ contract UniswapV3Adapter is ITradeAdapter {
     }
 
     function _approveExact(address token, address spender, uint256 amount) private {
-        token.safeApprove(spender, amount);
+        IERC20(token).forceApprove(spender, amount);
         uint256 observed = IERC20(token).allowance(address(this), spender);
         if (observed != amount) revert ApprovalMismatch(token, spender, amount, observed);
     }

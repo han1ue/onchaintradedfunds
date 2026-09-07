@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { IUniswapV3SwapRouter } from "../../src/interfaces/IUniswapV3SwapRouter.sol";
-import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract MockUniswapV3Router is IUniswapV3SwapRouter {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     address public factory;
     uint256 public reportedOutputBonus;
@@ -47,8 +49,10 @@ contract MockUniswapV3Router is IUniswapV3SwapRouter {
         address tokenOut = _lastToken(params.path);
         amountOut = params.amountIn * outputMultiplier;
         require(amountOut >= params.amountOutMinimum, "SLIPPAGE");
-        if (!skipInputPull) tokenIn.safeTransferFrom(msg.sender, address(this), params.amountIn);
-        tokenOut.safeTransfer(params.recipient, amountOut);
+        if (!skipInputPull) {
+            IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
+        }
+        IERC20(tokenOut).safeTransfer(params.recipient, amountOut);
         return amountOut + reportedOutputBonus;
     }
 

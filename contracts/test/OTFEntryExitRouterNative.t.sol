@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {
     BasketMintRequest,
     BasketRedeemRequest,
@@ -64,7 +65,7 @@ contract NativeReceiver {
                 }
             }
             require(
-                !success && selector == OTFEntryExitRouter.Reentrancy.selector,
+                !success && selector == ReentrancyGuard.ReentrancyGuardReentrantCall.selector,
                 "REENTRY_NOT_REJECTED"
             );
             reentryRejected = true;

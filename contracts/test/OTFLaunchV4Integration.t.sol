@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { OTFLaunchManager } from "../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../src/OTFLaunchManagerDeployer.sol";
 import { OTFLaunchRouter } from "../src/OTFLaunchRouter.sol";
-import { SafeTransferLib } from "../src/libraries/SafeTransferLib.sol";
+import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { UniswapV4PoolKey, UniswapV4SwapParams } from "../src/interfaces/IUniswapV4.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";
 import { TestBase, Vm } from "./TestBase.sol";
@@ -36,8 +37,6 @@ import { IAllowanceTransfer } from "permit2/src/interfaces/IAllowanceTransfer.so
 import { DeployPermit2 } from "permit2/test/utils/DeployPermit2.sol";
 
 contract IntegrationOTF is ERC20 {
-    uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
-
     constructor() ERC20("Onchain Traded Funds", "OTF") { }
 
     function mint(address to, uint256 amount) external {
@@ -273,7 +272,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         assertEq(address(recipient).balance, amountOut);
         assertEq(
             uint256(uint32(recipient.reentrySelector())),
-            uint256(uint32(OTFLaunchRouter.Reentrancy.selector))
+            uint256(uint32(ReentrancyGuard.ReentrancyGuardReentrantCall.selector))
         );
     }
 
@@ -522,7 +521,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         reentrant.buy(BUYER, block.timestamp + 1);
         assertEq(
             uint256(uint32(reentrant.reentrySelector())),
-            uint256(uint32(OTFLaunchRouter.Reentrancy.selector))
+            uint256(uint32(ReentrancyGuard.ReentrancyGuardReentrantCall.selector))
         );
         assertEq(address(reentrant).balance, 20 ether - INVERSE_BOUNDARY_WETH_INPUT);
         _assertGraduated(reentrantSetup, INVERSE_FINAL_BURN);
@@ -815,7 +814,7 @@ contract OTFLaunchV4IntegrationTest is TestBase {
         uint256 required = underfunded.launch.REQUIRED_OTF_BALANCE();
         underfunded.otf.mint(address(this), required - 1);
         underfunded.otf.approve(address(underfunded.launch), required);
-        vm.expectRevert(SafeTransferLib.SafeTransferFromFailed.selector);
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
         underfunded.launch.initializeLaunch();
         assertEq(
             uint256(underfunded.launch.phase()), uint256(OTFLaunchManager.Phase.NotInitialized)

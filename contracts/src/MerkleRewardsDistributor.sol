@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Immediate cumulative OTF claims from operator-published OpenZeppelin standard trees.
 contract MerkleRewardsDistributor is Ownable2Step {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     uint256 public constant REWARDS_ALLOCATION = 700_000_000 ether;
 
@@ -72,7 +72,7 @@ contract MerkleRewardsDistributor is Ownable2Step {
         uint256 available = IERC20(otf).balanceOf(address(this));
         if (amount > available) revert InsufficientRewardsBalance(amount, available);
         claimed[account] = cumulativeEntitlement;
-        otf.safeTransfer(account, amount);
+        IERC20(otf).safeTransfer(account, amount);
         emit Claimed(account, amount, cumulativeEntitlement, rootVersion);
     }
 }

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { ITradeAdapter } from "../../src/interfaces/ITradeAdapter.sol";
-import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract MockTradeAdapter is ITradeAdapter {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     error UnauthorizedCaller(address caller);
     error MissingRate(address tokenIn, address tokenOut);
@@ -74,11 +76,11 @@ contract MockTradeAdapter is ITradeAdapter {
         amountOut = Math.mulDiv(amountIn, rate.numerator, rate.denominator);
         if (amountOut < minAmountOut) revert Slippage(amountOut, minAmountOut);
 
-        if (returnInput) tokenIn.safeTransfer(entryExitRouter, amountIn);
-        else tokenIn.safeTransfer(address(0xdead), amountIn);
+        if (returnInput) IERC20(tokenIn).safeTransfer(entryExitRouter, amountIn);
+        else IERC20(tokenIn).safeTransfer(address(0xdead), amountIn);
 
         uint256 delivered = amountOut > outputShortfall ? amountOut - outputShortfall : 0;
-        if (delivered != 0) tokenOut.safeTransfer(entryExitRouter, delivered);
+        if (delivered != 0) IERC20(tokenOut).safeTransfer(entryExitRouter, delivered);
         return amountOut + reportedOutputBonus;
     }
 

@@ -79,7 +79,7 @@ a per-hop array between the path and input amount.
 The V4 adapter and buyback collector now encode that array as empty and retain
 the caller's aggregate minimum output. All eight fork tests pass with this encoding.
 
-The September 6 testnet deployment uses the same-address V4 stack and five-field
+The current testnet deployment uses the same-address V4 stack and five-field
 encoding. The deployment script pins the chain-46630 runtime hashes and validates
 PoolManager bindings before sending transactions. Testnet receipts are not mainnet
 deployment evidence.

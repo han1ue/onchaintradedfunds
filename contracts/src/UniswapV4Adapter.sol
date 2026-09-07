@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
 import {
     IPermit2AllowanceTransfer,
@@ -13,13 +14,13 @@ import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
 import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Bounded Uniswap V4 exact-input adapter for one OTF entry/exit router.
 /// @dev `data` is exclusively `abi.encode(PathKey[])`. This contract constructs the
 ///      Universal Router command and action streams; callers cannot supply either one.
-contract UniswapV4Adapter is ITradeAdapter {
-    using SafeTransferLib for address;
+contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
     uint256 public constant MAX_HOPS = ProtocolConstants.MAX_SWAP_HOPS;
     uint256 public constant MAX_HOOK_DATA_LENGTH = 1_024;
@@ -55,14 +56,12 @@ contract UniswapV4Adapter is ITradeAdapter {
         uint48 observedExpiration
     );
     error MinimumOutputNotMet(uint256 minimum, uint256 actual);
-    error Reentrancy();
 
     address public immutable entryExitRouter;
     address public immutable uniswapV4PoolManager;
     address public immutable uniswapV4StateView;
     address public immutable uniswapUniversalRouter;
     address public immutable permit2;
-    bool private _entered;
 
     constructor(
         address entryExitRouter_,
@@ -91,13 +90,6 @@ contract UniswapV4Adapter is ITradeAdapter {
         _;
     }
 
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
-    }
-
     function executeSwap(
         address tokenIn,
         address tokenOut,
@@ -124,7 +116,6 @@ contract UniswapV4Adapter is ITradeAdapter {
         uint256 adapterOutputBefore = IERC20(tokenOut).balanceOf(address(this));
         uint256 routerOutputBefore = IERC20(tokenOut).balanceOf(entryExitRouter);
 
-        _approveExact(tokenIn, permit2, 0);
         _approveExact(tokenIn, permit2, amountIn);
         // The allowance is consumed in this transaction and revoked immediately afterwards.
         // forge-lint: disable-next-line(block-timestamp)
@@ -150,7 +141,7 @@ contract UniswapV4Adapter is ITradeAdapter {
             : 0;
         if (amountOut < minAmountOut) revert MinimumOutputNotMet(minAmountOut, amountOut);
 
-        tokenOut.safeTransfer(entryExitRouter, amountOut);
+        IERC20(tokenOut).safeTransfer(entryExitRouter, amountOut);
         uint256 finalAdapterOutput = IERC20(tokenOut).balanceOf(address(this));
         if (finalAdapterOutput != adapterOutputBefore) {
             revert AdapterBalanceMismatch(tokenOut, adapterOutputBefore, finalAdapterOutput);
@@ -245,7 +236,7 @@ contract UniswapV4Adapter is ITradeAdapter {
     }
 
     function _approveExact(address token, address spender, uint256 amount) private {
-        token.safeApprove(spender, amount);
+        IERC20(token).forceApprove(spender, amount);
         uint256 observed = IERC20(token).allowance(address(this), spender);
         if (observed != amount) revert ApprovalMismatch(token, spender, amount, observed);
     }

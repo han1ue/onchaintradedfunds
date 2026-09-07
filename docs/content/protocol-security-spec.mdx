@@ -12,7 +12,7 @@ For the contract guarantees and trust assumptions in plain language, see [Securi
 ## OTF supply
 
 `OTFToken` MUST mint exactly `1,000,000,000 ether` in its constructor, with no later mint path.
-`MAX_SUPPLY` MUST remain fixed; `totalSupply()` MUST fall when a holder burns owned or approved tokens.
+`ProtocolConstants.OTF_INITIAL_SUPPLY` MUST remain fixed; `totalSupply()` MUST fall when a holder burns owned or approved tokens.
 Deployment MUST allocate 100 million OTF to team vesting, 200 million to the launch manager, and
 700 million to the rewards distributor, leaving the deployer with zero OTF.
 
@@ -21,7 +21,7 @@ Deployment MUST allocate 100 million OTF to team vesting, 200 million to the lau
 The launch manager MUST create one OTF/WETH V4 pool with static fee 0 and tick spacing 1. It MUST
 initialize at the fixed square-root price for exactly 15 ETH reference FDV against original issuance.
 
-The manager MUST read `MAX_SUPPLY` from `OTFToken` and MUST NOT duplicate it. The final tick MUST be
+The manager MUST use `ProtocolConstants.OTF_INITIAL_SUPPLY` without reading issuance from the token. The final tick MUST be
 `-158188` when OTF is currency0 and `158188` when OTF is currency1, approximately
 `134.997562702653186573 ETH` reference FDV. The next tick in the direction of increasing OTF price
 MUST exceed 135 ETH.

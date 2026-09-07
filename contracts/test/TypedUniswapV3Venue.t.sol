@@ -5,6 +5,30 @@ import { SwapLeg } from "../src/OTFEntryExitRouter.sol";
 import { UniswapV3Adapter } from "../src/UniswapV3Adapter.sol";
 import { MockUniswapV3Pool } from "./mocks/MockUniswapV3Factory.sol";
 import { AtomicRouterTestBase } from "./mocks/AtomicRouterTestBase.sol";
+import { MockStockToken } from "./mocks/MockStockToken.sol";
+
+contract ResetApprovalNoReturnToken is MockStockToken {
+    constructor() MockStockToken("Reset approval token", "RESET", 18) { }
+
+    function approve(address spender, uint256 value) public override returns (bool) {
+        require(value == 0 || allowance(msg.sender, spender) == 0, "RESET_ALLOWANCE");
+        return super.approve(spender, value);
+    }
+
+    function transfer(address to, uint256 value) public override returns (bool) {
+        super.transfer(to, value);
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
+    }
+
+    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
+        super.transferFrom(from, to, value);
+        assembly ("memory-safe") {
+            return(0, 0)
+        }
+    }
+}
 
 contract TypedUniswapV3VenueTest is AtomicRouterTestBase {
     function setUp() public {
@@ -209,6 +233,31 @@ contract TypedUniswapV3VenueTest is AtomicRouterTestBase {
         assertEq(input.balanceOf(address(v3Adapter)), 5 * ONE);
         assertEq(assetC.balanceOf(address(v3Adapter)), 7 * ONE);
         assertEq(input.allowance(address(v3Adapter), address(venue)), 0);
+    }
+
+    function testAdapterResetsExistingApprovalAndSupportsNoReturnTransfers() public {
+        ResetApprovalNoReturnToken token = new ResetApprovalNoReturnToken();
+        _createPool(address(token), address(assetC));
+        token.mint(address(v3Adapter), 3 * ONE);
+        vm.prank(address(v3Adapter));
+        token.approve(address(venue), 1);
+
+        for (uint256 i; i < 2; i++) {
+            vm.prank(address(router));
+            assertEq(
+                v3Adapter.executeSwap(
+                    address(token),
+                    address(assetC),
+                    ONE,
+                    ONE,
+                    _path(address(token), address(assetC))
+                ),
+                ONE
+            );
+            assertEq(token.allowance(address(v3Adapter), address(venue)), 0);
+        }
+        assertEq(token.balanceOf(address(v3Adapter)), ONE);
+        assertEq(token.balanceOf(address(venue)), 2 * ONE);
     }
 
     function testV3AdapterIntegratesWithGenericBasketRouter() public {

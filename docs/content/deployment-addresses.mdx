@@ -5,7 +5,7 @@ description: Current protocol deployments and external dependencies.
 
 # Deployment addresses
 
-The application uses the September 6, 2026 deployment on Robinhood Chain Testnet. The repository records no protocol deployment on Mainnet.
+The application uses the current Robinhood Chain Testnet deployment. The repository records no protocol deployment on Mainnet.
 
 ## Robinhood Chain Testnet
 
@@ -30,8 +30,6 @@ The launch manager uses hook mask `0x2840`. The V4 adapter and collector use the
 
 The launch router includes `sellOtfForEth`, which unwraps the current sale's WETH output and pays native ETH to the specified recipient.
 
-The previous [V3 adapter](https://explorer.testnet.chain.robinhood.com/tx/0x2e769bec89bcb207db11990647c49dd0de8c211c376281e5fd42c697cffd0062) and [V4 adapter](https://explorer.testnet.chain.robinhood.com/tx/0xd85b3dde01e5acb3b26a1152166847fd062798cd6b15caf498ff7e80324a79de) are revoked. Old launch positions remain onchain.
-
 The deployment manifest, `app/src/config/robinhood-testnet.json`, records contract addresses, code hashes, receipts, launch parameters, and configuration transactions. It marks routing as ready for these deployed contracts. The protocol administrator and team beneficiary are both `0xc340D7085E321B82CF550904310EE44bae9e4CD2`.
 
 ## V3 dependencies and liquidity
@@ -50,7 +48,7 @@ The seeded USDG pairs with TSLA, AMZN, PLTR, NFLX, and AMD charge 0.3%. WETH/USD
 
 Protocol WETH is `0x33e4191705c386532ba27cBF171Db86919200B94`. The entry/exit router wraps and unwraps ETH through this address. V3, V4, the launch router, and buybacks also use this token. The separate periphery WETH9 address in the table does not replace it.
 
-Live deployment and seed receipts are in `deployments/`. The September 6 protocol redeployment reused the six existing RWA pools and did not create or seed replacements. Testnet V4 uses the same contract addresses as Robinhood mainnet, with code hashes pinned separately for chain 46630.
+Live deployment and seed receipts are in `deployments/`. The protocol uses the six configured RWA pools. Testnet V4 uses the same contract addresses as Robinhood mainnet, with code hashes pinned separately for chain 46630.
 
 ## V4 dependencies
 

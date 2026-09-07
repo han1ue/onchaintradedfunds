@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import {
     IPermit2AllowanceTransfer,
@@ -19,11 +21,7 @@ import {
     SwapLeg
 } from "./OTFEntryExitRouter.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
-
-interface IOTFBurnable is IERC20 {
-    function burn(uint256 amount) external;
-}
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IBuybackLaunchManager {
     function otf() external view returns (address);
@@ -43,8 +41,8 @@ interface IBuybackVault is IERC20 {
 }
 
 /// @notice Settles fund fees into creator WETH plus an atomic OTF buyback and burn.
-contract BuybackCollector {
-    using SafeTransferLib for address;
+contract BuybackCollector is ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
     bytes1 private constant V4_SWAP_COMMAND = ProtocolConstants.UNISWAP_V4_SWAP_COMMAND;
     bytes1 private constant SWAP_EXACT_IN_ACTION =
@@ -65,7 +63,6 @@ contract BuybackCollector {
     error ApprovalFailed(address token, address spender, uint256 amount);
     error BalanceDeltaMismatch(address token, uint256 expected, uint256 observed);
     error MinimumOutputNotMet(address token, uint256 minimum, uint256 actual);
-    error Reentrancy();
     error FactoryAlreadyConfigured();
     error FactoryNotConfigured();
     error UnauthorizedRouterConfigurator(address caller);
@@ -110,7 +107,6 @@ contract BuybackCollector {
     address public immutable poolManager;
     address public factory;
     mapping(address => VaultFeeAccount) public feeAccounts;
-    bool private _entered;
 
     constructor(address launchManager_, address universalRouter_, address permit2_) {
         _requireContract(launchManager_);
@@ -133,13 +129,6 @@ contract BuybackCollector {
         universalRouter = universalRouter_;
         permit2 = permit2_;
         poolManager = poolManager_;
-    }
-
-    modifier nonReentrant() {
-        if (_entered) revert Reentrancy();
-        _entered = true;
-        _;
-        _entered = false;
     }
 
     function configureFactory(address factory_) external {
@@ -317,7 +306,7 @@ contract BuybackCollector {
         if (creatorWeth != 0) _pushExact(weth, pending.beneficiary, creatorWeth);
         otfBurned = _buyOtf(buybackWeth, minOtfOut, deadline);
         uint256 otfBeforeBurn = IERC20(otf).balanceOf(address(this));
-        IOTFBurnable(otf).burn(otfBurned);
+        ERC20Burnable(otf).burn(otfBurned);
         uint256 otfAfterBurn = IERC20(otf).balanceOf(address(this));
         uint256 observedBurn = otfBeforeBurn >= otfAfterBurn ? otfBeforeBurn - otfAfterBurn : 0;
         if (observedBurn != otfBurned) {
@@ -390,9 +379,7 @@ contract BuybackCollector {
     }
 
     function _approveExact(address token, address spender, uint256 amount) private {
-        if (!IERC20(token).approve(spender, amount)) {
-            revert ApprovalFailed(token, spender, amount);
-        }
+        IERC20(token).forceApprove(spender, amount);
         uint256 observed = IERC20(token).allowance(address(this), spender);
         if (observed != amount) revert ApprovalFailed(token, spender, amount);
     }
@@ -400,7 +387,7 @@ contract BuybackCollector {
     function _pushExact(address token, address receiver, uint256 amount) private {
         uint256 senderBefore = IERC20(token).balanceOf(address(this));
         uint256 receiverBefore = IERC20(token).balanceOf(receiver);
-        token.safeTransfer(receiver, amount);
+        IERC20(token).safeTransfer(receiver, amount);
         uint256 senderAfter = IERC20(token).balanceOf(address(this));
         uint256 receiverAfter = IERC20(token).balanceOf(receiver);
         uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;

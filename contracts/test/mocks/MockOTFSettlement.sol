@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { SafeTransferLib } from "../../src/libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract MockOTFSettlementFactory {
     address public buybackCollector;
@@ -18,7 +20,7 @@ contract MockOTFSettlementFactory {
 }
 
 contract MockOTFSettlementVault is ERC20 {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     error UnauthorizedRouter(address caller);
     error InvalidArrayLength();
@@ -97,7 +99,7 @@ contract MockOTFSettlementVault is ERC20 {
                 revert MinimumNotMet(i, shares, maxAmountsIn[i]);
             }
             amountsIn[i] = shares;
-            _assets[i].safeTransferFrom(msg.sender, address(this), shares);
+            IERC20(_assets[i]).safeTransferFrom(msg.sender, address(this), shares);
         }
         _mint(receiver, shares);
     }
@@ -126,7 +128,7 @@ contract MockOTFSettlementVault is ERC20 {
                 revert MinimumNotMet(i, minAmountsOut[i], shares);
             }
             amountsOut[i] = shares;
-            _assets[i].safeTransfer(receiver, shares);
+            IERC20(_assets[i]).safeTransfer(receiver, shares);
         }
     }
 }

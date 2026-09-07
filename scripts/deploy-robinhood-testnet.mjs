@@ -55,8 +55,8 @@ const {
 } = viem;
 const { privateKeyToAccount } = accounts;
 
-const previous = JSON.parse(readFileSync(deploymentPath, "utf8"));
-const appOwnedIntegrations = appOwnedIntegrationConfiguration(previous);
+const networkConfig = JSON.parse(readFileSync(deploymentPath, "utf8"));
+const appOwnedIntegrations = appOwnedIntegrationConfiguration(networkConfig);
 const env = (name) => {
   const value = process.env[name];
   if (!value || !value.trim()) throw new Error(`Missing required env var ${name}`);
@@ -102,7 +102,7 @@ const protocolMultisig = address("PROTOCOL_MULTISIG", env("PROTOCOL_MULTISIG"));
 const teamBeneficiary = address("TEAM_BENEFICIARY", env("TEAM_BENEFICIARY"));
 const configuredTeamBeneficiary = address(
   "trustedRoles.teamBeneficiary",
-  previous.trustedRoles?.teamBeneficiary,
+  networkConfig.trustedRoles?.teamBeneficiary,
 );
 if (teamBeneficiary !== configuredTeamBeneficiary) {
   throw new Error("TEAM_BENEFICIARY does not match the repository-configured initial beneficiary");
@@ -111,10 +111,10 @@ const requestedWeth = address("WETH", env("WETH"));
 const oracleMaxAge = positiveInteger("ORACLE_MAX_AGE_SECONDS", env("ORACLE_MAX_AGE_SECONDS"));
 const account = privateKeyToAccount(privateKey, { nonceManager });
 const rpcUrl = process.env.RH_TESTNET_RPC_URL?.trim()
-  || previous.rpcUrl
+  || networkConfig.rpcUrl
   || "https://rpc.testnet.chain.robinhood.com";
 const chainId = 46630;
-const external = previous.externalContracts ?? {};
+const external = networkConfig.externalContracts ?? {};
 const weth = address("externalContracts.weth", external.weth);
 if (requestedWeth !== weth) {
   throw new Error("WETH does not match the repository-configured testnet dependency");
@@ -159,7 +159,7 @@ const requestedV4PositionManager = address(
 if (requestedV4PositionManager !== uniswapV4PositionManager) {
   throw new Error("UNISWAP_V4_POSITION_MANAGER does not match the repository-configured dependency");
 }
-const pinnedCodehashes = previous.expectedCodehashes ?? {};
+const pinnedCodehashes = networkConfig.expectedCodehashes ?? {};
 
 const expectedCodehashes = {
   uniswapV4PoolManager: pinnedCodehash(pinnedCodehashes, "uniswapV4PoolManager", "UNISWAP_V4_POOL_MANAGER_CODEHASH"),
@@ -242,7 +242,7 @@ verifyEmbeddedAddress("PositionManager Permit2", positionManagerCode, permit2);
 verifyEmbeddedAddress("Universal Router native wrapper", universalRouterCode, uniswapV4NativeWrapper);
 verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
-await verifyTestnetRoutingRuntime(publicClient, previous, routingPin);
+await verifyTestnetRoutingRuntime(publicClient, networkConfig, routingPin);
 
 const assetCatalog = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), "utf8"));
 for (const pool of assetCatalog.pools) {
@@ -723,12 +723,12 @@ const [
     publicClient.readContract({
       address: teamVesting.address,
       abi: artifact("TeamMarketCapVesting").abi,
-      functionName: "beneficiary",
+      functionName: "owner",
     }),
     publicClient.readContract({
       address: teamVesting.address,
       abi: artifact("TeamMarketCapVesting").abi,
-      functionName: "pendingBeneficiary",
+      functionName: "pendingOwner",
     }),
     publicClient.readContract({ address: otfToken.address, abi: artifact("OTFToken").abi, functionName: "allowance", args: [launchManager.address, permit2] }),
     publicClient.readContract({ address: weth, abi: artifact("OTFToken").abi, functionName: "allowance", args: [launchManager.address, permit2] }),
@@ -758,33 +758,15 @@ if (launchOtfAllowance !== 0n || launchWethAllowance !== 0n) throw new Error("La
 if (launchOtfPermit2Allowance[0] !== 0n || launchWethPermit2Allowance[0] !== 0n) throw new Error("Launch manager retained a Permit2 allowance");
 
 await Promise.all([
-  verifyAddressBinding("New adapter entry router", uniswapV3Adapter.address, "entryExitRouter", entryRouter.address),
-  verifyAddressBinding("New adapter factory", uniswapV3Adapter.address, "uniswapV3Factory", uniswapV3Factory),
-  verifyAddressBinding("New adapter SwapRouter02", uniswapV3Adapter.address, "uniswapV3Router", uniswapV3SwapRouter02),
-  verifyAddressBinding("New router WETH", entryRouter.address, "weth", weth),
-  verifyAddressBinding("New router factory", entryRouter.address, "factory", factory.address),
-  verifyAddressBinding("New collector factory", buybackCollector.address, "factory", factory.address),
+  verifyAddressBinding("Adapter entry router", uniswapV3Adapter.address, "entryExitRouter", entryRouter.address),
+  verifyAddressBinding("Adapter factory", uniswapV3Adapter.address, "uniswapV3Factory", uniswapV3Factory),
+  verifyAddressBinding("Adapter SwapRouter02", uniswapV3Adapter.address, "uniswapV3Router", uniswapV3SwapRouter02),
+  verifyAddressBinding("Router WETH", entryRouter.address, "weth", weth),
+  verifyAddressBinding("Router factory", entryRouter.address, "factory", factory.address),
+  verifyAddressBinding("Collector factory", buybackCollector.address, "factory", factory.address),
 ]);
 for (const adapter of [uniswapV3Adapter.address, uniswapV4Adapter.address]) {
-  if (!await publicClient.readContract({ address: entryRouter.address, abi: artifact("OTFEntryExitRouter").abi, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Replacement adapter is not approved");
-}
-
-const previousRouter = previous.contracts?.entryRouter?.address;
-const previousAdapters = [
-  previous.contracts?.uniswapV3Adapter?.address,
-  previous.contracts?.uniswapV4Adapter?.address,
-].filter(Boolean);
-if (previousRouter && previousAdapters.length > 0) {
-  setupTransactions.revokePreviousAdapters = [];
-  for (const previousAdapter of previousAdapters) {
-    const revocation = await transact(
-      { name: "OTFEntryExitRouter", address: previousRouter }, "setAdapterApproved", [previousAdapter, false],
-    );
-    const approved = await publicClient.readContract({ address: previousRouter, abi: artifact("OTFEntryExitRouter").abi,
-      functionName: "isAdapterApproved", args: [previousAdapter] });
-    if (approved) throw new Error("Previous adapter was not revoked");
-    setupTransactions.revokePreviousAdapters.push({ adapter: previousAdapter, ...revocation });
-  }
+  if (!await publicClient.readContract({ address: entryRouter.address, abi: artifact("OTFEntryExitRouter").abi, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Adapter is not approved");
 }
 const deployment = {
   network: "robinhood-testnet",
@@ -876,8 +858,11 @@ mkdirSync(dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, `${json(deployment)}\n`);
 if (!simulation) {
   const verifiedPath = join(root, "app/src/config/verified_assets.json");
-  const verified = JSON.parse(readFileSync(verifiedPath, "utf8")).filter((asset) =>
-    !(asset.chainId === chainId && asset.tokenAddress.toLowerCase() === previous.contracts.otfToken.address.toLowerCase()));
+  const verified = JSON.parse(readFileSync(verifiedPath, "utf8")).filter((asset) => !(
+    asset.chainId === chainId
+      && Array.isArray(asset.approvedPricingConfigs)
+      && asset.approvedPricingConfigs.some((config) => config.source === "otf-launch-manager")
+  ));
   verified.unshift({ chainId, tokenAddress: otfToken.address, approvedPricingConfigs: [{ source: "otf-launch-manager", feedAddress: launchManager.address, maxStaleness: 90000 }] });
   writeFileSync(verifiedPath, `${json(verified)}\n`);
   for (const pool of assetCatalog.pools) pool.status = "seeded";

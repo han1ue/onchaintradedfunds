@@ -1,6 +1,6 @@
 {
   "chainId": 46630,
-  "checkedAt": "2026-09-06T23:23:12.934Z",
+  "checkedAt": "2026-09-06T23:55:02.244Z",
   "result": "passed",
   "contracts": {
     "otfToken": {
@@ -114,19 +114,7 @@
       "owner": "0xc340D7085E321B82CF550904310EE44bae9e4CD2"
     }
   ],
-  "revocations": [
-    {
-      "adapter": "0x38051b37D196C201745cE0189De92B50a69eD3f7",
-      "previousRouter": "0x3DEFb0ABeb7081B36f7421601e1689c5EA8aaE10",
-      "transactionHash": "0x2e769bec89bcb207db11990647c49dd0de8c211c376281e5fd42c697cffd0062"
-    },
-    {
-      "adapter": "0x697bfFa6FAdBffb85D4EA430a0Be0A2d14875848",
-      "previousRouter": "0x3DEFb0ABeb7081B36f7421601e1689c5EA8aaE10",
-      "transactionHash": "0xd85b3dde01e5acb3b26a1152166847fd062798cd6b15caf498ff7e80324a79de"
-    }
-  ],
   "seedGasSpendWei": "326616450000000",
-  "deploymentGasSpendWei": "329728670000000",
-  "totalGasSpendWei": "656345120000000"
+  "deploymentGasSpendWei": "329087170000000",
+  "totalGasSpendWei": "655703620000000"
 }

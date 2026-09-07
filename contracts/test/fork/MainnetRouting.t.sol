@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { IERC20 } from "../../src/interfaces/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { OTFToken } from "../../src/OTFToken.sol";
 import { OTFLaunchManager } from "../../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../../src/OTFLaunchManagerDeployer.sol";

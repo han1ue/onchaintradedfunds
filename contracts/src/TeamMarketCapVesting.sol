@@ -2,11 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { AggregatorV3Interface } from "./interfaces/AggregatorV3Interface.sol";
 import { IUniswapV4StateView } from "./interfaces/IUniswapV4.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { V4PriceMath } from "./libraries/V4PriceMath.sol";
 
 interface IOTFLaunchPriceSource {
@@ -17,8 +19,8 @@ interface IOTFLaunchPriceSource {
 }
 
 /// @notice Irreversible 10m OTF team unlocks at each completed $1m live-FDV milestone.
-contract TeamMarketCapVesting {
-    using SafeTransferLib for address;
+contract TeamMarketCapVesting is Ownable2Step {
+    using SafeERC20 for IERC20;
 
     uint256 public constant TEAM_ALLOCATION = 100_000_000 ether;
     uint256 public constant FDV_MILESTONE_USD_WAD = 1_000_000 ether;
@@ -31,22 +33,11 @@ contract TeamMarketCapVesting {
     error InvalidOracleTimestamp(uint256 updatedAt);
     error StaleOracle(uint256 updatedAt, uint256 maximumAge);
     error InvalidOracleDecimals(uint8 decimals);
-    error NotBeneficiary(address caller);
-    error NotPendingBeneficiary(address caller);
-    error NoPendingBeneficiary();
+    error OwnershipRenunciationDisabled();
     error NothingToClaim();
 
     event VestingCheckpointed(uint256 liveFdvUsdWad, uint256 cumulativeUnlocked);
     event Claimed(address indexed beneficiary, uint256 amount, uint256 cumulativeClaimed);
-    event BeneficiaryTransferInitiated(
-        address indexed beneficiary, address indexed pendingBeneficiary
-    );
-    event BeneficiaryTransferCancelled(
-        address indexed beneficiary, address indexed cancelledBeneficiary
-    );
-    event BeneficiaryTransferAccepted(
-        address indexed previousBeneficiary, address indexed newBeneficiary
-    );
 
     address public immutable otf;
     address public immutable stateView;
@@ -54,8 +45,6 @@ contract TeamMarketCapVesting {
     bool public immutable otfIsCurrency0;
     AggregatorV3Interface public immutable ethUsdOracle;
     uint256 public immutable maxOracleAge;
-    address public beneficiary;
-    address public pendingBeneficiary;
 
     uint256 public unlockedAmount;
     uint256 public claimedAmount;
@@ -65,10 +54,9 @@ contract TeamMarketCapVesting {
         address ethUsdOracle_,
         uint256 maxOracleAge_,
         address beneficiary_
-    ) {
+    ) Ownable(beneficiary_) {
         _requireContract(launchManager);
         _requireContract(ethUsdOracle_);
-        if (beneficiary_ == address(0)) revert ZeroAddress();
         if (maxOracleAge_ == 0) revert StaleOracle(0, 0);
 
         IOTFLaunchPriceSource launch = IOTFLaunchPriceSource(launchManager);
@@ -85,30 +73,11 @@ contract TeamMarketCapVesting {
         otfIsCurrency0 = launch.otfIsCurrency0();
         ethUsdOracle = AggregatorV3Interface(ethUsdOracle_);
         maxOracleAge = maxOracleAge_;
-        beneficiary = beneficiary_;
     }
 
-    function initiateBeneficiaryTransfer(address newBeneficiary) external {
-        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
-        if (newBeneficiary == address(0)) revert ZeroAddress();
-        pendingBeneficiary = newBeneficiary;
-        emit BeneficiaryTransferInitiated(msg.sender, newBeneficiary);
-    }
-
-    function cancelBeneficiaryTransfer() external {
-        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
-        address cancelledBeneficiary = pendingBeneficiary;
-        if (cancelledBeneficiary == address(0)) revert NoPendingBeneficiary();
-        pendingBeneficiary = address(0);
-        emit BeneficiaryTransferCancelled(msg.sender, cancelledBeneficiary);
-    }
-
-    function acceptBeneficiaryTransfer() external {
-        if (msg.sender != pendingBeneficiary) revert NotPendingBeneficiary(msg.sender);
-        address previousBeneficiary = beneficiary;
-        beneficiary = msg.sender;
-        pendingBeneficiary = address(0);
-        emit BeneficiaryTransferAccepted(previousBeneficiary, msg.sender);
+    /// @notice Ownership is the right to checkpoint and receive team tokens; it cannot be abandoned.
+    function renounceOwnership() public view override onlyOwner {
+        revert OwnershipRenunciationDisabled();
     }
 
     function currentOtfPriceWethWad() public view returns (uint256) {
@@ -144,8 +113,7 @@ contract TeamMarketCapVesting {
         return Math.mulDiv(marketValueWeth, ethUsdPriceWad, ProtocolConstants.WAD);
     }
 
-    function checkpoint() external returns (uint256 cumulativeUnlocked) {
-        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
+    function checkpoint() external onlyOwner returns (uint256 cumulativeUnlocked) {
         uint256 liveFdv = liveFdvUsdWad();
         uint256 milestones = liveFdv / FDV_MILESTONE_USD_WAD;
         if (milestones > MILESTONE_COUNT) milestones = MILESTONE_COUNT;
@@ -159,12 +127,12 @@ contract TeamMarketCapVesting {
         return unlockedAmount - claimedAmount;
     }
 
-    function claim() external returns (uint256 amount) {
-        if (msg.sender != beneficiary) revert NotBeneficiary(msg.sender);
+    function claim() external onlyOwner returns (uint256 amount) {
         amount = claimable();
         if (amount == 0) revert NothingToClaim();
         claimedAmount += amount;
-        otf.safeTransfer(beneficiary, amount);
+        address beneficiary = owner();
+        IERC20(otf).safeTransfer(beneficiary, amount);
         emit Claimed(beneficiary, amount, claimedAmount);
     }
 

@@ -1,3 +1,6 @@
+// Generated from ProtocolConstants.sol.
+export const OTF_INITIAL_SUPPLY = 1000000000000000000000000000n;
+
 export const managedOtfVaultAbi = [
   {
     "type": "constructor",
@@ -1637,18 +1640,19 @@ export const managedOtfVaultAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeTransferFromFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2109,7 +2113,7 @@ export const otfFactoryAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -3490,7 +3494,7 @@ export const otfEntryExitRouterAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -3516,18 +3520,14 @@ export const otfEntryExitRouterAbi = [
   },
   {
     "type": "error",
-    "name": "SafeApproveFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeTransferFromFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3995,7 +3995,7 @@ export const uniswapV3AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -4016,8 +4016,14 @@ export const uniswapV3AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "SafeApproveFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -4411,7 +4417,7 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -4432,13 +4438,14 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "SafeApproveFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -5104,13 +5111,19 @@ export const buybackCollectorAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -5179,19 +5192,6 @@ export const otfTokenAbi = [
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "MAX_SUPPLY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -6791,13 +6791,19 @@ export const otfLaunchManagerAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "SafeTransferFromFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -7226,7 +7232,7 @@ export const otfLaunchRouterAbi = [
   },
   {
     "type": "error",
-    "name": "Reentrancy",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {
@@ -7236,13 +7242,14 @@ export const otfLaunchRouterAbi = [
   },
   {
     "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SafeTransferFromFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -7354,27 +7361,7 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
-    "name": "acceptBeneficiaryTransfer",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "beneficiary",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "cancelBeneficiaryTransfer",
+    "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
@@ -7456,19 +7443,6 @@ export const teamMarketCapVestingAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "initiateBeneficiaryTransfer",
-    "inputs": [
-      {
-        "name": "newBeneficiary",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -7570,7 +7544,20 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
-    "name": "pendingBeneficiary",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingOwner",
     "inputs": [],
     "outputs": [
       {
@@ -7596,6 +7583,13 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "stateView",
     "inputs": [],
     "outputs": [
@@ -7609,6 +7603,19 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "unlockedAmount",
     "inputs": [],
     "outputs": [
@@ -7619,63 +7626,6 @@ export const teamMarketCapVestingAbi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "BeneficiaryTransferAccepted",
-    "inputs": [
-      {
-        "name": "previousBeneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newBeneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BeneficiaryTransferCancelled",
-    "inputs": [
-      {
-        "name": "beneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "cancelledBeneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BeneficiaryTransferInitiated",
-    "inputs": [
-      {
-        "name": "beneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "pendingBeneficiary",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -7698,6 +7648,44 @@ export const teamMarketCapVestingAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferStarted",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -7767,40 +7755,46 @@ export const teamMarketCapVestingAbi = [
   },
   {
     "type": "error",
-    "name": "NoPendingBeneficiary",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotBeneficiary",
-    "inputs": [
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotPendingBeneficiary",
-    "inputs": [
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "NothingToClaim",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "SafeTransferFailed",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnershipRenunciationDisabled",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -8216,8 +8210,14 @@ export const merkleRewardsDistributorAbi = [
   },
   {
     "type": "error",
-    "name": "SafeTransferFailed",
-    "inputs": []
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

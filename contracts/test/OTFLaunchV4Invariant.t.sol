@@ -31,8 +31,6 @@ import { IAllowanceTransfer } from "permit2/src/interfaces/IAllowanceTransfer.so
 import { DeployPermit2 } from "permit2/test/utils/DeployPermit2.sol";
 
 contract InvariantOTF is ERC20 {
-    uint256 public constant MAX_SUPPLY = 1_000_000_000 ether;
-
     constructor() ERC20("Invariant OTF", "iOTF") { }
 
     function mint(address to, uint256 amount) external {

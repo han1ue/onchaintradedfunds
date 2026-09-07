@@ -32,8 +32,8 @@ contract MainnetDeploymentTest is MainnetRehearsalBase {
         assertEq(router.owner(), administrator);
         assertEq(router.pendingOwner(), address(0));
         assertEq(rewards.owner(), administrator);
-        assertEq(vesting.beneficiary(), beneficiary);
-        assertEq(vesting.pendingBeneficiary(), address(0));
+        assertEq(vesting.owner(), beneficiary);
+        assertEq(vesting.pendingOwner(), address(0));
         assertEq(address(vesting.ethUsdOracle()), address(oracle));
         assertEq(vesting.maxOracleAge(), oracleMaxAge);
         assertTrue(router.isAdapterApproved(address(v3Adapter)));

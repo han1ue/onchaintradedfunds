@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+
 import { OTFToken } from "../../src/OTFToken.sol";
 import { OTFLaunchManager } from "../../src/OTFLaunchManager.sol";
 import { OTFLaunchManagerDeployer } from "../../src/OTFLaunchManagerDeployer.sol";
@@ -182,7 +184,7 @@ contract TeamVestingSpotManipulationPoCTest is TestBase {
         // Only rounding dust is available; the 100 WETH price move itself is flash-accounted.
         weth.mint(address(attacker), 1 ether);
         otf.transfer(address(attacker), 1 ether);
-        vm.expectPartialRevert(TeamMarketCapVesting.NotBeneficiary.selector);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         attacker.manipulate(100 ether);
 
         assertEq(vesting.unlockedAmount(), 0);

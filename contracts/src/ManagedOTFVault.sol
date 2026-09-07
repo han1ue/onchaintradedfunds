@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { IERC20 } from "./interfaces/IERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ManagedOTFVaultStorage, IOTFFactoryTokenPolicy } from "./ManagedOTFVaultStorage.sol";
 import { FeeGrowthMath } from "./libraries/FeeGrowthMath.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
-import { SafeTransferLib } from "./libraries/SafeTransferLib.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { VaultCreationParams } from "./VaultTypes.sol";
 
 interface IFeeShareCollector {
@@ -16,7 +16,7 @@ interface IFeeShareCollector {
 /// @notice Oracleless fixed-basket OTF share token.
 /// @dev Bootstrap basket units and the expense policy are immutable after clone initialization.
 contract ManagedOTFVault is ManagedOTFVaultStorage {
-    using SafeTransferLib for address;
+    using SafeERC20 for IERC20;
 
     constructor() {
         // The implementation itself must never be initialized or used as a vault.
@@ -838,7 +838,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _pullExact(address asset, address from, uint256 amount) internal {
         uint256 senderBefore = IERC20(asset).balanceOf(from);
         uint256 receiverBefore = IERC20(asset).balanceOf(address(this));
-        asset.safeTransferFrom(from, address(this), amount);
+        IERC20(asset).safeTransferFrom(from, address(this), amount);
         uint256 senderAfter = IERC20(asset).balanceOf(from);
         uint256 receiverAfter = IERC20(asset).balanceOf(address(this));
         uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
@@ -851,7 +851,7 @@ contract ManagedOTFVault is ManagedOTFVaultStorage {
     function _pushExact(address asset, address to, uint256 amount) internal {
         uint256 senderBefore = IERC20(asset).balanceOf(address(this));
         uint256 receiverBefore = IERC20(asset).balanceOf(to);
-        if (amount != 0) asset.safeTransfer(to, amount);
+        if (amount != 0) IERC20(asset).safeTransfer(to, amount);
         uint256 senderAfter = IERC20(asset).balanceOf(address(this));
         uint256 receiverAfter = IERC20(asset).balanceOf(to);
         uint256 senderDelta = senderBefore >= senderAfter ? senderBefore - senderAfter : 0;
