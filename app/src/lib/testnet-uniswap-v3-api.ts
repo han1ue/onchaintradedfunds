@@ -373,24 +373,43 @@ async function liquidationPlan(
   if (assets.length === 0 || assets.length > 20 || assets.some((asset) => testnetAssetRole(asset) !== "fund")) throw new Error("The OTF contains an unsupported testnet constituent.");
   const amounts = await client.previewRedeem(vault, shares, owner, 0n);
   if (amounts.length !== assets.length) throw new Error("The OTF redemption preview is malformed.");
-  const routes = await Promise.all(assets.map((asset) => routeFor({ address: asset, kind: "erc20" }, { address: output.address, kind: "erc20" }, client)));
+  const usdg = testnetAssetById("usdg")!;
+  const routes = await Promise.all(assets.map((asset) => routeFor({ address: asset, kind: "erc20" }, { address: usdg.address, kind: "erc20" }, client)));
   const expected = await Promise.all(amounts.map((amount, index) => client.quoteExactInput(routes[index]!.path, amount)));
   const minimums = expected.map((amount) => applySlippageDown(amount, slippageBps));
+  const legs: PlannedLeg[] = assets.map((asset, index) => ({
+    adapter,
+    tokenIn: asset,
+    tokenOut: usdg.address,
+    amountIn: maxUint256,
+    minAmountOut: minimums[index]!,
+    data: routes[index]!.path,
+    hops: routes[index]!.hops,
+  }));
+  let expectedOutput = expected.reduce((sum, value) => sum + value, 0n);
+  let minimumOutput = minimums.reduce((sum, value) => sum + value, 0n);
+  if (!sameAddress(output.address, usdg.address)) {
+    const settlement = await routeFor({ address: usdg.address, kind: "erc20" }, { address: output.address, kind: "erc20" }, client);
+    expectedOutput = await client.quoteExactInput(settlement.path, expectedOutput);
+    // Apply the user's slippage once to the final quote, without compounding the USDG leg limits.
+    minimumOutput = applySlippageDown(expectedOutput, slippageBps);
+    legs.push({
+      adapter,
+      tokenIn: usdg.address,
+      tokenOut: output.address,
+      amountIn: maxUint256,
+      minAmountOut: minimumOutput,
+      data: settlement.path,
+      hops: settlement.hops,
+    });
+  }
   return {
     assets,
     amounts,
     sourceMinimums: amounts.map((amount) => applySlippageDown(amount, slippageBps)),
-    expectedOutput: expected.reduce((sum, value) => sum + value, 0n),
-    minimumOutput: minimums.reduce((sum, value) => sum + value, 0n),
-    legs: assets.map((asset, index): PlannedLeg => ({
-      adapter,
-      tokenIn: asset,
-      tokenOut: output.address,
-      amountIn: maxUint256,
-      minAmountOut: minimums[index]!,
-      data: routes[index]!.path,
-      hops: routes[index]!.hops,
-    })),
+    expectedOutput,
+    minimumOutput,
+    legs,
   };
 }
 

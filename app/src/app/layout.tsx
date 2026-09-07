@@ -8,7 +8,10 @@ import { rootViewForHost } from "@/lib/app-host-routing";
 import { headers } from "next/headers";
 
 export const metadata: Metadata = {
-  title: "Onchain Traded Funds",
+  title: {
+    default: "Onchain Traded Funds",
+    template: "%s - OnchainTradedFunds",
+  },
   description: "Managed onchain traded funds with enforceable portfolio safety limits.",
   icons: { icon: { url: otfFavicon.src, type: "image/svg+xml", sizes: "any" } },
 };

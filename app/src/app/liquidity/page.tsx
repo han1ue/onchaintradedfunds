@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AppRoute } from "@/components/AppRoute";
 
 export const metadata: Metadata = {
-  title: "Liquidity Markets · Onchain Traded Funds",
+  title: "Liquidity Markets",
   description: "Discover OTF liquidity markets and open the network liquidity venue to manage positions.",
 };
 

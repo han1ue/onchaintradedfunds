@@ -3,6 +3,7 @@ import type { SwapAsset } from "./swap-model";
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 export const SWAP_RECEIPT_REFUND_PREVIEW_COUNT = 4;
+export const SWAP_CELEBRATION_DURATION_MS = 3_800;
 
 export type SwapReceiptDirection = "asset-to-otf" | "otf-to-asset" | "otf-to-otf";
 
@@ -16,6 +17,9 @@ export type SwapReceiptTokenAmount = {
 
 export type SwapReceipt = {
   hash: Hex;
+  chainId: number;
+  gasUsed: bigint;
+  gasFee: bigint;
   direction: SwapReceiptDirection;
   input: SwapAsset;
   output: SwapAsset;
@@ -117,6 +121,9 @@ export function fundDetailHref(asset: SwapAsset): string {
 
 export function confirmedSwapReceipt(input: {
   status: "pending" | "success" | "reverted";
+  chainId: number;
+  gasUsed: bigint;
+  effectiveGasPrice: bigint;
   hash: Hex;
   owner: Address;
   pair: { input: SwapAsset; output: SwapAsset };
@@ -162,6 +169,9 @@ export function confirmedSwapReceipt(input: {
 
   return {
     hash: input.hash,
+    chainId: input.chainId,
+    gasUsed: input.gasUsed,
+    gasFee: input.gasUsed * input.effectiveGasPrice,
     direction,
     input: input.pair.input,
     output: input.pair.output,

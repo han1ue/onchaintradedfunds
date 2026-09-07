@@ -7,7 +7,7 @@ const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8")
 describe("swap receipt wiring", () => {
   it("clears the completed attempt while preserving the selected pair", () => {
     const reset = component.slice(component.indexOf("function backToSwap"), component.indexOf("async function executeSwap"));
-    for (const state of ["setAmount(\"\")", "setQuotes([])", "setActiveQuote(undefined)", "setExecution(\"idle\")", "setExecutionMessage(undefined)", "setPreflightMessage(undefined)", "setSwapReceipt(undefined)"]) expect(reset).toContain(state);
+    for (const state of ["setAmount(\"\")", "setQuotes([])", "setActiveQuote(undefined)", "setExecution(\"idle\")", "setExecutionMessage(undefined)", "setSwapReceipt(undefined)"]) expect(reset).toContain(state);
     expect(reset).not.toContain("setInput(");
     expect(reset).not.toContain("setOutput(");
   });
@@ -38,6 +38,6 @@ describe("swap receipt wiring", () => {
     expect(component).toContain("swapCardPane swapReceiptPane");
     expect(css).toContain("@keyframes swapFormExit");
     expect(css).toContain("@keyframes swapReceiptEnter");
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.swapConfetti \{ display: none; \}/u);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.swapCelebration \{ display: none; \}/u);
   });
 });

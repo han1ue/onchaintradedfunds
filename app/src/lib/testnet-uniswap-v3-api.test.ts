@@ -1,4 +1,4 @@
-import { decodeFunctionData, type Address, type Hex } from "viem";
+import { decodeFunctionData, maxUint256, type Address, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
   testnetAssetById,
@@ -257,9 +257,52 @@ describe("Uniswap V3 testnet quote planner", () => {
     expect(client.previewRedeem).toHaveBeenNthCalledWith(1, OTF_A, request.inputAmountRaw, CALLER, 0n);
     expect(client.previewRedeem).toHaveBeenNthCalledWith(2, OTF_A, request.inputAmountRaw, collector, 0n);
     const backing = request.inputAmountRaw * 9n / 10n;
-    expect(investorQuote.expectedOutputRaw).toBe(backing * 99n / 100n * 2n);
-    expect(collectorQuote.expectedOutputRaw).toBe(backing * 2n);
+    expect(investorQuote.expectedOutputRaw).toBe(backing * 99n / 100n * 4n);
+    expect(collectorQuote.expectedOutputRaw).toBe(backing * 4n);
     expect(collectorQuote.minimumReceivedRaw).toBeGreaterThan(investorQuote.minimumReceivedRaw!);
+  });
+
+  it.each(["usdg", "weth", "native"] as const)("aggregates a five-asset burn into %s with one settlement swap at most", async (outputKind) => {
+    const constituents = ["tsla", "amzn", "pltr", "nflx", "amd"].map((id) => testnetAssetById(id)!.address);
+    const settlementPath = encodeV3Path([usdg.address, weth.address], [500]);
+    const client = routingClient({
+      vaultAssets: vi.fn(async () => constituents),
+      previewRedeem: vi.fn(async (_vault, shares) => constituents.map(() => shares / 5n)),
+      quoteExactInput: vi.fn(async (path, amount) => path === settlementPath
+        // A nonlinear quote distinguishes one combined swap from independent quotes.
+        ? amount * 10n ** 18n / (10_000_000n + amount)
+        : amount / 100_000_000_000n),
+    });
+    const output = outputKind === "usdg" ? asset(usdg) : { ...asset(weth), kind: outputKind === "native" ? "native" as const : "erc20" as const };
+    const request = plannerRequest(otf(OTF_A), output, "basket");
+    const result = await quoteTestnetSwap(request, dependencies(client));
+    expect(result.status).toBe(200);
+    const quote = parseResponse(result.body, request);
+    const expectedOutput = outputKind === "usdg" ? 10_000_000n : 500_000_000_000_000_000n;
+    const minimumOutput = expectedOutput * 9950n / 10_000n;
+    expect(quote.expectedOutputRaw).toBe(expectedOutput);
+    expect(quote.minimumReceivedRaw).toBe(minimumOutput);
+    expect(quote.hops).toHaveLength(outputKind === "usdg" ? 5 : 6);
+    const execution = quote.execution;
+    if (execution?.kind !== "basket-router" || (execution.call.method !== "redeemToToken" && execution.call.method !== "redeemToNative")) throw new Error("Expected a basket redemption");
+    const [redeem, , legs] = execution.call.args;
+    expect(redeem.minAmountOut).toBe(minimumOutput);
+    expect(execution.call.method).toBe(outputKind === "native" ? "redeemToNative" : "redeemToToken");
+    expect(legs).toHaveLength(outputKind === "usdg" ? 5 : 6);
+    for (const [index, token] of constituents.entries()) {
+      expect(legs[index]).toMatchObject({
+        tokenIn: token, tokenOut: usdg.address, amountIn: maxUint256,
+        minAmountOut: 1_990_000n, data: encodeV3Path([token, usdg.address], [3000]),
+      });
+    }
+    expect(client.quoteExactInput).toHaveBeenCalledTimes(legs.length);
+    if (outputKind !== "usdg") {
+      expect(client.quoteExactInput).toHaveBeenLastCalledWith(settlementPath, 10_000_000n);
+      expect(legs[5]).toMatchObject({
+        tokenIn: usdg.address, tokenOut: weth.address, amountIn: maxUint256,
+        minAmountOut: minimumOutput, data: settlementPath,
+      });
+    }
   });
 
   it("normalizes zero-liquidity routes as unavailable", async () => {

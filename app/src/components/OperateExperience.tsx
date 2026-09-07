@@ -50,6 +50,7 @@ import {
 } from "@/lib/deployment";
 import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
 import { accountedRewardWeightOtf, estimatedRewardsApy } from "@/lib/incentive-apy";
+import { swapErrorMessage } from "@/lib/swap-error";
 import { FundRewardsDialog } from "./FundRewardsDialog";
 import {
   bestQueriedQuote,
@@ -83,6 +84,7 @@ import { ensureExactErc20Approval } from "@/lib/erc20-approval";
 import { quoteCanonicalOtfSwap } from "@/lib/otf-market";
 import { canonicalV4Execution } from "@/lib/canonical-v4-execution";
 import {
+  SWAP_CELEBRATION_DURATION_MS,
   claimSwapCelebration,
   confirmedSwapReceipt,
   receiptRefundDisclosure,
@@ -500,42 +502,39 @@ function QuoteReview({
   );
 }
 
-const SWAP_CONFETTI_PIECES = Array.from({ length: 18 }, (_, index) => ({
-  x: (index % 6 - 2.5) * 44 + (index % 2 ? 12 : -8),
-  y: 92 + (index % 4) * 18,
-  rotation: (index % 2 ? 1 : -1) * (110 + index * 19),
-  delay: (index % 5) * 18,
-  color: index % 3 === 0 ? "var(--lime)" : index % 3 === 1 ? "var(--gold)" : "var(--text-muted)",
-}));
-
-function SwapConfetti({ active }: { active: boolean }) {
+function SwapCelebration({ active }: { active: boolean }) {
   if (!active) return null;
   return (
-    <div className="swapConfetti" aria-hidden="true">
-      {SWAP_CONFETTI_PIECES.map((piece, index) => (
-        <span
-          key={index}
-          style={{
-            "--confetti-x": `${piece.x}px`,
-            "--confetti-y": `${piece.y}px`,
-            "--confetti-rotation": `${piece.rotation}deg`,
-            "--confetti-delay": `${piece.delay}ms`,
-            "--confetti-color": piece.color,
-          } as CSSProperties}
-        />
-      ))}
-    </div>
+    <svg className="swapCelebration" viewBox="0 0 320 112" aria-hidden="true">
+      {Array.from({ length: 8 }, (_, index) => {
+        const left = index < 4;
+        const y = 14 + index % 4 * 28;
+        const path = `M ${left ? 8 : 312} ${y} C ${left ? 80 : 240} ${y}, ${left ? 104 : 216} 56, 160 56`;
+        return <g key={index} style={{ "--stream-delay": `${index % 4 * 110}ms` } as CSSProperties}>
+          <path className="swapCelebrationRail" d={path} />
+          <path className="swapCelebrationStream" d={path} pathLength="100" />
+        </g>;
+      })}
+      <g className="swapCelebrationOrbits">
+        <ellipse cx="160" cy="56" rx="72" ry="24" transform="rotate(-18 160 56)" />
+        <ellipse cx="160" cy="56" rx="94" ry="34" transform="rotate(18 160 56)" />
+      </g>
+    </svg>
   );
 }
 
-function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: () => void }) {
+function SwapReceiptPanel({ receipt, onBack, celebrating }: { receipt: SwapReceipt; onBack: () => void; celebrating: boolean }) {
+  const chain = receipt.chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain;
   const [refundsExpanded, setRefundsExpanded] = useState(false);
   const refundDisclosure = receiptRefundDisclosure(receipt.refunds, refundsExpanded);
   return (
     <div className="swapReceipt" aria-labelledby="swap-receipt-title">
       <button type="button" className="swapReceiptBack" onClick={onBack}><ArrowLeft size={14} />Back to swap</button>
       <div className="swapReceiptHeading">
-        <span className="swapReceiptConfirmedIcon"><Check size={25} strokeWidth={2.2} /></span>
+        <div className={`swapReceiptMark${celebrating ? " celebrating" : ""}`}>
+          <SwapCelebration active={celebrating} />
+          <span className="swapReceiptConfirmedIcon"><Check size={25} strokeWidth={2.2} /></span>
+        </div>
         <h2 id="swap-receipt-title">Swap complete</h2>
       </div>
       <div className="swapReceiptResult" aria-live="polite">
@@ -551,6 +550,12 @@ function SwapReceiptPanel({ receipt, onBack }: { receipt: SwapReceipt; onBack: (
           {refundDisclosure.hiddenCount ? <button type="button" onClick={() => setRefundsExpanded(true)}>Show {refundDisclosure.hiddenCount} more</button> : refundsExpanded && receipt.refunds.length > 4 ? <button type="button" onClick={() => setRefundsExpanded(false)}>Show less</button> : null}
         </section>
       ) : null}
+      <dl className="swapReceiptDetails">
+        <div><dt>Transaction</dt><dd><a href={`${chain.blockExplorers.default.url}/tx/${receipt.hash}`} target="_blank" rel="noreferrer" title={receipt.hash}>{shortAddress(receipt.hash)}<ExternalLink size={12} /></a></dd></div>
+        <div><dt>Network</dt><dd>{chain.name}</dd></div>
+        <div><dt>Gas fee</dt><dd title={`${formatUnits(receipt.gasFee, chain.nativeCurrency.decimals)} ${chain.nativeCurrency.symbol}`}>{formatSwapDisplay(formatUnits(receipt.gasFee, chain.nativeCurrency.decimals))} {chain.nativeCurrency.symbol}</dd></div>
+        <div><dt>Gas used</dt><dd>{receipt.gasUsed.toLocaleString()}</dd></div>
+      </dl>
       {!receipt.fund.isProtocolToken ? <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link> : null}
     </div>
   );
@@ -590,18 +595,18 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const [now, setNow] = useState(Date.now());
   const [execution, setExecution] = useState<"idle" | "approval" | "simulation" | "submission" | "success" | "failure">("idle");
   const [executionMessage, setExecutionMessage] = useState<string>();
-  const [preflightMessage, setPreflightMessage] = useState<string>();
+  const [executionHash, setExecutionHash] = useState<Hex>();
   const [swapReceipt, setSwapReceipt] = useState<SwapReceipt>();
   const [receiptStageHeight, setReceiptStageHeight] = useState<number>();
-  const [confettiActive, setConfettiActive] = useState(false);
+  const [celebrationActive, setCelebrationActive] = useState(false);
   const swapSettingsRef = useRef<HTMLDivElement>(null);
   const swapStageRef = useRef<HTMLDivElement>(null);
   const celebratedSwapsRef = useRef(new Set<string>());
-  const confettiTimerRef = useRef<number | undefined>(undefined);
+  const celebrationTimerRef = useRef<number | undefined>(undefined);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
-    if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
+    if (celebrationTimerRef.current !== undefined) window.clearTimeout(celebrationTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -799,19 +804,16 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     if (nativeWrapPair) {
       setQuotes([]);
       setActiveQuote(undefined);
-      setPreflightMessage(undefined);
       return;
     }
     if (canonicalOtfPair) {
       setQuotes([]);
       setActiveQuote(undefined);
-      setPreflightMessage(undefined);
       return;
     }
     if (!pairValid || !pairExecutable || !directionSupported || !amountValid || !supportedNetwork) {
       setQuotes([]);
       setActiveQuote(undefined);
-      setPreflightMessage(undefined);
       return;
     }
     const requestedAt = Date.now();
@@ -828,7 +830,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     }
     setQuotes(loadingQuotes);
     setActiveQuote(undefined);
-    setPreflightMessage(undefined);
     let cancelled = false;
     void (async () => {
       let outputTotalSupply: bigint | undefined;
@@ -885,7 +886,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     setActiveQuote(undefined);
     setExecution("idle");
     setExecutionMessage(undefined);
-    setPreflightMessage(undefined);
   }
 
   async function readOutputBalance(blockNumber?: bigint): Promise<bigint | undefined> {
@@ -925,6 +925,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       : undefined;
     const nextReceipt = confirmedSwapReceipt({
       status: transactionReceipt.status,
+      chainId,
+      gasUsed: transactionReceipt.gasUsed,
+      effectiveGasPrice: transactionReceipt.effectiveGasPrice,
       hash,
       owner: address!,
       pair: { input, output },
@@ -942,30 +945,32 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     setSwapReceipt(nextReceipt);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (claimSwapCelebration(hash, reducedMotion, celebratedSwapsRef.current, window.sessionStorage)) {
-      setConfettiActive(true);
-      if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
-      confettiTimerRef.current = window.setTimeout(() => setConfettiActive(false), 850);
+      setCelebrationActive(true);
+      if (celebrationTimerRef.current !== undefined) window.clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = window.setTimeout(() => setCelebrationActive(false), SWAP_CELEBRATION_DURATION_MS);
     }
   }
 
   function backToSwap() {
-    if (confettiTimerRef.current !== undefined) window.clearTimeout(confettiTimerRef.current);
-    confettiTimerRef.current = undefined;
-    setConfettiActive(false);
+    if (celebrationTimerRef.current !== undefined) window.clearTimeout(celebrationTimerRef.current);
+    celebrationTimerRef.current = undefined;
+    setCelebrationActive(false);
     setSwapReceipt(undefined);
+    setExecutionHash(undefined);
     setReceiptStageHeight(undefined);
     setAmount("");
     setQuotes([]);
     setActiveQuote(undefined);
     setExecution("idle");
     setExecutionMessage(undefined);
-    setPreflightMessage(undefined);
     setPicker(undefined);
     setSwapSettingsOpen(false);
   }
 
   async function executeSwap() {
     if (!address || !publicClient || !walletClient) return;
+    let submittedHash: Hex | undefined;
+    setExecutionHash(undefined);
     if (nativeWrapPair) {
       if (!configuredWeth || !inputAmountRaw) return;
       const wrapping = input.kind === "native";
@@ -975,13 +980,15 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       const value = wrapping ? inputAmountRaw : 0n;
       try {
         setExecutionMessage(undefined);
-        setPreflightMessage(undefined);
         setExecution("simulation");
         await publicClient.call({ account: address, to: configuredWeth.address, data, value });
-        const gas = await publicClient.estimateGas({ account: address, to: configuredWeth.address, data, value });
-        setPreflightMessage(`${wrapping ? "Wrap" : "Unwrap"} preflight passed · 1:1 output · gas estimate ${gas.toLocaleString()}.`);
+        await publicClient.estimateGas({ account: address, to: configuredWeth.address, data, value });
         setExecution("submission");
+        setExecutionMessage("Confirm the swap in your wallet.");
         const hash = await walletClient.sendTransaction({ account: address, to: configuredWeth.address, data, value });
+        submittedHash = hash;
+        setExecutionHash(hash);
+        setExecutionMessage("Swap submitted. Waiting for confirmation…");
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error(`The WETH ${wrapping ? "wrap" : "unwrap"} reverted.`);
         setExecution("success");
@@ -989,7 +996,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
       } catch (error) {
         setExecution("failure");
-        setExecutionMessage(error instanceof Error ? error.message : `The WETH ${wrapping ? "wrap" : "unwrap"} failed.`);
+        setExecutionMessage(swapErrorMessage(error, submittedHash));
       }
       return;
     }
@@ -1006,7 +1013,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       }
       try {
         setExecutionMessage(undefined);
-        setPreflightMessage(undefined);
         setExecution(input.kind === "native" ? "simulation" : "approval");
         const deadline = BigInt(Math.floor(Date.now() / 1_000) + 10 * 60);
         if (input.kind !== "native") {
@@ -1067,28 +1073,22 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           value = canonicalExecution.value;
         }
         setExecution("simulation");
-        const simulation = await publicClient.call({ account: address, to: target, data, value });
-        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
-        if (bootstrap && launchFunction && simulation.data) {
-          const [consumed] = decodeFunctionResult({ abi: otfLaunchRouterAbi, functionName: launchFunction, data: simulation.data } as never) as unknown as readonly [bigint, bigint];
-          const unused = canonicalAmountRaw - consumed;
-          const refund = unused === 0n ? "full maximum consumed" : input.kind === "native"
-            ? `${formatUnits(unused, input.decimals)} ${input.symbol} refunded`
-            : `${formatUnits(unused, input.decimals)} ${input.symbol} remains in your wallet`;
-          setPreflightMessage(`Launch boundary preflight passed · ${formatUnits(consumed, input.decimals)} ${input.symbol} consumed · ${refund} · gas estimate ${gas.toLocaleString()}.`);
-        } else {
-          setPreflightMessage(`Canonical V4 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${formatUnits(canonicalQuote.minimumReceived, output.decimals)} ${output.symbol}.`);
-        }
+        await publicClient.call({ account: address, to: target, data, value });
+        await publicClient.estimateGas({ account: address, to: target, data, value });
         setExecution("submission");
+        setExecutionMessage("Confirm the swap in your wallet.");
         const outputBalanceBefore = await readOutputBalance();
         const hash = await walletClient.sendTransaction({ account: address, to: target, data, value });
+        submittedHash = hash;
+        setExecutionHash(hash);
+        setExecutionMessage("Swap submitted. Waiting for confirmation…");
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error("The canonical OTF swap reverted.");
         await finishConfirmedSwap(hash, receipt, outputBalanceBefore, value);
         await Promise.all([refetchInputBalance(), refetchOutputBalance(), refetchCanonicalPool()]);
       } catch (error) {
         setExecution("failure");
-        setExecutionMessage(error instanceof Error ? error.message : "The canonical OTF swap failed.");
+        setExecutionMessage(swapErrorMessage(error, submittedHash));
       }
       return;
     }
@@ -1100,7 +1100,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     }
     try {
       setExecutionMessage(undefined);
-      setPreflightMessage(undefined);
       setExecution(
         executionPlan.kind === "direct-api"
           ? executionPlan.nativeInput ? "simulation" : "approval"
@@ -1111,7 +1110,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       let target: Address;
       let data: Hex;
       let value = 0n;
-      let preflight: string;
       if (executionPlan.kind === "direct-api") {
         if (robinhoodMainnetUniswap.universalRouter?.toLowerCase() !== executionPlan.universalRouter.toLowerCase()) throw new Error("The direct plan has an unsupported Universal Router target.");
         for (const authorization of [executionPlan.cancel, executionPlan.approval]) {
@@ -1136,8 +1134,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         value = finalized.transaction.value;
         setExecution("simulation");
         await publicClient.call({ account: address, to: target, data, value });
-        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
-        preflight = `Exact direct-swap preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
+        await publicClient.estimateGas({ account: address, to: target, data, value });
       } else if (executionPlan.kind === "direct-v3") {
         if (executionPlan.swapRouter02.toLowerCase() !== testnetVenue.swapRouter02.toLowerCase()) throw new Error("The direct plan has an unsupported Uniswap V3 router target.");
         const allowance = await publicClient.readContract({
@@ -1162,8 +1159,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         value = executionPlan.transaction.value;
         setExecution("simulation");
         await publicClient.call({ account: address, to: target, data, value });
-        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
-        preflight = `Exact Uniswap V3 preflight passed · gas estimate ${gas.toLocaleString()} · minimum ${activeQuote?.minimumReceived ?? "—"} ${output.symbol}.`;
+        await publicClient.estimateGas({ account: address, to: target, data, value });
       } else {
         if (robinhoodTestnetAddresses.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()) throw new Error("The basket plan has an unsupported entry-router target.");
         if (executionPlan.approval) {
@@ -1194,23 +1190,21 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         setExecution("simulation");
         value = executionPlan.nativeValue;
         const result = await publicClient.call({ account: address, to: target, data, value });
-        const gas = await publicClient.estimateGas({ account: address, to: target, data, value });
+        await publicClient.estimateGas({ account: address, to: target, data, value });
         if (!result.data) throw new Error("The basket preflight returned no result data.");
-        const decoded = decodeFunctionResult({
+        decodeFunctionResult({
           abi: otfEntryExitRouterAbi,
           functionName: executionPlan.call.method,
           data: result.data,
-        } as never) as unknown as readonly [bigint, readonly Address[], readonly bigint[], bigint?];
-        const refundSummary = decoded[1].length
-          ? decoded[1].map((token, index) => `${decoded[2][index]?.toString() ?? "0"} ${shortAddress(token)}`).join(", ")
-          : "none";
-        const nativeRefund = decoded[3] ? ` · native refund ${formatUnits(decoded[3], 18)} ETH` : "";
-        preflight = `Exact basket preflight passed · output ${formatUnits(decoded[0], output.decimals)} ${output.symbol} · refunds ${refundSummary}${nativeRefund} · gas estimate ${gas.toLocaleString()}.`;
+        } as never);
       }
-      setPreflightMessage(preflight);
       setExecution("submission");
+      setExecutionMessage("Confirm the swap in your wallet.");
       const outputBalanceBefore = await readOutputBalance();
       const hash = await walletClient.sendTransaction({ account: address, to: target, data, value });
+      submittedHash = hash;
+      setExecutionHash(hash);
+      setExecutionMessage("Swap submitted. Waiting for confirmation…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("The swap transaction reverted.");
       await finishConfirmedSwap(
@@ -1223,7 +1217,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       await Promise.all([refetchInputBalance(), refetchOutputBalance()]);
     } catch (error) {
       setExecution("failure");
-      setExecutionMessage(error instanceof Error ? error.message : "The wallet, approval, simulation, or transaction failed.");
+      setExecutionMessage(swapErrorMessage(error, submittedHash));
     }
   }
 
@@ -1331,7 +1325,6 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   const swapCard = (
         <section className={`swapCard${swapReceipt ? " showReceipt" : ""}`} aria-label={embeddedFund ? `Swap ${embeddedFund.symbol}` : "Swap tokens"}>
-          <SwapConfetti active={confettiActive} />
           <div className="swapCardStage" ref={swapStageRef} style={receiptStageHeight ? { minHeight: receiptStageHeight } : undefined}>
             <div className="swapCardPane swapFormPane" aria-hidden={swapReceipt ? true : undefined} inert={swapReceipt ? true : undefined}>
               <div className="swapCardHeader">
@@ -1359,11 +1352,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
               </div>
               <button type="button" className="swapPrimary" disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
               {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This amount crosses a launch price limit. Only the input needed to reach that limit will be used; unused {input.symbol} {input.kind === "native" ? "is refunded" : "stays in your wallet"}.</p> : null}
-              {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}</p> : null}
-              {preflightMessage ? <p className="swapPreflight" aria-live="polite">{preflightMessage}</p> : null}
-              {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); setPreflightMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} outputSymbol={output.symbol} now={now} quoteStartedAt={quoteStartedAt} executionBusy={executionBusy} /> : null}
+              {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{quotes.some((quote) => quote.state === "loading") ? <ActivitySpinner size={13} /> : null}{statusMessage}{executionMessage && executionHash ? <a href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${executionHash}`} target="_blank" rel="noreferrer">View transaction<ExternalLink size={11} /></a> : null}</p> : null}
+              {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} outputSymbol={output.symbol} now={now} quoteStartedAt={quoteStartedAt} executionBusy={executionBusy} /> : null}
             </div>
-            {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} /></div> : null}
+            {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} celebrating={celebrationActive} /></div> : null}
           </div>
         </section>
   );
@@ -2435,6 +2427,9 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const [fundSort, setFundSort] = useState<FundSort>("nav-desc");
   const [detailState, setDetailState] = useState<"loading" | "ready" | "failure">("loading");
   const [vaultDetails, setVaultDetails] = useState<FactoryVaultSummary>();
+  useEffect(() => {
+    if (detail) document.title = `${vaultDetails?.symbol ?? "OTF"} - OnchainTradedFunds`;
+  }, [detail, vaultDetails?.symbol]);
   const valuation = useFundValuation(detail ? vaultDetails : undefined);
   const directoryAum = useDirectoryAum(vaults, factoryDirectoryState, !detail);
   const fundAumUsd = valuation.state === "ready" ? valuation.current?.aumUsd : undefined;
@@ -2504,7 +2499,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailMetrics" aria-label="Fund metrics">
                 <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
                 <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-                <div><span>Est. rewards APY</span><strong className="fundRewardsMetric"><FundRewardsApy pricing={rewardsApy} valuationState={valuation.state} aumUsd={fundAumUsd} fund={vaultDetails} directory={directoryAum} /></strong></div>
+                <div><span>Rewards APY</span><strong className="fundRewardsMetric"><FundRewardsApy pricing={rewardsApy} valuationState={valuation.state} aumUsd={fundAumUsd} fund={vaultDetails} directory={directoryAum} /></strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>
             </div>

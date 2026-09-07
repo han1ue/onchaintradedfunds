@@ -39,6 +39,9 @@ function receipt(pair: { input: SwapAsset; output: SwapAsset }, logs: ReceiptLog
   return confirmedSwapReceipt({
     status,
     hash: HASH,
+    chainId: 46630,
+    gasUsed: 2_357_790n,
+    effectiveGasPrice: 100_000_000n,
     owner: OWNER,
     pair,
     logs,
@@ -48,6 +51,11 @@ function receipt(pair: { input: SwapAsset; output: SwapAsset }, logs: ReceiptLog
 }
 
 describe("confirmed swap receipt", () => {
+  it("calculates the paid gas fee from confirmed gas usage and effective price", () => {
+    const result = receipt({ input: USDC, output: TECH }, [transfer(TECH.address, zeroAddress, OWNER, 1n)]);
+    expect(result).toMatchObject({ chainId: 46630, gasUsed: 2_357_790n, gasFee: 235_779_000_000_000n });
+  });
+
   it("shows actual Asset to OTF output with multiple constituent returns", () => {
     const result = receipt({ input: USDC, output: TECH }, [
       transfer(TECH.address, zeroAddress, OWNER, parseUnits("12.42", 18)),

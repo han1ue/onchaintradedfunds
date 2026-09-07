@@ -644,34 +644,33 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
   from { opacity: 0; clip-path: inset(0 0 0 10%); transform: translateX(24%); }
 }
 
-.swapConfetti {
-  position: absolute;
-  z-index: 4;
-  inset: 0;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
+.swapReceiptMark { position: relative; display: grid; width: 100%; height: 112px; place-items: center; }
+.swapCelebration { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; fill: none; stroke: var(--lime); }
+.swapCelebrationRail { stroke-width: .8; opacity: 0; animation: swapRailReveal 3200ms ease-out both; }
+.swapCelebrationStream { stroke-width: 2; stroke-linecap: round; stroke-dasharray: 12 100; stroke-dashoffset: 12; opacity: 0; animation: swapStreamConverge 1800ms cubic-bezier(.16, 1, .3, 1) var(--stream-delay) both; }
+.swapCelebrationOrbits { transform-origin: 160px 56px; opacity: 0; stroke-width: 1; animation: swapOrbitBloom 2400ms cubic-bezier(.16, 1, .3, 1) 1000ms both; }
+.swapReceiptMark.celebrating .swapReceiptConfirmedIcon { animation: swapConfirmationBloom 3400ms ease-out both; }
+
+@keyframes swapRailReveal {
+  0%, 100% { opacity: 0; }
+  18%, 65% { opacity: .22; }
 }
-
-.swapConfetti span {
-  position: absolute;
-  top: 108px;
-  left: 50%;
-  width: 6px;
-  height: 9px;
-  border-radius: 2px;
-  background: var(--confetti-color);
-  opacity: 0;
-  animation: swapConfettiBurst 760ms cubic-bezier(.18, .76, .36, 1) var(--confetti-delay) both;
+@keyframes swapStreamConverge {
+  0% { opacity: 0; stroke-dashoffset: 12; }
+  18% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; stroke-dashoffset: -100; }
 }
-
-.swapConfetti span:nth-child(3n) { width: 8px; height: 4px; }
-
-@keyframes swapConfettiBurst {
-  0% { opacity: 0; transform: translate(-50%, 0) rotate(0deg) scale(.8); }
-  10% { opacity: 1; }
-  34% { opacity: 1; transform: translate(calc(-50% + var(--confetti-x)), -58px) rotate(90deg); }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--confetti-x)), var(--confetti-y)) rotate(var(--confetti-rotation)); }
+@keyframes swapOrbitBloom {
+  0% { opacity: 0; transform: scale(.35) rotate(-14deg); }
+  25% { opacity: .8; }
+  70% { opacity: .45; }
+  100% { opacity: 0; transform: scale(1.25) rotate(10deg); }
+}
+@keyframes swapConfirmationBloom {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.12); border-color: var(--lime); background: rgb(var(--accent-rgb) / 25%); }
+  65% { transform: scale(1); }
 }
 
 .swapCardHeader {
@@ -842,7 +841,7 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 
 .swapReceiptHeading { display: grid; justify-items: center; gap: 11px; padding: 12px 12px 18px; text-align: center; }
 .swapReceiptHeading h2 { margin: 0; font-size: 20px; font-weight: 680; letter-spacing: -.025em; }
-.swapReceiptConfirmedIcon { display: grid; width: 54px; height: 54px; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 34%); border-radius: 50%; background: rgb(var(--accent-rgb) / 11%); color: var(--accent-text); }
+.swapReceiptConfirmedIcon { position: relative; display: grid; width: 54px; height: 54px; place-items: center; border: 1px solid rgb(var(--accent-rgb) / 34%); border-radius: 50%; background: rgb(var(--accent-rgb) / 11%); color: var(--accent-text); }
 
 .swapReceiptResult {
   display: grid;
@@ -869,6 +868,12 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapReceiptRefunds > button { min-height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-text); padding: 0; font-size: 10px; font-weight: 700; }
 .swapReceiptRefunds > button:hover { color: var(--lime-hover); }
 .swapReceiptRefunds > button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.swapReceiptDetails { display: grid; gap: 9px; margin: 18px 4px 0; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11px; }
+.swapReceiptDetails > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.swapReceiptDetails dt { flex-shrink: 0; color: var(--text-muted); }
+.swapReceiptDetails dd { min-width: 0; margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.swapReceiptDetails a { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-text); text-decoration: none; }
+.swapReceiptDetails a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .swapReceiptPrimary { flex: 0 0 auto; margin-top: 18px; text-decoration: none; }
 
 @keyframes swapReceiptFade {
@@ -878,15 +883,19 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 @media (prefers-reduced-motion: reduce) {
   .swapCard.showReceipt .swapFormPane { display: none; animation: none; }
   .swapReceiptPane { animation: swapReceiptFade 120ms ease-out both; }
-  .swapConfetti { display: none; }
+  .swapCelebration { display: none; }
+  .swapReceiptMark.celebrating .swapReceiptConfirmedIcon { animation: none; }
 }
 
 .createBlocked { margin: 10px 2px 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 
 .swapStatusLine { display: flex; align-items: center; justify-content: center; gap: 6px; overflow-wrap: anywhere; color: var(--text-muted); margin: 10px 4px 0; font-size: 10px; line-height: 1.5; text-align: center; }
+.swapStatusLine a { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); white-space: nowrap; }
+.swapStatusLine:has(a) { flex-wrap: wrap; }
 .swapStatusLine.failure { color: var(--danger); }
 .swapStatusLine.success { color: var(--green); }
 
+.swapCard:not(.showReceipt):has(.swapReview:not([open])) { padding-bottom: 0; }
 .swapReview { border-top: 1px solid var(--border); margin-top: 14px; }
 .swapReview summary { display: grid; min-height: 43px; grid-template-columns: minmax(0, 1fr) auto 16px; align-items: center; gap: 8px; color: var(--text-soft); cursor: pointer; list-style: none; }
 .swapReview summary::-webkit-details-marker { display: none; }
@@ -1506,6 +1515,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 
 .directoryTableWrap { overflow-x: auto; }
 .fundSortHeader { border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.fundSortHeader:hover,
+.fundSortHeader:active,
+.fundSortHeader:focus-visible { color: var(--text); }
 .fundFeesInline { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .walletVaultStat .fundFeesInline { color: inherit; font-size: inherit; }
 
@@ -1607,14 +1619,14 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .fundMetricAddressLink { max-width: 100%; }
 .fundMetricAddressLink code { overflow: hidden; font: inherit; text-overflow: ellipsis; }
 .fundRewardsValue,
-.fundDetailMetrics .fundRewardsValue { display: inline-flex; align-items: center; gap: 2px; vertical-align: baseline; line-height: inherit; }
+.fundDetailMetrics .fundRewardsValue { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; line-height: inherit; }
+.directoryTable .fundRewardsValue { vertical-align: middle; line-height: 1; }
 .fundDetailMetrics .fundRewardsValue,
 .fundDetailMetrics .fundRewardsValue > span { color: inherit; font: inherit; letter-spacing: normal; text-transform: none; }
 .fundDetailMetrics .fundRewardsMetric { display: flex; align-items: center; overflow: visible; }
 .rewardsInfoButton { position: relative; z-index: 1; display: inline-grid; width: 14px; height: 14px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); padding: 0; transition: color 160ms ease, background 160ms ease; }
 .rewardsInfoButton::before { content: ""; position: absolute; inset: -7px; }
 .rewardsInfoButton svg { display: block; }
-.directoryTable .rewardsInfoButton { top: -1px; }
 .rewardsInfoButton:hover { background: var(--card-raised); color: var(--accent-text); }
 .rewardsInfoButton:disabled { opacity: 0.4; }
 .rewardsDialog { width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--card); color: var(--text); padding: 0; text-align: left; font-size: 0.8rem; font-weight: 400; line-height: 1.55; white-space: normal; }
