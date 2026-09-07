@@ -55,7 +55,7 @@ contract BootstrapAccountingTest is BootstrapTestBase {
         vm.prank(CREATOR);
         ManagedOTFVault vault = ManagedOTFVault(factory.createVault(params));
         assertEq(vault.tokenURI(), factory.otfTokenURI("ABCDEFGH"));
-        assertNotEq(vault.tokenURI(), factory.otfTokenURI("OTF"));
+        assertTrue(keccak256(bytes(vault.tokenURI())) != keccak256(bytes(factory.otfTokenURI("OTF"))));
     }
 
     function testInvalidTickersAreRejectedAtomically() public {
