@@ -1962,7 +1962,13 @@ export const otfFactoryAbi = [
   {
     "type": "function",
     "name": "otfTokenURI",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "ticker",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -2109,6 +2115,11 @@ export const otfFactoryAbi = [
   {
     "type": "error",
     "name": "InvalidImplementation",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTicker",
     "inputs": []
   },
   {
