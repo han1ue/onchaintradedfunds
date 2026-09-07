@@ -41,7 +41,7 @@ Pool addresses match their CREATE2 predictions and live factory lookups. The see
 
 The deployment creates a fresh token, launch system, vesting contract, rewards distributor, oracle, vault implementation, factory, entry router, collector, and both trade adapters. It approves only the adapters owned by that deployment. The launch manager uses hook mask `0x2840`.
 
-The current deployment record contains 25 transactions using 32,908,717 gas, or 0.00032908717 ETH at 10,000,000 wei/gas. The live verifier checks twelve protocol runtimes, six owned liquidity positions, adapter bindings, allowance cleanup, and funding caps.
+The current deployment record contains 25 transactions using 32,840,643 gas, or 0.00032840643 ETH at 10,000,000 wei/gas. The live verifier checks twelve protocol runtimes, six owned liquidity positions, adapter bindings, allowance cleanup, and funding caps.
 
 The app authenticates V3 runtimes, adapter bindings, factory pool identities, and connecting-pool liquidity before quoting. The `/liquidity` page uses the same venue checks.
 
