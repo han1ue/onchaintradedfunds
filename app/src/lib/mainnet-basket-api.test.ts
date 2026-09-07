@@ -262,7 +262,10 @@ describe("mainnet basket planner", () => {
       ...(failure === "preview" ? { previewRedeem: async () => [1n] } : {}),
     });
     const result = await quoteMainnetBasket(request(true), deps(routingClient));
-    expect(result).toMatchObject({ status: 503, body: { state: "unavailable", reason: "No executable mainnet basket route is currently available." } });
+    const codes: Record<string, string> = { bindings: "DEPLOYMENT_MISMATCH", vault: "INVALID_ASSET_METADATA", decimals: "INVALID_ASSET_METADATA", pool: "POOL_VALIDATION_FAILED", simulation: "SIMULATION_FAILED", "insufficient output": "MINIMUM_OUTPUT_NOT_MET", preview: "QUOTE_FAILED" };
+    expect(result).toMatchObject({ status: 503, body: { state: "unavailable", code: codes[failure], requestId: expect.any(String) } });
+    expect(JSON.stringify(result)).not.toContain("Private RPC detail");
+    expect(parse(result.body, request(true)).failureCode).toBe(codes[failure]);
   });
 
   it("does not renew a quote that expired during routing or simulation", async () => {
@@ -285,7 +288,7 @@ describe("mainnet basket planner", () => {
 
   it("keeps unconfigured mainnet and unsupported networks unavailable", async () => {
     const requestQuote = provider();
-    expect((await quoteMainnetBasket(request(), { requestQuote })).body).toMatchObject({ reason: "The mainnet basket deployment is not configured." });
+    expect((await quoteMainnetBasket(request(), { requestQuote })).body).toMatchObject({ code: "ROUTE_NOT_CONFIGURED" });
     expect((await quoteMainnetBasket({ ...request(), chainId: 1 }, { ...deps(), requestQuote })).status).toBe(503);
     expect(requestQuote).not.toHaveBeenCalled();
   });

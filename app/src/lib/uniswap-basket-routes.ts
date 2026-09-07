@@ -3,6 +3,7 @@ import { applySlippageDown, applySlippageUp, sameAddress, type BasketRouteProvid
 import { MAX_SWAP_LEGS, type AdapterSwapLeg } from "./swap-model";
 import { routeFrom } from "./v3-route";
 import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4-route";
+import { QuoteFailure, quoteStep } from "./quote-errors";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -36,13 +37,13 @@ export function uniswapBasketRoutes(options: {
 }): BasketRouteProvider {
   const boundary = (currency: Address) => v4BoundaryToken(currency, options.weth);
   const quoteCandidate: BasketRouteProvider["quote"] = async (type, tokenIn, tokenOut, amount) => {
-    const response = record(await options.requestQuote({
+    const response = record(await quoteStep("PROVIDER_UNAVAILABLE", () => options.requestQuote({
       type, tokenIn, tokenOut, amount: amount.toString(),
       tokenInChainId: options.chainId, tokenOutChainId: options.chainId,
       swapper: options.router, recipient: options.router,
       slippageTolerance: options.slippageBps / 100,
       protocols: options.v4Adapter ? ["V3", "V4"] : ["V3"], routingPreference: "BEST_PRICE",
-    }));
+    })));
     if (response.routing !== "CLASSIC") throw new Error("Basket routing requires CLASSIC pool routes.");
     const quote = record(response.quote);
     const input = record(quote.input);
@@ -91,14 +92,14 @@ export function uniswapBasketRoutes(options: {
         }
         if (pool.type === "v3-pool") {
           if (!Number.isInteger(fee) || fee <= 0 || fee >= 1_000_000) throw new Error("Invalid V3 fee.");
-          await options.authenticatePool(current, next, fee, address(pool.address));
+          await quoteStep("POOL_VALIDATION_FAILED", () => options.authenticatePool(current, next, fee, address(pool.address)));
         } else {
           if (!options.v4Adapter || !options.authenticateV4Pool) throw new Error("V4 routing is not configured.");
           const hookData = pool.hookData ?? "0x";
           if (typeof hookData !== "string" || !/^0x(?:[a-fA-F0-9]{2})*$/.test(hookData) || hookData.length > 2050) throw new Error("Invalid V4 hook data.");
           const hop: V4PathKey = { intermediateCurrency: next, fee, tickSpacing: Number(pool.tickSpacing), hooks: address(pool.hooks, true), hookData: hookData as Hex };
           parseV4Path(encodeV4Path(current, [hop]));
-          await options.authenticateV4Pool(current, hop);
+          await quoteStep("POOL_VALIDATION_FAILED", () => options.authenticateV4Pool!(current, hop));
           segment.path.push(hop);
         }
         tokens.push(next);
@@ -152,7 +153,9 @@ export function uniswapBasketRoutes(options: {
       }
       const results = await Promise.allSettled(candidates);
       const quotes = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-      if (!quotes.length) throw new Error("No supported Uniswap basket route.");
+      if (!quotes.length) throw new QuoteFailure("INVALID_PROVIDER_QUOTE", {
+        cause: new AggregateError(results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])),
+      }, { tokenIn, tokenOut });
       return quotes.reduce((best, next) => (type === "EXACT_INPUT" ? next.amountOut > best.amountOut : next.amountIn < best.amountIn) ? next : best);
     },
   };

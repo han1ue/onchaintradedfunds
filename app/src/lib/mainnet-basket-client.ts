@@ -4,6 +4,7 @@ import { sameAddress, type BasketClient } from "./basket-planner";
 import { robinhoodChain } from "./chains";
 import { routerArgsForExecution, type BasketRouterExecution } from "./swap-model";
 import { v4PoolId, type V4PathKey } from "./v4-route";
+import { QuoteFailure } from "./quote-errors";
 
 export type MainnetBasketDeployment = {
   factory: Address; entryRouter: Address; uniswapV3Adapter: Address;
@@ -119,7 +120,8 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
       // Approval calls affect only this simulation; the caller's actual balances are retained.
       const calls = basketSimulationCalls(execution);
       const result = await client.simulateCalls({ account: execution.caller, calls, validation: false });
-      if (result.results.length !== calls.length || result.results.some((call) => call.status !== "success")) throw new Error("Basket simulation reverted.");
+      const failedCall = result.results.find((call) => call.status !== "success");
+      if (result.results.length !== calls.length || failedCall) throw new QuoteFailure("SIMULATION_FAILED", { cause: failedCall?.error });
       const last = result.results[result.results.length - 1]!;
       const decoded = decodeFunctionResult({ abi: otfEntryExitRouterAbi, functionName: execution.call.method, data: last.data }) as readonly [bigint, readonly Address[], readonly bigint[], bigint?];
       const [amountOut, tokens, amounts] = decoded;

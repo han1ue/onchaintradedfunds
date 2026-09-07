@@ -5,6 +5,8 @@ import { quoteMainnetBasket } from "./mainnet-basket-api";
 import { type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
 import { ERC20_APPROVE_ABI, QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
+import { QuoteFailure, quoteStep } from "./quote-errors";
+import { unavailableQuoteResponse } from "./quote-diagnostics";
 
 const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const MAX_QUOTE_LIFETIME_MS = 300_000;
@@ -182,7 +184,7 @@ async function defaultProviderRequest(path: "check_approval" | "quote" | "swap",
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(12_000),
   });
-  if (!response.ok) throw new Error(`UNISWAP_${path.toUpperCase()}_${response.status}`);
+  if (!response.ok) throw new QuoteFailure(response.status === 429 ? "PROVIDER_RATE_LIMITED" : response.status === 404 && path === "quote" ? "NO_ROUTE" : "PROVIDER_UNAVAILABLE", { cause: { status: response.status } });
   return response.json();
 }
 
@@ -335,16 +337,18 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
   }
   const permit2 = robinhoodMainnetUniswap.permit2;
   const universalRouter = robinhoodMainnetUniswap.universalRouter;
+  let stage = "provider-approval";
   try {
     const approvalResponse = request.input.kind === "native"
       ? undefined
-      : record(await dependencies.providerRequest("check_approval", {
+      : record(await quoteStep("PROVIDER_UNAVAILABLE", () => dependencies.providerRequest("check_approval", {
           amount: request.inputAmountRaw.toString(),
           chainId: request.chainId,
           token: request.input.address,
           walletAddress: request.caller,
-        }, dependencies.apiKey), "Uniswap approval response");
-    const quoteResponse = await dependencies.providerRequest("quote", {
+        }, dependencies.apiKey)), "Uniswap approval response");
+    stage = "provider-quote";
+    const quoteResponse = await quoteStep("PROVIDER_UNAVAILABLE", () => dependencies.providerRequest("quote", {
       type: "EXACT_INPUT",
       amount: request.inputAmountRaw.toString(),
       tokenInChainId: request.chainId,
@@ -355,7 +359,8 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
       slippageTolerance: request.slippageBps / 100,
       routingPreference: "BEST_PRICE",
       protocols: ["V3", "V4"],
-    }, dependencies.apiKey);
+    }, dependencies.apiKey));
+    stage = "quote-validation";
     const semantics = quoteSemantics(quoteResponse, request, dependencies.now());
     validatePermitData(semantics.permitData, request, permit2, universalRouter);
     const approvalRequired = request.input.kind === "native"
@@ -399,8 +404,8 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
         execution: executionJson(payload, quoteToken, permit2, universalRouter),
       },
     };
-  } catch {
-    return unavailable("direct", "The Uniswap direct-pool quote is temporarily unavailable.");
+  } catch (error) {
+    return unavailableQuoteResponse(request, stage, error, "INVALID_PROVIDER_QUOTE");
   }
 }
 
@@ -489,13 +494,13 @@ export async function handleSwapQuoteRequest(value: unknown, dependencies: SwapQ
       return quoteTestnetSwap(request, { now, client: dependencies.testnetClient });
     }
     if (request.route === "basket") {
-      if (!apiKey) return unavailable("basket", "The Uniswap Trading API key is not configured.");
+      if (!apiKey) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
       return await quoteMainnetBasket(request, {
         now, client: dependencies.mainnetClient, deployment: dependencies.mainnetDeployment,
         requestQuote: (body) => providerRequest("quote", body, apiKey),
       });
     }
-    if (!apiKey) return unavailable("direct", "The Uniswap Trading API key is not configured.");
+    if (!apiKey) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
     return await directQuote(request, { apiKey, now, providerRequest });
   } catch {
     return { status: 400, body: { error: "INVALID_SWAP_QUOTE_REQUEST" } };

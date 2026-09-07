@@ -445,7 +445,7 @@ function QuoteReview({
       : activeQuote?.execution?.router;
   return (
     <details className="swapReview">
-      <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : loading ? "Refreshing quote…" : ""}</small><ChevronDown size={15} /></summary>
+      <summary><span>Quote details</span><small>{selectedValid ? activeQuote?.routeLabel : loading ? "Refreshing quote…" : quotes.length ? "Quotes unavailable" : ""}</small><ChevronDown size={15} /></summary>
       <div className="swapReviewBody">
         <div className="swapReviewHeader"><strong>{selectedValid || loading ? "Compared routes" : ""}</strong><button type="button" onClick={onRefresh} disabled={loading || executionBusy} aria-label={loading ? "Refreshing quote" : "Refresh quote"} title={loading ? "Refreshing quote" : executionBusy ? "Refresh paused during the swap" : `Refresh quote · automatic refresh in ${Math.ceil(remainingMs / 1_000)}s`}>
           {loading ? <LoaderCircle className="createAssetSpinner" size={16} aria-hidden="true" /> : <svg className="swapRefreshCountdown" width="16" height="16" viewBox="0 0 20 20" aria-hidden="true">
@@ -453,12 +453,12 @@ function QuoteReview({
             <circle className="swapRefreshRemaining" cx="10" cy="10" r="7" pathLength="100" strokeDasharray={`${remainingPercent} 100`} transform="rotate(-90 10 10)" />
           </svg>}<span>Refresh</span>
         </button></div>
-        {selectedValid || loading ? <div className="swapRoutes">
+        {quotes.length ? <div className="swapRoutes">
           {quotes.map((quote) => {
             const valid = quoteIsFresh(quote, now);
             return (
               <button key={quote.id} type="button" className={`swapRoute ${activeQuote?.id === quote.id ? "selected" : ""}`} disabled={!valid} onClick={() => onChoose(quote)}>
-                <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (quote.state === "loading" ? "Fetching quote…" : valid ? "Quoted route" : "Unavailable")}</small></span>
+                <span><strong>{quote.routeLabel}</strong><small>{quote.reason || (quote.state === "loading" ? "Fetching quote…" : valid ? "Quoted route" : "Unavailable")}</small>{quote.requestId ? <small>Reference: {quote.requestId}</small> : null}</span>
                 <span className={`swapRouteState ${valid ? "ready" : ""}`}>{valid ? activeQuote?.id === quote.id ? "Selected" : "Use route" : quote.state === "loading" ? <ActivitySpinner size={13} /> : quote.state}</span>
               </button>
             );

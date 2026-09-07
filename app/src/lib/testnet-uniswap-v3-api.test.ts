@@ -1,5 +1,6 @@
 import { encodeV3Path } from "./v3-route";
-import { type BasketPlannerRequest } from "./basket-planner";
+import { robinhoodTestnetAddresses } from "./deployment";
+import { sameAddress, type BasketPlannerRequest } from "./basket-planner";
 import { decodeFunctionData, maxUint256, type Address, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -23,6 +24,7 @@ const TEST_DEPLOYMENT = {
   factory: "0x00000000000000000000000000000000000000d1",
   entryRouter: "0x00000000000000000000000000000000000000d2",
   uniswapV3Adapter: "0x00000000000000000000000000000000000000d3",
+  uniswapV4Adapter: "0x00000000000000000000000000000000000000d4",
   nativeBasketReady: true,
 } as const;
 
@@ -116,11 +118,83 @@ function parseResponse(response: unknown, request: BasketPlannerRequest) {
     now: NOW,
     entryRouter: TEST_DEPLOYMENT.entryRouter,
     adapter: TEST_DEPLOYMENT.uniswapV3Adapter,
+    v4Adapter: TEST_DEPLOYMENT.uniswapV4Adapter,
+    weth: weth.address,
     swapRouter02: testnetVenue.swapRouter02,
   });
 }
 
 describe("Uniswap V3 testnet quote planner", () => {
+  it("identifies unsupported constituents instead of hiding them behind a generic route failure", async () => {
+    const client = routingClient({ vaultAssets: async () => [OTF_B] });
+    const request = plannerRequest(asset(usdg), otf(OTF_A), "basket");
+    const result = await quoteTestnetSwap(request, dependencies(client));
+    expect(result.body).toMatchObject({ code: "UNSUPPORTED_CONSTITUENT", requestId: expect.any(String) });
+    expect(parseResponse(result.body, request).failureCode).toBe("UNSUPPORTED_CONSTITUENT");
+    expect(client.quoteExactOutput).not.toHaveBeenCalled();
+  });
+
+  it("identifies a missing OTF V4 adapter", async () => {
+    const client = routingClient({ vaultAssets: async () => [robinhoodTestnetAddresses.otfToken!], previewMint: async (_vault, shares) => [shares] });
+    const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), {
+      ...dependencies(client), deployment: { ...TEST_DEPLOYMENT, uniswapV4Adapter: undefined },
+    });
+    expect(result.body).toMatchObject({ code: "ROUTE_NOT_CONFIGURED" });
+  });
+  function otfConstituentClient() {
+    return routingClient({
+      vaultAssets: vi.fn(async () => [tsla.address, robinhoodTestnetAddresses.otfToken!]),
+      verifyOtfBindings: vi.fn(async () => {}),
+      quoteOtf: vi.fn(async (type, _buy, amount) => type === "EXACT_OUTPUT" ? (amount + 999n) / 1000n : amount * 1000n),
+    });
+  }
+
+  it.each([asset(usdg), asset(weth), { ...asset(weth), kind: "native" as const }])("mints an OTF-containing basket using the canonical V4 leg from $kind $address", async (input) => {
+    const client = otfConstituentClient();
+    const request = plannerRequest(input, otf(OTF_A), "basket");
+    const result = await quoteTestnetSwap(request, dependencies(client));
+    expect(result.status).toBe(200);
+    const execution = parseResponse(result.body, request).execution;
+    expect(execution?.kind).toBe("basket-router");
+    if (execution?.kind !== "basket-router") throw new Error("Missing basket execution");
+    if (execution.call.method !== "mintFromToken" && execution.call.method !== "mintFromNative") throw new Error("Missing mint execution");
+    const legs = execution.call.args[1];
+    expect(legs.some((leg) => sameAddress(leg.adapter, TEST_DEPLOYMENT.uniswapV4Adapter) && sameAddress(leg.tokenIn, weth.address) && sameAddress(leg.tokenOut, robinhoodTestnetAddresses.otfToken!))).toBe(true);
+    expect(client.verifyOtfBindings).toHaveBeenCalledWith(TEST_DEPLOYMENT.entryRouter, TEST_DEPLOYMENT.uniswapV4Adapter);
+    expect(client.quoteOtf).toHaveBeenCalledWith("EXACT_OUTPUT", true, expect.any(BigInt));
+    expect(client.quoteOtf).toHaveBeenCalledWith("EXACT_INPUT", true, expect.any(BigInt));
+  });
+
+  it("redeems an OTF-containing basket without sweeping other WETH balances", async () => {
+    const request = plannerRequest(otf(OTF_A), asset(usdg), "basket");
+    const result = await quoteTestnetSwap(request, dependencies(otfConstituentClient()));
+    expect(result.status).toBe(200);
+    const execution = parseResponse(result.body, request).execution;
+    if (execution?.kind !== "basket-router") throw new Error("Missing basket execution");
+    if (execution.call.method !== "redeemToToken") throw new Error("Missing redeem execution");
+    const legs = execution.call.args[2];
+    const index = legs.findIndex((leg) => sameAddress(leg.adapter, TEST_DEPLOYMENT.uniswapV4Adapter));
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(legs[index + 1]!.amountIn).toBe(legs[index]!.minAmountOut);
+    expect(legs[index + 1]!.amountIn).not.toBe(maxUint256);
+  });
+
+  it("rejects OTF routes when the padded exact input crosses the hook price bounds", async () => {
+    const client = otfConstituentClient();
+    client.quoteOtf = vi.fn(async (type, _buy, amount) => {
+      if (type === "EXACT_INPUT") throw new Error("BootstrapPriceOutOfBounds");
+      return amount;
+    });
+    expect((await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client))).status).toBe(503);
+  });
+
+  it("rejects OTF routes when the V4 adapter is not approved", async () => {
+    const client = otfConstituentClient();
+    client.verifyOtfBindings = vi.fn(async () => { throw new Error("Adapter is not approved"); });
+    expect((await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client))).status).toBe(503);
+    expect(client.quoteOtf).not.toHaveBeenCalled();
+  });
+
   it("returns a validated direct exact-input plan for an OTF pool", async () => {
     const request = plannerRequest();
     const result = await quoteTestnetSwap(request, dependencies());
@@ -183,7 +257,7 @@ describe("Uniswap V3 testnet quote planner", () => {
   it("rejects disallowed pairs without touching the routing client", async () => {
     const client = routingClient();
     const result = await quoteTestnetSwap(plannerRequest(asset(tsla), asset(amzn)), dependencies(client));
-    expect(result.body).toMatchObject({ state: "unavailable", reason: "This pair is outside the configured testnet asset policy." });
+    expect(result.body).toMatchObject({ state: "unavailable", code: "ROUTE_NOT_CONFIGURED" });
     expect(client.poolFor).not.toHaveBeenCalled();
     expect((await quoteTestnetSwap(plannerRequest(otf(OTF_A), asset(tsla), "basket"), dependencies(client))).status).toBe(503);
   });
@@ -191,14 +265,14 @@ describe("Uniswap V3 testnet quote planner", () => {
   it("rejects token decimals that do not match the catalog", async () => {
     const client = routingClient();
     const result = await quoteTestnetSwap(plannerRequest({ ...asset(usdg), decimals: 18 }, otf(OTF_A)), dependencies(client));
-    expect(result.body).toMatchObject({ state: "unavailable", reason: "The selected asset metadata does not match the testnet catalog." });
+    expect(result.body).toMatchObject({ state: "unavailable", code: "INVALID_ASSET_METADATA" });
     expect(client.poolFor).not.toHaveBeenCalled();
   });
 
   it("refuses a constituent pool that does not match the Uniswap V3 factory", async () => {
     const client = routingClient({ poolFor: vi.fn(async () => OTF_POOL) });
     const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), dependencies(client));
-    expect(result.body).toMatchObject({ state: "unavailable", reason: "No executable basket route is currently available." });
+    expect(result.body).toMatchObject({ state: "unavailable", code: "POOL_VALIDATION_FAILED" });
   });
 
   it("rejects a stale adapter before requesting a quote", async () => {
@@ -311,5 +385,6 @@ describe("Uniswap V3 testnet quote planner", () => {
       dependencies(routingClient({ poolLiquidity: vi.fn(async () => 0n) })),
     );
     expect(result.status).toBe(503);
+    expect(result.body).toMatchObject({ code: "NO_LIQUIDITY" });
   });
 });

@@ -1,5 +1,6 @@
 import { zeroAddress, type Address } from "viem";
 import { QUOTE_MAX_AGE_MS, type AdapterSwapLeg } from "./swap-model";
+import { quoteStep } from "./quote-errors";
 
 export type BasketPlannerRequest = {
   route: "direct" | "basket";
@@ -64,7 +65,7 @@ export async function planMint(vault: Address, input: BasketAsset, amountIn: big
     validateAmounts(required, assets);
     const quotes = await Promise.all(assets.map((asset, index) => sameAddress(input.address, asset)
       ? Promise.resolve({ amountIn: required[index]!, amountOut: required[index]!, legs: [] })
-      : routes.quote("EXACT_OUTPUT", input.address, asset, required[index]!)));
+      : quoteStep("QUOTE_FAILED", () => routes.quote("EXACT_OUTPUT", input.address, asset, required[index]!), { tokenIn: input.address, tokenOut: asset })));
     return { spent: quotes.reduce((sum, quote) => sum + quote.amountIn, 0n), legs: quotes.flatMap((quote) => quote.legs) };
   };
   const unit = await quoteAmounts(ONE_OTF);
@@ -86,7 +87,7 @@ export async function liquidationPlan(vault: Address, shares: bigint, owner: Add
   const target = intermediate ?? output.address;
   const quotes = await Promise.all(assets.map((asset, index) => sameAddress(asset, target)
     ? Promise.resolve({ amountIn: amounts[index]!, amountOut: amounts[index]!, legs: [] })
-    : routes.quote("EXACT_INPUT", asset, target, amounts[index]!)));
+    : quoteStep("QUOTE_FAILED", () => routes.quote("EXACT_INPUT", asset, target, amounts[index]!), { tokenIn: asset, tokenOut: target })));
   let expectedOutput = quotes.reduce((sum, quote) => sum + quote.amountOut, 0n);
   let minimumOutput = applySlippageDown(expectedOutput, slippageBps);
   const legs = quotes.flatMap((quote) => quote.legs);

@@ -160,7 +160,7 @@ describe("same-origin Uniswap quote API", () => {
       now: () => NOW,
       providerRequest: async () => { throw new Error("private upstream detail"); },
     });
-    expect(result).toEqual({ status: 503, body: { state: "unavailable", route: "direct", reason: "The Uniswap direct-pool quote is temporarily unavailable." } });
+    expect(result).toMatchObject({ status: 503, body: { state: "unavailable", route: "direct", code: "PROVIDER_UNAVAILABLE", requestId: expect.any(String) } });
   });
 
   it.each([

@@ -16,6 +16,7 @@ import {
 } from "./deployment";
 import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
 import { parseV4Path, v4BoundaryToken } from "./v4-route";
+import { quoteFailureReasons, type QuoteFailureCode } from "./quote-errors";
 
 export type SwapAssetKind = "native" | "erc20" | "otf";
 
@@ -174,6 +175,8 @@ export type SwapQuote = {
   hops?: readonly SwapRouteHop[];
   residualRefunds?: readonly ResidualRefund[];
   reason?: string;
+  failureCode?: QuoteFailureCode;
+  requestId?: string;
   execution?: SwapExecutionPlan;
   caller?: Address;
   chainId?: number;
@@ -932,9 +935,13 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
   if (!assetHasExecutableMetadata(context.request.input) || !assetHasExecutableMetadata(context.request.output)) throw new Error("Quote assets require resolved metadata and OTF factory identity.");
   const response = object(value, "quote response");
   if (response.state === "unavailable") {
-    exactKeys(response, ["state", "route", "reason"], "quote response");
+    exactKeys(response, ["state", "route", "reason", "code", "requestId"], "quote response");
     if (string(response.route, "route") !== context.route) throw new Error("Unavailable quote has the wrong route.");
-    return unavailableQuote(context.route, context.request, string(response.reason, "reason"));
+    const failureCode = response.code === undefined ? undefined : string(response.code, "code");
+    if (failureCode !== undefined && !Object.hasOwn(quoteFailureReasons, failureCode)) throw new Error("Unknown quote failure code.");
+    const requestId = response.requestId === undefined ? undefined : string(response.requestId, "requestId");
+    if (requestId !== undefined && !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(requestId)) throw new Error("Invalid quote request reference.");
+    return { ...unavailableQuote(context.route, context.request, string(response.reason, "reason")), failureCode: failureCode as QuoteFailureCode | undefined, requestId };
   }
   exactKeys(response, [
     "state", "id", "route", "chainId", "caller", "quotedAtMs", "expiresAtMs", "inputAmountRaw",
@@ -1210,6 +1217,8 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       entryRouter: robinhoodTestnetAddresses.entryRouter,
       adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
       swapRouter02: testnetVenue.swapRouter02,
+      v4Adapter: robinhoodTestnetAddresses.uniswapV4Adapter,
+      weth: robinhoodTestnetAddresses.weth,
     });
   }
   return unavailableQuoteService;
