@@ -155,10 +155,10 @@ abstract contract MainnetRehearsalBase is Test {
             )
         );
         v4Adapter = UniswapV4Adapter(
-            deployCode(
-                "UniswapV4Adapter.sol:UniswapV4Adapter",
-                abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
-            )
+            payable(deployCode(
+                    "UniswapV4Adapter.sol:UniswapV4Adapter",
+                    abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
+                ))
         );
         vesting = TeamMarketCapVesting(
             deployCode(

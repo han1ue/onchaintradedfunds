@@ -13,7 +13,9 @@ import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract MockUniswapV4PoolManager { }
+contract MockUniswapV4PoolManager {
+    receive() external payable { }
+}
 
 contract MockPermit2 is IPermit2AllowanceTransfer {
     using SafeERC20 for IERC20;
@@ -90,6 +92,9 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
     IPermit2AllowanceTransfer public immutable permit2;
     uint256 public outputMultiplier = 1;
     bool public skipInputPull;
+    bool public returnNativeInput;
+    bool public skipOutput;
+    uint256 public lastNativeValue;
     address public lastIntermediateCurrency;
     uint24 public lastFee;
     int24 public lastTickSpacing;
@@ -111,6 +116,14 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
 
     function setSkipInputPull(bool skip) external {
         skipInputPull = skip;
+    }
+
+    function setReturnNativeInput(bool enabled) external {
+        returnNativeInput = enabled;
+    }
+
+    function setSkipOutput(bool enabled) external {
+        skipOutput = enabled;
     }
 
     function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)
@@ -145,11 +158,29 @@ contract MockUniswapUniversalRouter is IUniswapUniversalRouter {
             "TAKE"
         );
 
-        if (!skipInputPull) {
+        lastNativeValue = msg.value;
+        if (settleToken == address(0)) {
+            require(msg.value == params.amountIn, "NATIVE_INPUT");
+            if (!skipInputPull) {
+                (bool paid,) = payable(poolManager).call{ value: msg.value }("");
+                require(paid, "NATIVE_SETTLE");
+            }
+            if (returnNativeInput) {
+                (bool refunded,) = msg.sender.call{ value: msg.value }("");
+                require(refunded, "NATIVE_REFUND");
+            }
+        } else if (!skipInputPull) {
+            require(msg.value == 0, "ERC20_VALUE");
             permit2.transferFrom(msg.sender, address(this), params.amountIn, settleToken);
         }
         uint256 amountOut = uint256(params.amountIn) * outputMultiplier;
         require(amountOut >= params.amountOutMinimum, "SLIPPAGE");
-        IERC20(takeToken).safeTransfer(msg.sender, amountOut);
+        if (skipOutput) return;
+        if (takeToken == address(0)) {
+            (bool sent,) = msg.sender.call{ value: amountOut }("");
+            require(sent, "NATIVE_OUTPUT");
+        } else {
+            IERC20(takeToken).safeTransfer(msg.sender, amountOut);
+        }
     }
 }

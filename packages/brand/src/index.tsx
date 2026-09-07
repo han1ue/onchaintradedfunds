@@ -25,7 +25,7 @@ export function OtfTokenIcon({ className, size = 32, ticker = "OTF" }: OtfTokenI
 
   return <svg className={className} width={size} height={size} viewBox="0 0 256 256" aria-hidden="true" focusable="false">
     <rect x="9" y="9" width="238" height="238" fill="#090909" stroke="#ccff00" strokeWidth="16" />
-    {lines.map((line, index) => <text key={index} x="128" y={lines.length === 1 ? 156 : index === 0 ? 118 : 184} fill="#ccff00" fontFamily="Instrument Sans, Arial, sans-serif" fontSize={lines.length === 1 ? tickerFontSize(line) : 60} fontWeight="700" letterSpacing="-2" textAnchor="middle" textLength={line.length >= 4 ? 172 : undefined} lengthAdjust="spacingAndGlyphs">{line}</text>)}
+    {lines.map((line, index) => <text key={index} x="128" y={lines.length === 1 ? line.length <= 3 ? 156 : line.length === 4 ? 149.5 : 145 : index === 0 ? 116.5 : 182.5} fill="#ccff00" fontFamily="Instrument Sans, Arial, sans-serif" fontSize={lines.length === 1 ? tickerFontSize(line) : 60} fontWeight="700" letterSpacing="-2" textAnchor="middle" textLength={line.length >= 4 ? 172 : undefined} lengthAdjust="spacingAndGlyphs">{line}</text>)}
   </svg>;
 }
 

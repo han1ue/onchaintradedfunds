@@ -34,6 +34,7 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
     const routes = uniswapBasketRoutes({
       chainId: request.chainId, router: deployment.entryRouter, adapter: deployment.uniswapV3Adapter,
       v4Adapter: deployment.uniswapV4Adapter,
+      weth: deployment.weth,
       reservedTokens: [...vaultAssets.values()].flat(),
       slippageBps: request.slippageBps,
       forbiddenTokens: [request.input, request.output].filter((asset) => asset.kind === "otf").map((asset) => asset.address),
@@ -45,6 +46,7 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
       route: "basket", chainId: request.chainId, now,
       entryRouter: deployment.entryRouter, adapter: deployment.uniswapV3Adapter,
       v4Adapter: deployment.uniswapV4Adapter,
+      weth: deployment.weth,
       request: {
         ...request, requestedAt: request.requestedAtMs, inputAmount: formatUnits(request.inputAmountRaw, request.input.decimals),
         input: { ...request.input, name: "Input", symbol: "IN", metadataResolved: true },

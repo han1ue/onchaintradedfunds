@@ -49,7 +49,8 @@ library OTFMetadata {
         string memory text;
         if (label.length <= 5) {
             string memory fontSize = label.length <= 3 ? "76" : label.length == 4 ? "60" : "48";
-            text = _text(string(label), "156", fontSize);
+            string memory baseline = label.length <= 3 ? "156" : label.length == 4 ? "149.5" : "145";
+            text = _text(string(label), baseline, fontSize);
         } else {
             uint256 splitAt = (label.length + 1) / 2;
             bytes memory first = new bytes(splitAt);
@@ -59,7 +60,7 @@ library OTFMetadata {
                 else second[i - splitAt] = label[i];
             }
             text = string.concat(
-                _text(string(first), "118", "60"), _text(string(second), "184", "60")
+                _text(string(first), "116.5", "60"), _text(string(second), "182.5", "60")
             );
         }
         return string.concat(

@@ -15,7 +15,7 @@ import {
   robinhoodTestnetLiquidity,
 } from "./deployment";
 import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
-import { parseV4Path } from "./v4-route";
+import { parseV4Path, v4BoundaryToken } from "./v4-route";
 
 export type SwapAssetKind = "native" | "erc20" | "otf";
 
@@ -468,6 +468,7 @@ type TypedQuoteParseContext = {
   entryRouter?: Address;
   adapter?: Address;
   v4Adapter?: Address;
+  weth?: Address;
   permit2?: Address;
   universalRouter?: Address;
   swapRouter02?: Address;
@@ -749,7 +750,7 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
   return { ...plan, approval, transaction };
 }
 
-function parseLeg(value: unknown, index: number, adapter: Address, v4Adapter?: Address): AdapterSwapLeg {
+function parseLeg(value: unknown, index: number, adapter: Address, v4Adapter?: Address, weth?: Address): AdapterSwapLeg {
   const leg = object(value, `legs[${index}]`);
   exactKeys(leg, ["adapter", "tokenIn", "tokenOut", "amountIn", "minAmountOut", "data"], `legs[${index}]`);
   const parsedAdapter = address(leg.adapter, `legs[${index}].adapter`);
@@ -761,8 +762,14 @@ function parseLeg(value: unknown, index: number, adapter: Address, v4Adapter?: A
   const minAmountOut = uint(leg.minAmountOut, `legs[${index}].minAmountOut`, false);
   const data = hex(leg.data, `legs[${index}].data`);
   if (isV4 && ((amountIn !== maxUint256 && amountIn > (1n << 128n) - 1n) || minAmountOut > (1n << 128n) - 1n)) throw new Error("V4 amount exceeds adapter limits.");
-  const hops = isV4 ? parseV4Path(data, tokenIn) : parseV3Path(data);
-  if (!sameAddress(hops[0]!.tokenIn, tokenIn) || !sameAddress(hops.at(-1)!.tokenOut, tokenOut)) {
+  const hops = isV4 ? parseV4Path(data) : parseV3Path(data);
+  const boundary = (currency: Address) => {
+    if (!isV4 || currency !== zeroAddress) return currency;
+    if (!weth || weth === zeroAddress) throw new Error("Native V4 routing requires canonical WETH.");
+    return v4BoundaryToken(currency, weth);
+  };
+  if (tokenIn === zeroAddress || tokenOut === zeroAddress || sameAddress(tokenIn, tokenOut)
+    || !sameAddress(boundary(hops[0]!.tokenIn), tokenIn) || !sameAddress(boundary(hops.at(-1)!.tokenOut), tokenOut)) {
     throw new Error("Adapter data endpoints do not match the leg.");
   }
   return { adapter: parsedAdapter, tokenIn, tokenOut, amountIn, minAmountOut, data, hops };
@@ -805,7 +812,7 @@ function parseBasketCall(
   const request = object(execution.request, "execution.request");
   const legsValue = array(execution.legs, "execution.legs");
   if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
-  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, v4Adapter));
+  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, v4Adapter, context.weth));
   const funding = parseFunding(execution.funding);
   assertLegFunding(legs, funding);
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -1062,6 +1069,7 @@ export type TypedQuoteServiceConfig = {
   entryRouter?: Address;
   adapter?: Address;
   v4Adapter?: Address;
+  weth?: Address;
   permit2?: Address;
   universalRouter?: Address;
   swapRouter02?: Address;
@@ -1076,6 +1084,7 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     entryRouter: config.entryRouter,
     adapter: config.adapter,
     v4Adapter: config.v4Adapter,
+    weth: config.weth,
     permit2: config.permit2,
     universalRouter: config.universalRouter,
     swapRouter02: config.swapRouter02,
@@ -1191,6 +1200,7 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       entryRouter: robinhoodMainnetAddresses.entryRouter,
       adapter: robinhoodMainnetAddresses.uniswapV3Adapter,
       v4Adapter: robinhoodMainnetAddresses.uniswapV4Adapter,
+      weth: robinhoodMainnetAddresses.weth,
     });
   }
   if (chainId === 46630) {

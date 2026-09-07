@@ -19,15 +19,17 @@ contract OTFMetadataTest is Test {
         assertTrue(_contains(svg, 'font-size="76"'));
         assertTrue(_contains(svg, ">AI</text>"));
         assertFalse(_contains(svg, "textLength="));
-        assertFalse(_contains(svg, 'y="118"'));
+        assertFalse(_contains(svg, 'y="116.5"'));
     }
 
     function testFourAndFiveLettersShareTheSameSideSpacing() public view {
         assertTrue(_contains(_svg(renderer.share("TECH")), 'textLength="172"'));
+        assertTrue(_contains(_svg(renderer.share("TECH")), 'y="149.5"'));
         string memory svg = _svg(renderer.share("MCAP5"));
         assertTrue(_contains(svg, 'textLength="172"'));
+        assertTrue(_contains(svg, 'y="145"'));
         assertTrue(_contains(svg, ">MCAP5</text>"));
-        assertFalse(_contains(svg, 'y="118"'));
+        assertFalse(_contains(svg, 'y="116.5"'));
     }
 
     function testLongTickersUseBalancedRows() public view {
@@ -36,8 +38,8 @@ contract OTFMetadataTest is Test {
         string[3] memory second = ["DEF", "EFG", "EFGH"];
         for (uint256 i = 0; i < tickers.length; i++) {
             string memory svg = _svg(renderer.share(tickers[i]));
-            assertTrue(_contains(svg, 'y="118"'));
-            assertTrue(_contains(svg, 'y="184"'));
+            assertTrue(_contains(svg, 'y="116.5"'));
+            assertTrue(_contains(svg, 'y="182.5"'));
             assertTrue(_contains(svg, string.concat(">", first[i], "</text>")));
             assertTrue(_contains(svg, string.concat(">", second[i], "</text>")));
             assertFalse(_contains(svg, 'y="156"'));
@@ -86,7 +88,7 @@ contract OTFMetadataTest is Test {
             vm.parseJsonString(_decode(uri, "data:application/json;base64,"), ".symbol"), "OTF"
         );
         assertTrue(_contains(_svg(uri), ">OTF</text>"));
-        assertFalse(_contains(_svg(uri), 'y="118"'));
+        assertFalse(_contains(_svg(uri), 'y="116.5"'));
     }
 
     function _svg(string memory uri) private view returns (string memory) {

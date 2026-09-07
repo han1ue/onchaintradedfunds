@@ -317,10 +317,10 @@ contract MainnetRoutingTest is Test {
         );
         factory.configureEntryExitRouter(address(router));
         v4Adapter = UniswapV4Adapter(
-            deployCode(
-                "UniswapV4Adapter.sol:UniswapV4Adapter",
-                abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
-            )
+            payable(deployCode(
+                    "UniswapV4Adapter.sol:UniswapV4Adapter",
+                    abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
+                ))
         );
         v3Adapter = UniswapV3Adapter(
             deployCode(
@@ -412,7 +412,7 @@ contract MainnetRoutingTest is Test {
             tokenOut,
             amount,
             1,
-            v3 ? abi.encodePacked(tokenIn, uint24(3000), tokenOut) : abi.encode(path)
+            v3 ? abi.encodePacked(tokenIn, uint24(3000), tokenOut) : abi.encode(tokenIn, path)
         );
     }
 

@@ -60,13 +60,38 @@ function deps(routingClient = client(), quoteProvider = provider()) {
 }
 function parse(body: unknown, req: BasketPlannerRequest) {
   return parseTypedQuoteResponse(body, {
-    route: "basket", chainId: 4663, now: NOW, entryRouter: DEPLOYMENT.entryRouter, adapter: DEPLOYMENT.uniswapV3Adapter, v4Adapter: DEPLOYMENT.uniswapV4Adapter,
+    route: "basket", chainId: 4663, now: NOW, weth: DEPLOYMENT.weth, entryRouter: DEPLOYMENT.entryRouter, adapter: DEPLOYMENT.uniswapV3Adapter, v4Adapter: DEPLOYMENT.uniswapV4Adapter,
     request: { ...req, inputAmount: "1", requestedAt: req.requestedAtMs,
       input: { ...req.input, name: "IN", symbol: "IN", metadataResolved: true }, output: { ...req.output, name: "OUT", symbol: "OUT", metadataResolved: true } },
   });
 }
 
 describe("mainnet basket planner", () => {
+  it.each([false, true])("uses native V4 pools behind WETH router endpoints (burn=%s)", async (burn) => {
+    const base = provider();
+    const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
+      if (body.tokenIn !== zeroAddress && body.tokenOut !== zeroAddress) throw new Error("Only native liquidity");
+      const response = await base(body);
+      response.quote.route = response.quote.route.map((path) => path.map((pool) => ({ ...pool, type: "v4-pool", tickSpacing: 60, hooks: zeroAddress })));
+      return response;
+    });
+    const req = request(burn);
+    if (burn) req.output = token(DEPLOYMENT.weth, "native"); else req.input = token(DEPLOYMENT.weth, "native");
+    const dependencies = { ...deps(), requestQuote };
+    const result = await quoteMainnetBasket(req, dependencies);
+    expect(result.status).toBe(200);
+    const execution = parse(result.body, req).execution as BasketRouterExecution;
+    const legs = execution.call.method === "mintFromNative" ? execution.call.args[1] : execution.call.args[2];
+    for (const leg of legs!) {
+      expect(burn ? leg.tokenOut : leg.tokenIn).toBe(DEPLOYMENT.weth);
+      expect(burn ? leg.hops.at(-1)!.tokenOut : leg.hops[0]!.tokenIn).toBe(zeroAddress);
+    }
+    expect(dependencies.client.simulate).toHaveBeenCalledWith(execution);
+    const data = structuredClone(result.body) as unknown as { execution: { legs: { tokenIn: Address; tokenOut: Address }[] } };
+    if (burn) data.execution.legs[0]!.tokenOut = INPUT; else data.execution.legs[0]!.tokenIn = INPUT;
+    expect(() => parse(data, req)).toThrow(/endpoints/);
+  });
+
   it.each([false, true])("supports splits across V3 and V4 and preserves returned hook data (burn=%s)", async (burn) => {
     const base = provider(true);
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
@@ -85,7 +110,7 @@ describe("mainnet basket planner", () => {
     const legs = execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2];
     for (const index of [1, 3]) {
       const leg = legs![index]!;
-      expect(leg.data).toBe(encodeV4Path([{ intermediateCurrency: leg.tokenOut, fee: 3000, tickSpacing: 60, hooks: addr(40), hookData: "0x1234" }]));
+      expect(leg.data).toBe(encodeV4Path(leg.tokenIn, [{ intermediateCurrency: leg.tokenOut, fee: 3000, tickSpacing: 60, hooks: addr(40), hookData: "0x1234" }]));
       if (burn) expect(leg.amountIn).toBe(maxUint256);
     }
     expect(dependencies.client.simulate).toHaveBeenCalledWith(execution);
@@ -109,7 +134,7 @@ describe("mainnet basket planner", () => {
     const legs = execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2];
     for (const leg of legs!) {
       expect(leg.adapter.toLowerCase()).toBe(DEPLOYMENT.uniswapV4Adapter.toLowerCase());
-      expect(parseV4Path(leg.data, leg.tokenIn)).toEqual(leg.hops);
+      expect(parseV4Path(leg.data)).toEqual(leg.hops);
     }
     expect(dependencies.client.authenticateV4Pool).toHaveBeenCalled();
     expect(dependencies.client.authenticatePool).not.toHaveBeenCalled();

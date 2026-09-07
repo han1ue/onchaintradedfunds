@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { SwapLeg } from "../src/OTFEntryExitRouter.sol";
+import { SwapLeg, BasketMintRequest, BasketRedeemRequest } from "../src/OTFEntryExitRouter.sol";
 import { UniswapV4Adapter } from "../src/UniswapV4Adapter.sol";
 import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -78,7 +78,228 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
     function testOnlyBoundEntryRouterCanExecute() public {
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(UniswapV4Adapter.UnauthorizedCaller.selector, ALICE));
-        v4Adapter.executeSwap(address(input), address(assetC), ONE, ONE, _path(address(assetC)));
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _v4Path(address(input), address(assetC))
+        );
+    }
+
+    function testFuzzNativeInputUnwrapsOnlyExactWeth(uint128 seed) public {
+        uint256 amount = bound(seed, 1, 100 ether);
+        _createV4Pool(address(0), address(assetC));
+        weth.mint(address(v4Adapter), amount + 7);
+        vm.deal(address(v4Adapter), 11);
+        vm.deal(address(universalRouter), 13);
+        assetC.mint(address(universalRouter), amount);
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(weth), address(assetC), amount, amount, _v4Path(address(0), address(assetC))
+            ),
+            amount
+        );
+        assertEq(weth.balanceOf(address(v4Adapter)), 7);
+        assertEq(address(v4Adapter).balance, 11);
+        assertEq(address(universalRouter).balance, 13);
+        assertEq(universalRouter.lastNativeValue(), amount);
+        assertEq(weth.allowance(address(v4Adapter), address(permit2)), 0);
+        assertEq(assetC.balanceOf(address(router)), amount);
+    }
+
+    function testFuzzNativeOutputWrapsOnlyNewEth(uint128 seed) public {
+        uint256 amount = bound(seed, 1, 100 ether);
+        _createV4Pool(address(input), address(0));
+        input.mint(address(v4Adapter), amount + 7);
+        weth.mint(address(v4Adapter), 9);
+        vm.deal(address(v4Adapter), 11);
+        vm.deal(address(universalRouter), amount + 13);
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(input), address(weth), amount, amount, _v4Path(address(input), address(0))
+            ),
+            amount
+        );
+        assertEq(input.balanceOf(address(v4Adapter)), 7);
+        assertEq(weth.balanceOf(address(v4Adapter)), 9);
+        assertEq(address(v4Adapter).balance, 11);
+        assertEq(address(universalRouter).balance, 13);
+        assertEq(weth.balanceOf(address(router)), amount);
+        assertEq(universalRouter.lastNativeValue(), 0);
+        assertEq(input.allowance(address(v4Adapter), address(permit2)), 0);
+    }
+
+    function testNativeIntermediateDoesNotConvertBoundaryTokens() public {
+        _createV4Pool(address(input), address(0));
+        _createV4Pool(address(0), address(assetC));
+        input.mint(address(v4Adapter), ONE);
+        assetC.mint(address(universalRouter), ONE);
+        PathKey[] memory path = new PathKey[](2);
+        path[0] = _hop(address(0));
+        path[1] = _hop(address(assetC));
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(input), address(assetC), ONE, ONE, abi.encode(address(input), path)
+            ),
+            ONE
+        );
+        assertEq(universalRouter.lastNativeValue(), 0);
+        assertEq(weth.balanceOf(address(v4Adapter)), 0);
+        assertEq(address(v4Adapter).balance, 0);
+    }
+
+    function testNativeEndpointsMustMapToCanonicalWeth() public {
+        _createV4Pool(address(0), address(assetC));
+        _createV4Pool(address(input), address(0));
+        vm.prank(address(router));
+        vm.expectRevert(UniswapV4Adapter.InvalidPath.selector);
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _v4Path(address(0), address(assetC))
+        );
+        vm.prank(address(router));
+        vm.expectRevert(UniswapV4Adapter.InvalidPath.selector);
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _v4Path(address(input), address(0))
+        );
+    }
+
+    function testWethPoolsDoNotWrapOrUnwrap() public {
+        _createV4Pool(address(weth), address(assetC));
+        weth.mint(address(v4Adapter), ONE);
+        assetC.mint(address(universalRouter), ONE);
+        // An attempted unwrap would fail: these mock WETH balances have no ETH backing.
+        vm.deal(address(weth), 0);
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(weth), address(assetC), ONE, ONE, _v4Path(address(weth), address(assetC))
+            ),
+            ONE
+        );
+        assertEq(universalRouter.lastNativeValue(), 0);
+        assertEq(weth.balanceOf(address(universalRouter)), ONE);
+        vm.prank(address(router));
+        assetC.transfer(address(v4Adapter), ONE);
+        vm.prank(address(router));
+        assertEq(
+            v4Adapter.executeSwap(
+                address(assetC), address(weth), ONE, ONE, _v4Path(address(assetC), address(weth))
+            ),
+            ONE
+        );
+        assertEq(weth.balanceOf(address(router)), ONE);
+        assertEq(address(weth).balance, 0);
+        assertEq(address(v4Adapter).balance, 0);
+    }
+
+    function testUnusedNativeInputRevertsAndRestoresWeth() public {
+        _createV4Pool(address(0), address(assetC));
+        weth.mint(address(v4Adapter), ONE);
+        assetC.mint(address(universalRouter), ONE);
+        universalRouter.setSkipInputPull(true);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV4Adapter.NativeBalanceMismatch.selector);
+        v4Adapter.executeSwap(
+            address(weth), address(assetC), ONE, ONE, _v4Path(address(0), address(assetC))
+        );
+        assertEq(weth.balanceOf(address(v4Adapter)), ONE);
+        assertEq(assetC.balanceOf(address(universalRouter)), ONE);
+        assertEq(address(v4Adapter).balance, 0);
+        assertEq(address(universalRouter).balance, 0);
+        universalRouter.setReturnNativeInput(true);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV4Adapter.NativeBalanceMismatch.selector);
+        v4Adapter.executeSwap(
+            address(weth), address(assetC), ONE, ONE, _v4Path(address(0), address(assetC))
+        );
+    }
+
+    function testMissingNativeOutputCannotSpendDonations() public {
+        _createV4Pool(address(input), address(0));
+        input.mint(address(v4Adapter), ONE);
+        vm.deal(address(v4Adapter), 5 * ONE);
+        weth.mint(address(v4Adapter), 7 * ONE);
+        universalRouter.setSkipOutput(true);
+        vm.prank(address(router));
+        vm.expectPartialRevert(UniswapV4Adapter.MinimumOutputNotMet.selector);
+        v4Adapter.executeSwap(
+            address(input), address(weth), ONE, ONE, _v4Path(address(input), address(0))
+        );
+        assertEq(address(v4Adapter).balance, 5 * ONE);
+        assertEq(weth.balanceOf(address(v4Adapter)), 7 * ONE);
+        assertEq(input.balanceOf(address(v4Adapter)), ONE);
+    }
+
+    function testRejectsUnsolicitedNativeTransfers() public {
+        vm.deal(ALICE, ONE);
+        vm.prank(ALICE);
+        (bool accepted,) = address(v4Adapter).call{ value: 1 }("");
+        assertFalse(accepted);
+        vm.deal(address(universalRouter), ONE);
+        vm.prank(address(universalRouter));
+        (accepted,) = address(v4Adapter).call{ value: 1 }("");
+        assertFalse(accepted);
+    }
+
+    function testNativeMintAndBurnThroughMixedV3V4Basket() public {
+        _createV4Pool(address(0), address(assetC));
+        _createPool(address(weth), address(assetD));
+        assetC.mint(address(universalRouter), ONE);
+        vm.deal(ALICE, 3 * ONE);
+        vm.deal(address(universalRouter), ONE);
+        SwapLeg[] memory legs = new SwapLeg[](2);
+        legs[0] = SwapLeg(
+            address(v4Adapter),
+            address(weth),
+            address(assetC),
+            ONE,
+            ONE,
+            _v4Path(address(0), address(assetC))
+        );
+        legs[1] = SwapLeg(
+            address(v3Adapter),
+            address(weth),
+            address(assetD),
+            ONE,
+            ONE,
+            _path(address(weth), address(assetD))
+        );
+        BasketMintRequest memory mintRequest = _mintRequest(3 * ONE, ONE);
+        mintRequest.inputToken = address(weth);
+        vm.prank(ALICE);
+        (uint256 shares,,, uint256 refund) =
+            router.mintFromNative{ value: 3 * ONE }(mintRequest, legs);
+        assertEq(shares, ONE);
+        assertEq(refund, ONE);
+        assertEq(ALICE.balance, ONE);
+        legs[0] = SwapLeg(
+            address(v4Adapter),
+            address(assetC),
+            address(weth),
+            type(uint256).max,
+            ONE,
+            _v4Path(address(assetC), address(0))
+        );
+        legs[1] = SwapLeg(
+            address(v3Adapter),
+            address(assetD),
+            address(weth),
+            type(uint256).max,
+            ONE,
+            _path(address(assetD), address(weth))
+        );
+        BasketRedeemRequest memory burnRequest = _redeemRequest(ONE, 2 * ONE);
+        burnRequest.vault = address(targetVault);
+        burnRequest.outputToken = address(weth);
+        vm.startPrank(ALICE);
+        targetVault.approve(address(router), ONE);
+        (uint256 output,,) = router.redeemToNative(burnRequest, _zeroMinimums(), legs);
+        vm.stopPrank();
+        assertEq(output, 2 * ONE);
+        assertEq(ALICE.balance, 3 * ONE);
+        _assertRouterClean();
+        assertEq(address(v4Adapter).balance, 0);
+        assertEq(weth.balanceOf(address(v4Adapter)), 0);
     }
 
     function testAuthenticatedThreeHopPathExecutesAndPreservesDonations() public {
@@ -95,8 +316,9 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         path[1] = _hop(address(assetB));
         path[2] = _hop(address(assetC));
         vm.prank(address(router));
-        uint256 amountOut =
-            v4Adapter.executeSwap(address(input), address(assetC), ONE, ONE, abi.encode(path));
+        uint256 amountOut = v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, abi.encode(address(input), path)
+        );
 
         assertEq(amountOut, ONE);
         assertEq(input.balanceOf(address(v4Adapter)), 5 * ONE);
@@ -145,12 +367,16 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         universalRouter.setSkipInputPull(true);
         vm.prank(address(router));
         vm.expectPartialRevert(UniswapV4Adapter.InputMismatch.selector);
-        v4Adapter.executeSwap(address(input), address(assetC), ONE, ONE, _path(address(assetC)));
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, _v4Path(address(input), address(assetC))
+        );
 
         universalRouter.setSkipInputPull(false);
         vm.prank(address(router));
         vm.expectRevert(bytes("SLIPPAGE"));
-        v4Adapter.executeSwap(address(input), address(assetC), ONE, 2 * ONE, _path(address(assetC)));
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, 2 * ONE, _v4Path(address(input), address(assetC))
+        );
     }
 
     function testV4AdapterIntegratesWithGenericBasketRouter() public {
@@ -199,7 +425,12 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         assetC.mint(address(v4Adapter), donation);
         SwapLeg[] memory legs = new SwapLeg[](2);
         legs[0] = SwapLeg(
-            address(v4Adapter), address(input), address(assetC), amount, amount, abi.encode(path)
+            address(v4Adapter),
+            address(input),
+            address(assetC),
+            amount,
+            amount,
+            abi.encode(address(input), path)
         );
         legs[1] = _v4Leg(
             address(input), address(assetD), allBalance ? type(uint256).max : amount, amount + 1
@@ -244,13 +475,17 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
             address(assetC),
             uint256(type(uint128).max) + 1,
             1,
-            _path(address(assetC))
+            _v4Path(address(input), address(assetC))
         );
         assertEq(input.balanceOf(address(v4Adapter)), amount + 7);
         vm.prank(address(router));
         assertEq(
             v4Adapter.executeSwap(
-                address(input), address(assetC), amount, amount, _path(address(assetC))
+                address(input),
+                address(assetC),
+                amount,
+                amount,
+                _v4Path(address(input), address(assetC))
             ),
             amount
         );
@@ -270,14 +505,14 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
             tokenOut: tokenOut,
             amountIn: amountIn,
             minAmountOut: minimum,
-            data: _path(tokenOut)
+            data: _v4Path(tokenIn, tokenOut)
         });
     }
 
-    function _path(address tokenOut) private pure returns (bytes memory) {
+    function _v4Path(address tokenIn, address tokenOut) private pure returns (bytes memory) {
         PathKey[] memory path = new PathKey[](1);
         path[0] = _hop(tokenOut);
-        return abi.encode(path);
+        return abi.encode(tokenIn, path);
     }
 
     function _hop(address tokenOut) private pure returns (PathKey memory) {
@@ -302,6 +537,8 @@ contract UniswapV4AdapterTest is AtomicRouterTestBase {
         input.mint(address(v4Adapter), ONE);
         vm.prank(address(router));
         vm.expectPartialRevert(selector);
-        v4Adapter.executeSwap(address(input), address(assetC), ONE, ONE, abi.encode(path));
+        v4Adapter.executeSwap(
+            address(input), address(assetC), ONE, ONE, abi.encode(address(input), path)
+        );
     }
 }

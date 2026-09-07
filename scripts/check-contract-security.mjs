@@ -280,7 +280,7 @@ assert(/MAX_HOPS\s*=\s*ProtocolConstants\.MAX_SWAP_HOPS/u.test(v4AdapterSource),
 assert(!/delegatecall/u.test(routerSource + adapterSource + v4AdapterSource), "router or adapter contains delegatecall execution");
 assert(!/function\s+execute\s*\(\s*address\s+target/iu.test(routerSource + adapterSource + v4AdapterSource), "router or adapter exposes an arbitrary target");
 assert(/recipient:\s*entryExitRouter/u.test(adapterSource), "V3 adapter recipient is not fixed to the entry router");
-assert(/abi\.decode\(data,\s*\(PathKey\[\]\)\)/u.test(v4AdapterSource), "V4 adapter data is not a canonical typed pool-key path");
+assert(/abi\.decode\(data,\s*\(address,\s*PathKey\[\]\)\)/u.test(v4AdapterSource), "V4 adapter data is not a canonical typed pool-key path");
 assert(/IV4Router\.ExactInputParams/u.test(v4AdapterSource), "V4 adapter does not use the canonical router tuple");
 assert(/SWAP_EXACT_IN_ACTION,\s*SETTLE_ALL_ACTION,\s*TAKE_ALL_ACTION/u.test(v4AdapterSource), "V4 adapter does not construct the fixed swap/settle/take action stream");
 

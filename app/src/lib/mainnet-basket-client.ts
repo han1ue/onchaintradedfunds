@@ -77,6 +77,7 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
         binding(deployment.uniswapV3Adapter, "uniswapV3Router", deployment.uniswapV3Router),
         binding(deployment.uniswapV3Router, "factory", deployment.uniswapV3Factory),
         binding(deployment.uniswapV4Adapter, "entryExitRouter", deployment.entryRouter),
+        binding(deployment.uniswapV4Adapter, "weth", deployment.weth),
         binding(deployment.uniswapV4Adapter, "uniswapV4PoolManager", deployment.uniswapV4PoolManager),
         binding(deployment.uniswapV4Adapter, "uniswapV4StateView", deployment.uniswapV4StateView),
         binding(deployment.uniswapV4Adapter, "uniswapUniversalRouter", deployment.universalRouter),

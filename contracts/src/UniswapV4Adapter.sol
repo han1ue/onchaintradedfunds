@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ITradeAdapter } from "./interfaces/ITradeAdapter.sol";
+import { IWETH } from "./interfaces/IWETH.sol";
 import {
     IPermit2AllowanceTransfer,
     IUniswapUniversalRouter,
@@ -16,8 +17,14 @@ import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 import { ProtocolConstants } from "./libraries/ProtocolConstants.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+interface IV4AdapterEntryRouter {
+    function weth() external view returns (address);
+}
+
 /// @notice Bounded Uniswap V4 exact-input adapter for one OTF entry/exit router.
-/// @dev `data` is exclusively `abi.encode(PathKey[])`. This contract constructs the
+/// @dev `data` is exclusively `abi.encode(address currencyIn, PathKey[])`. Native ETH
+///      uses address(0) in pool paths and canonical WETH at the entry router boundary.
+///      This contract constructs the
 ///      Universal Router command and action streams; callers cannot supply either one.
 contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -56,8 +63,11 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
         uint48 observedExpiration
     );
     error MinimumOutputNotMet(uint256 minimum, uint256 actual);
+    error UnexpectedNativeSender(address sender);
+    error NativeBalanceMismatch(address account, uint256 expected, uint256 observed);
 
     address public immutable entryExitRouter;
+    address public immutable weth;
     address public immutable uniswapV4PoolManager;
     address public immutable uniswapV4StateView;
     address public immutable uniswapUniversalRouter;
@@ -79,6 +89,9 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
             uniswapV4PoolManager_, uniswapV4StateView_, uniswapUniversalRouter_
         );
         entryExitRouter = entryExitRouter_;
+        address wrappedNative = IV4AdapterEntryRouter(entryExitRouter_).weth();
+        _requireContract(wrappedNative);
+        weth = wrappedNative;
         uniswapV4PoolManager = uniswapV4PoolManager_;
         uniswapV4StateView = uniswapV4StateView_;
         uniswapUniversalRouter = uniswapUniversalRouter_;
@@ -88,6 +101,15 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
     modifier onlyEntryExitRouter() {
         if (msg.sender != entryExitRouter) revert UnauthorizedCaller(msg.sender);
         _;
+    }
+
+    receive() external payable {
+        if (
+            !_reentrancyGuardEntered()
+                || (msg.sender != weth
+                    && msg.sender != uniswapV4PoolManager
+                    && msg.sender != uniswapUniversalRouter)
+        ) revert UnexpectedNativeSender(msg.sender);
     }
 
     function executeSwap(
@@ -105,8 +127,9 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
         ) {
             revert InvalidAmount();
         }
-        PathKey[] memory path = abi.decode(data, (PathKey[]));
-        _validatePath(path, tokenIn, tokenOut);
+        (address currencyIn, PathKey[] memory path) = abi.decode(data, (address, PathKey[]));
+        _validatePath(path, currencyIn, tokenIn, tokenOut);
+        address currencyOut = Currency.unwrap(path[path.length - 1].intermediateCurrency);
         _requirePoolManagerBindings(
             uniswapV4PoolManager, uniswapV4StateView, uniswapUniversalRouter
         );
@@ -115,22 +138,31 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
         if (inputBefore < amountIn) revert InputMismatch(amountIn, inputBefore);
         uint256 adapterOutputBefore = IERC20(tokenOut).balanceOf(address(this));
         uint256 routerOutputBefore = IERC20(tokenOut).balanceOf(entryExitRouter);
+        uint256 nativeBefore = address(this).balance;
 
-        _approveExact(tokenIn, permit2, amountIn);
-        // The allowance is consumed in this transaction and revoked immediately afterwards.
-        // forge-lint: disable-next-line(block-timestamp)
-        uint48 expiration = uint48(block.timestamp + 1);
-        // Safe because both values were bounded to uint128 above.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint160 permitAmount = uint160(amountIn);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint128 exactAmountIn = uint128(amountIn);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint128 exactMinimumOut = uint128(minAmountOut);
-        _approvePermit2(tokenIn, uniswapUniversalRouter, permitAmount, expiration);
-        _executeExactInput(path, tokenIn, tokenOut, exactAmountIn, exactMinimumOut);
-        _approvePermit2(tokenIn, uniswapUniversalRouter, 0, 0);
-        _approveExact(tokenIn, permit2, 0);
+        if (currencyIn == address(0)) {
+            uint256 universalNativeBefore = uniswapUniversalRouter.balance;
+            IWETH(weth).withdraw(amountIn);
+            _assertNativeBalance(address(this), nativeBefore + amountIn);
+            // Both amounts were bounded to uint128 before any external call.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint128 exactAmountIn = uint128(amountIn);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint128 exactMinimumOut = uint128(minAmountOut);
+            _executeExactInput(path, currencyIn, currencyOut, exactAmountIn, exactMinimumOut);
+            // Exact-input execution must not strand unused ETH or spend pre-existing ETH.
+            _assertNativeBalance(uniswapUniversalRouter, universalNativeBefore);
+        } else {
+            _executeTokenInput(path, currencyIn, currencyOut, amountIn, minAmountOut);
+        }
+        if (currencyOut == address(0)) {
+            uint256 nativeAfter = address(this).balance;
+            if (nativeAfter < nativeBefore) {
+                revert NativeBalanceMismatch(address(this), nativeBefore, nativeAfter);
+            }
+            IWETH(weth).deposit{ value: nativeAfter - nativeBefore }();
+        }
+        _assertNativeBalance(address(this), nativeBefore);
 
         uint256 inputAfter = IERC20(tokenIn).balanceOf(address(this));
         uint256 observedInput = inputBefore >= inputAfter ? inputBefore - inputAfter : 0;
@@ -150,6 +182,31 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
         uint256 observedOutput =
             routerOutputAfter >= routerOutputBefore ? routerOutputAfter - routerOutputBefore : 0;
         if (observedOutput != amountOut) revert OutputMismatch(amountOut, observedOutput);
+        _assertNativeBalance(address(this), nativeBefore);
+    }
+
+    function _executeTokenInput(
+        PathKey[] memory path,
+        address tokenIn,
+        address currencyOut,
+        uint256 amountIn,
+        uint256 minAmountOut
+    ) private {
+        _approveExact(tokenIn, permit2, amountIn);
+        // The allowance is consumed in this transaction and revoked immediately afterwards.
+        // forge-lint: disable-next-line(block-timestamp)
+        uint48 expiration = uint48(block.timestamp + 1);
+        // Safe because both values were bounded to uint128 above.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint160 permitAmount = uint160(amountIn);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint128 exactAmountIn = uint128(amountIn);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint128 exactMinimumOut = uint128(minAmountOut);
+        _approvePermit2(tokenIn, uniswapUniversalRouter, permitAmount, expiration);
+        _executeExactInput(path, tokenIn, currencyOut, exactAmountIn, exactMinimumOut);
+        _approvePermit2(tokenIn, uniswapUniversalRouter, 0, 0);
+        _approveExact(tokenIn, permit2, 0);
     }
 
     function _executeExactInput(
@@ -179,26 +236,33 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
         // The deadline is evaluated inside this same transaction.
         // forge-lint: disable-next-line(block-timestamp)
         IUniswapUniversalRouter(uniswapUniversalRouter)
-            .execute(abi.encodePacked(V4_SWAP_COMMAND), commandInputs, block.timestamp);
+        .execute{ value: tokenIn == address(0) ? amountIn : 0 }(
+            abi.encodePacked(V4_SWAP_COMMAND), commandInputs, block.timestamp
+        );
     }
 
-    function _validatePath(PathKey[] memory path, address tokenIn, address tokenOut) private view {
+    function _validatePath(
+        PathKey[] memory path,
+        address currencyIn,
+        address tokenIn,
+        address tokenOut
+    ) private view {
         uint256 hops = path.length;
         if (hops == 0) revert InvalidPath();
         if (hops > MAX_HOPS) revert TooManyHops(hops, MAX_HOPS);
 
-        address current = tokenIn;
+        if ((currencyIn == address(0) ? weth : currencyIn) != tokenIn) revert InvalidPath();
+        address current = currencyIn;
         for (uint256 i = 0; i < hops; i++) {
             PathKey memory hop = path[i];
             address next = Currency.unwrap(hop.intermediateCurrency);
             if (
-                next == address(0) || next == current
-                    || (hop.fee > MAX_STATIC_FEE && hop.fee != DYNAMIC_FEE_FLAG)
+                next == current || (hop.fee > MAX_STATIC_FEE && hop.fee != DYNAMIC_FEE_FLAG)
                     || hop.tickSpacing <= 0 || hop.tickSpacing > MAX_TICK_SPACING
             ) {
                 revert InvalidPath();
             }
-            _requireContract(next);
+            if (next != address(0)) _requireContract(next);
             if (hop.hookData.length > MAX_HOOK_DATA_LENGTH) {
                 revert HookDataTooLong(hop.hookData.length, MAX_HOOK_DATA_LENGTH);
             }
@@ -207,7 +271,13 @@ contract UniswapV4Adapter is ITradeAdapter, ReentrancyGuard {
             if (sqrtPriceX96 == 0) revert UnauthenticatedPool(poolId);
             current = next;
         }
-        if (current != tokenOut) revert InvalidPath();
+        if ((current == address(0) ? weth : current) != tokenOut) revert InvalidPath();
+    }
+
+    function _assertNativeBalance(address account, uint256 expected) private view {
+        if (account.balance != expected) {
+            revert NativeBalanceMismatch(account, expected, account.balance);
+        }
     }
 
     function _poolId(address tokenA, address tokenB, uint24 fee, int24 tickSpacing, address hooks)

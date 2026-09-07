@@ -4134,6 +4134,10 @@ export const uniswapV4AdapterAbi = [
     "stateMutability": "nonpayable"
   },
   {
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
     "type": "function",
     "name": "MAX_HOOK_DATA_LENGTH",
     "inputs": [],
@@ -4264,6 +4268,19 @@ export const uniswapV4AdapterAbi = [
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "weth",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "error",
     "name": "AdapterBalanceMismatch",
     "inputs": [
@@ -4374,6 +4391,27 @@ export const uniswapV4AdapterAbi = [
       },
       {
         "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NativeBalanceMismatch",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "observed",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -4512,6 +4550,17 @@ export const uniswapV4AdapterAbi = [
     "inputs": [
       {
         "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnexpectedNativeSender",
+    "inputs": [
+      {
+        "name": "sender",
         "type": "address",
         "internalType": "address"
       }
