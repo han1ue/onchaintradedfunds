@@ -7,17 +7,26 @@ vi.mock("viem", async (importOriginal) => ({
   createPublicClient: () => ({ readContract }),
 }));
 vi.mock("@/lib/chains", () => ({
+  robinhoodChain: { id: 4663, rpcUrls: { default: { http: ["http://localhost:8546"] } } },
   robinhoodChainTestnet: { id: 46630, rpcUrls: { default: { http: ["http://localhost:8545"] } } },
 }));
 vi.mock("@/lib/deployment", () => ({
-  robinhoodTestnetAddresses: { launchManager: "0x0000000000000000000000000000000000000001" },
-  robinhoodTestnetRewardsDeployedAtMs: Date.parse("2026-09-04T00:00:00Z"),
+  protocolDeploymentForChain: (chainId: number) => [4663, 46630].includes(chainId) ? {
+    addresses: { launchManager: chainId === 4663 ? "0x0000000000000000000000000000000000000002" : "0x0000000000000000000000000000000000000001" },
+    rewardsDeployedAtMs: Date.parse("2026-09-04T00:00:00Z"),
+  } : undefined,
 }));
 vi.mock("@/lib/incentive-apy", () => import("../../../lib/incentive-apy"));
 
 import { GET } from "./route";
 
 describe("incentive pricing", () => {
+  it("uses the mainnet launch manager when mainnet is configured", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ethereum: { usd: 2000 } })));
+    const response = await GET(new Request("http://localhost/api/incentive-apy?chainId=4663"));
+    expect(response.status).toBe(200);
+    expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ address: "0x0000000000000000000000000000000000000002" }));
+  });
   beforeEach(() => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-06T00:00:00Z"));
     readContract.mockResolvedValue(10n ** 15n);

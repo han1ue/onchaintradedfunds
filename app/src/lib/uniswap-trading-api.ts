@@ -7,8 +7,8 @@ import { ERC20_APPROVE_ABI, QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-mod
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
 import { QuoteFailure, quoteStep } from "./quote-errors";
 import { unavailableQuoteResponse } from "./quote-diagnostics";
+import { requestUniswapProvider } from "./uniswap-provider";
 
-const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
 const MAX_QUOTE_LIFETIME_MS = 300_000;
 
 type ObjectRecord = Record<string, unknown>;
@@ -173,19 +173,7 @@ function validateQuoteRequest(value: unknown, now: number): ValidatedQuoteReques
 }
 
 async function defaultProviderRequest(path: "check_approval" | "quote" | "swap", body: ObjectRecord, apiKey: string): Promise<unknown> {
-  const response = await fetch(`${UNISWAP_API_BASE}/${path}`, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) throw new QuoteFailure(response.status === 429 ? "PROVIDER_RATE_LIMITED" : response.status === 404 && path === "quote" ? "NO_ROUTE" : "PROVIDER_UNAVAILABLE", { cause: { status: response.status } });
-  return response.json();
+  return requestUniswapProvider(path, body, apiKey);
 }
 
 function canonicalApproval(caller: Address, token: Address, spender: Address, amount: bigint, chainId: number) {

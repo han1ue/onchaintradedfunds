@@ -1,9 +1,8 @@
 import { otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
 import { createPublicClient, formatUnits, http } from "viem";
-import { robinhoodChainTestnet } from "@/lib/chains";
+import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
-  robinhoodTestnetAddresses,
-  robinhoodTestnetRewardsDeployedAtMs,
+  protocolDeploymentForChain,
 } from "@/lib/deployment";
 import {
   coinGeckoEthUsd,
@@ -37,12 +36,14 @@ export async function GET(request: Request) {
   if (!Number.isSafeInteger(chainId) || chainId <= 0) {
     return Response.json({ error: "INVALID_CHAIN_ID" }, { status: 400 });
   }
-  const launchManager = robinhoodTestnetAddresses.launchManager;
-  if (chainId !== robinhoodChainTestnet.id || robinhoodTestnetRewardsDeployedAtMs === undefined) {
+  const deployment = protocolDeploymentForChain(chainId);
+  const launchManager = deployment?.addresses.launchManager;
+  const rewardsDeployedAtMs = deployment?.rewardsDeployedAtMs;
+  if (rewardsDeployedAtMs === undefined) {
     return Response.json({ error: "INCENTIVE_APY_UNAVAILABLE" }, { status: 503 });
   }
 
-  const calculatedWeek = incentiveWeekAt(robinhoodTestnetRewardsDeployedAtMs, Date.now());
+  const calculatedWeek = incentiveWeekAt(rewardsDeployedAtMs, Date.now());
   if (calculatedWeek === undefined) {
     return Response.json({ error: "INCENTIVE_SCHEDULE_NOT_STARTED" }, { status: 503 });
   }
@@ -63,11 +64,11 @@ export async function GET(request: Request) {
 
   try {
     const client = createPublicClient({
-      chain: robinhoodChainTestnet,
+      chain: chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain,
       transport: http(
-        process.env.RH_TESTNET_RPC_URL?.trim()
-          || process.env.NEXT_PUBLIC_RH_TESTNET_RPC_URL?.trim()
-          || robinhoodChainTestnet.rpcUrls.default.http[0],
+        chainId === robinhoodChainTestnet.id
+          ? process.env.RH_TESTNET_RPC_URL?.trim() || robinhoodChainTestnet.rpcUrls.default.http[0]
+          : process.env.RH_MAINNET_RPC_URL?.trim() || robinhoodChain.rpcUrls.default.http[0],
       ),
     });
     const [otfPriceWethWad, ethUsd] = await Promise.all([

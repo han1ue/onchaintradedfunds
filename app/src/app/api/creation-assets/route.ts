@@ -1,8 +1,11 @@
 import { fakeEthUsdOracleAbi, otfLaunchManagerAbi, otfTokenAbi } from "@onchaintradedfunds/generated";
 import { createPublicClient, http } from "viem";
-import { robinhoodTestnetAddresses, robinhoodTestnetCreation } from "@/lib/deployment";
+import { protocolDeploymentForChain } from "@/lib/deployment";
 import { creationAssetsFromApi } from "@/lib/creation-model";
-import { robinhoodChainTestnet } from "@/lib/chains";
+import { mainnetStockAssetsFromRobinhood } from "@/lib/mainnet-creation-assets";
+import { fundAssetsVerified } from "@/lib/fund-composition";
+import mainnetConfig from "@/config/robinhood-mainnet.json";
+import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   configuredTestnetCreationAssets,
   marketCapUsdFromYahoo,
@@ -72,23 +75,28 @@ async function currentTestnetStockAssets() {
   return configuredTestnetCreationAssets({ data: rows }, {});
 }
 
-async function currentProtocolOtfAsset() {
-  const { otfToken, launchManager, ethUsdOracle } = robinhoodTestnetAddresses;
+async function currentProtocolOtfAsset(chainId: number) {
+  const { otfToken, launchManager, ethUsdOracle } = protocolDeploymentForChain(chainId)?.addresses ?? {};
   if (!otfToken || !launchManager || !ethUsdOracle) return undefined;
   try {
     const client = createPublicClient({
-      chain: robinhoodChainTestnet,
+      chain: chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain,
       transport: http(
-        process.env.RH_TESTNET_RPC_URL?.trim()
-          || process.env.NEXT_PUBLIC_RH_TESTNET_RPC_URL?.trim()
-          || robinhoodChainTestnet.rpcUrls.default.http[0],
+        chainId === robinhoodChainTestnet.id
+          ? process.env.RH_TESTNET_RPC_URL?.trim() || robinhoodChainTestnet.rpcUrls.default.http[0]
+          : process.env.RH_MAINNET_RPC_URL?.trim() || robinhoodChain.rpcUrls.default.http[0],
       ),
     });
-    const [totalSupply, priceWethWad, oracleRound] = await Promise.all([
+    const [totalSupply, priceWethWad, oracleRound, oracleDecimals] = await Promise.all([
       client.readContract({ address: otfToken, abi: otfTokenAbi, functionName: "totalSupply" }),
       client.readContract({ address: launchManager, abi: otfLaunchManagerAbi, functionName: "currentOtfPriceWethWad" }),
       client.readContract({ address: ethUsdOracle, abi: fakeEthUsdOracleAbi, functionName: "latestRoundData" }),
+      client.readContract({ address: ethUsdOracle, abi: fakeEthUsdOracleAbi, functionName: "decimals" }),
     ]);
+    const now = BigInt(Math.floor(Date.now() / 1_000));
+    if (oracleDecimals !== 8 || oracleRound[1] <= 0n) return undefined;
+    if (chainId === robinhoodChain.id && (oracleRound[3] === 0n || oracleRound[3] > now
+      || now - oracleRound[3] > BigInt(mainnetConfig.oracleValidation.maxAgeSeconds))) return undefined;
     return protocolOtfCreationAsset({
       address: otfToken,
       totalSupply,
@@ -107,7 +115,7 @@ export async function GET(request: Request) {
   }
   if (chainId === robinhoodChainTestnet.id) {
     const [protocolOtf, stocks] = await Promise.all([
-      currentProtocolOtfAsset(),
+      currentProtocolOtfAsset(chainId),
       currentTestnetStockAssets(),
     ]);
     const assets = [...(protocolOtf ? [protocolOtf] : []), ...stocks];
@@ -120,7 +128,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const endpoint = robinhoodTestnetCreation.assetDataEndpoint;
+  const endpoint = protocolDeploymentForChain(chainId)?.assetDataEndpoint;
   if (!endpoint) return Response.json({ error: "ASSET_DATA_UNAVAILABLE" }, { status: 503 });
 
   try {
@@ -131,7 +139,15 @@ export async function GET(request: Request) {
     });
     if (!response.ok) throw new Error(`ASSET_DATA_${response.status}`);
     const payload = await response.json();
-    const assets = creationAssetsFromApi(payload, chainId);
+    const [protocolOtf, rows] = await Promise.all([
+      currentProtocolOtfAsset(chainId),
+      Promise.all(mainnetStockAssetsFromRobinhood(payload).map(async (asset) => {
+        const [price, marketCapUsd] = await Promise.all([currentStockPriceUsd(asset.symbol), currentMarketCapUsd(asset.symbol)]);
+        return { chainId, contractAddress: asset.address, decimals: asset.decimals, symbol: asset.symbol,
+          name: asset.name, verified: fundAssetsVerified(chainId, [asset.address]), latestPriceUsdExact: price?.priceUsd, latestPriceAt: price?.priceUpdatedAt, marketCapUsd };
+      })),
+    ]);
+    const assets = [...(protocolOtf ? [protocolOtf] : []), ...creationAssetsFromApi({ data: rows }, chainId)];
     if (!assets.length) throw new Error("ASSET_DATA_EMPTY");
     return Response.json(
       { data: assets, marketCapSnapshotAt: new Date().toISOString() },

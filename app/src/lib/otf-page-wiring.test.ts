@@ -73,7 +73,7 @@ describe("$OTF page wiring", () => {
   });
 
   it("routes bootstrap trades through the boundary router with partial-fill disclosure", () => {
-    expect(operate).toContain("robinhoodTestnetAddresses.launchRouter");
+    expect(operate).toContain("protocolDeploymentForChain(chainId)?.addresses.launchRouter");
     expect(operate).toContain('"buyOtfWithEth" | "buyOtfWithWeth" | "sellOtfForWeth" | "sellOtfForEth"');
     expect(operate).toContain("Only the input needed to reach that limit will be used");
     expect(operate).toContain("stays in your wallet");

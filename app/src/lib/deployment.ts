@@ -162,14 +162,25 @@ const mainnetExternalContracts = mainnetConfigValid ? record(mainnet.externalCon
 const mainnetLiquidity = mainnetConfigValid ? record(mainnet.externalLiquidity) : {};
 const mainnetTradingApi = mainnetConfigValid ? record(mainnet.uniswapTradingApi) : {};
 const mainnetAssets = mainnetConfigValid ? productionAssetsForChain(4663) : [];
+const mainnetDeployed = mainnetConfigValid && mainnet.protocolStatus === "deployed";
+
+function deployedMainnetContract(name: string): Address | undefined {
+  return mainnetDeployed ? address(record(mainnetProtocolContracts[name]).address) : undefined;
+}
 
 /** Canonical production token identity; it is intentionally separate from testnet deployment state. */
 export const robinhoodMainnetAddresses = Object.freeze({
-  factory: address(record(mainnetProtocolContracts.factory).address),
-  entryRouter: address(record(mainnetProtocolContracts.entryRouter).address),
-  uniswapV3Adapter: address(record(mainnetProtocolContracts.uniswapV3Adapter).address),
-  uniswapV4Adapter: address(record(mainnetProtocolContracts.uniswapV4Adapter).address),
-  otfToken: address(record(mainnetProtocolContracts.otfToken).address),
+  launchManager: deployedMainnetContract("launchManager"),
+  launchRouter: deployedMainnetContract("launchRouter"),
+  teamVesting: deployedMainnetContract("teamVesting"),
+  buybackCollector: deployedMainnetContract("buybackCollector"),
+  merkleRewardsDistributor: deployedMainnetContract("merkleRewardsDistributor"),
+  vaultImplementation: deployedMainnetContract("vaultImplementation"),
+  factory: deployedMainnetContract("factory"),
+  entryRouter: deployedMainnetContract("entryRouter"),
+  uniswapV3Adapter: deployedMainnetContract("uniswapV3Adapter"),
+  uniswapV4Adapter: deployedMainnetContract("uniswapV4Adapter"),
+  otfToken: deployedMainnetContract("otfToken"),
   usdg: mainnetAssets.find((asset) => asset.id === "usdg")?.address,
   weth: mainnetAssets.find((asset) => asset.id === "weth")?.address,
   ethUsdOracle: address(mainnetExternalContracts.ethUsdOracle),
@@ -205,3 +216,34 @@ export const robinhoodMainnetUniswap = Object.freeze({
   universalRouter: address(mainnetTradingApi.universalRouter),
   universalRouterVersion: mainnetTradingApi.universalRouterVersion === "2.1.1" ? "2.1.1" : undefined,
 });
+
+const mainnetRouting = record(mainnet.routing);
+export const robinhoodMainnetV4 = Object.freeze({
+  poolManager: address(mainnetExternalContracts.uniswapV4PoolManager),
+  stateView: address(mainnetExternalContracts.uniswapV4StateView),
+  quoter: address(mainnetExternalContracts.uniswapV4Quoter),
+  universalRouter: robinhoodMainnetUniswap.universalRouter,
+  positionManager: address(mainnetExternalContracts.uniswapV4PositionManager),
+  permit2: robinhoodMainnetUniswap.permit2,
+});
+const mainnetRoutingReady = mainnetDeployed && mainnetRouting.status === "ready" && Boolean(robinhoodMainnetBasketDeployment)
+  && [robinhoodMainnetAddresses.uniswapV3Adapter, robinhoodMainnetAddresses.uniswapV4Adapter].every((adapter) =>
+    adapter && Array.isArray(mainnetRouting.approvedAdapters) && mainnetRouting.approvedAdapters.some((value) => address(value)?.toLowerCase() === adapter.toLowerCase()));
+
+export function protocolDeploymentForChain(chainId: number) {
+  if (chainId === 46630) return {
+    addresses: robinhoodTestnetAddresses, v4: robinhoodTestnetV4,
+    creationReady: robinhoodTestnetCreationReady, routingReady: robinhoodTestnetDeploymentReady,
+    rewardsDeployedAtMs: robinhoodTestnetRewardsDeployedAtMs,
+    assetDataEndpoint: robinhoodTestnetCreation.assetDataEndpoint,
+  };
+  if (chainId === 4663) return {
+    addresses: robinhoodMainnetAddresses, v4: robinhoodMainnetV4,
+    creationReady: mainnetRoutingReady && Boolean(robinhoodMainnetAddresses.factory), routingReady: mainnetRoutingReady,
+    rewardsDeployedAtMs: mainnetDeployed && robinhoodMainnetAddresses.merkleRewardsDistributor
+      && safePositiveBigInt(record(mainnetProtocolContracts.merkleRewardsDistributor).blockNumber)
+      ? timestampMillis(record(mainnetProtocolContracts.merkleRewardsDistributor).blockTimestamp) : undefined,
+    assetDataEndpoint: httpsUrl(record(mainnet.creation).assetDataEndpoint),
+  };
+  return undefined;
+}

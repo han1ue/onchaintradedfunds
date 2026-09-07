@@ -26,10 +26,9 @@ import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { getAddress, isAddress, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useChainId, usePublicClient, useReadContracts, useWalletClient } from "wagmi";
-import { robinhoodChainTestnet } from "@/lib/chains";
+import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
-  robinhoodTestnetAddresses,
-  robinhoodTestnetCreationReady,
+  protocolDeploymentForChain,
 } from "@/lib/deployment";
 import {
   PERCENT_DECIMALS,
@@ -384,8 +383,7 @@ export function CreateOTFForm() {
   const remainingAssets = availableAssets.filter((candidate) => (
     !selectedAssets.some((selected) => selected.address.toLowerCase() === candidate.address.toLowerCase())
   ));
-  const deploymentReady = chainId === robinhoodChainTestnet.id
-    && robinhoodTestnetCreationReady && Boolean(robinhoodTestnetAddresses.factory);
+  const deploymentReady = protocolDeploymentForChain(chainId)?.creationReady === true;
   const submitDisabled = !deploymentReady || creationLocked
     || (Boolean(address) && (!calculation || !identityValid || !basketValid || !economicsValid));
   const reviewSnapshot = creationLocked && submittedSnapshot ? submittedSnapshot : {
@@ -501,7 +499,7 @@ export function CreateOTFForm() {
       openConnectModal?.();
       return;
     }
-    const factory = robinhoodTestnetAddresses.factory;
+    const factory = protocolDeploymentForChain(chainId)?.addresses.factory;
     if (
       !calculation || !creationMetadata || !identityValid || !basketValid || !economicsValid
       || !deploymentReady || !walletClient || !publicClient || !factory
@@ -860,8 +858,8 @@ export function CreateOTFForm() {
               </div>
               <aside className="bootstrapCommitNote"><CheckCircle size={16} /><div><strong>Ready to launch</strong><p>The transaction launches the OTF with these constituents, initial percentages, identity, fund thesis, and fee settings.</p></div></aside>
               <p className="createBlocked">No constituent tokens are transferred during launch. The first depositor must mint at least 0.01 {reviewSnapshot.symbol ? `$${reviewSnapshot.symbol}` : "$OTF"}.</p>
-              {!deploymentReady && !creationLocked ? <div className="validationSummary"><CircleAlert size={15} /><div><strong>Launch unavailable</strong><span>The configured testnet factory could not be loaded. Review remains available, but submission is disabled.</span></div></div> : null}
-              {submissionMessage ? <div className={`validationSummary ${submission === "success" ? "success" : submission === "failure" ? "danger" : ""}`} role="status" aria-live="polite">{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={15} /> : submission === "success" ? <CheckCircle size={15} /> : <CircleAlert size={15} />}<div><strong>{submission === "success" ? "Launch confirmed" : submission === "failure" ? "Launch failed" : submission === "unknown" ? "Confirmation unavailable" : "Launch pending"}</strong><span>{submissionMessage}</span>{transactionHash ? <a href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer">View transaction</a> : null}{createdVaultAddress ? <a href={`/funds/${createdVaultAddress}`}>View fund details</a> : null}</div></div> : null}
+              {!deploymentReady && !creationLocked ? <div className="validationSummary"><CircleAlert size={15} /><div><strong>Launch unavailable</strong><span>The factory is not deployed or configured on this network. Review remains available, but submission is disabled.</span></div></div> : null}
+              {submissionMessage ? <div className={`validationSummary ${submission === "success" ? "success" : submission === "failure" ? "danger" : ""}`} role="status" aria-live="polite">{submission === "submitting" ? <LoaderCircle className="createAssetSpinner" size={15} /> : submission === "success" ? <CheckCircle size={15} /> : <CircleAlert size={15} />}<div><strong>{submission === "success" ? "Launch confirmed" : submission === "failure" ? "Launch failed" : submission === "unknown" ? "Confirmation unavailable" : "Launch pending"}</strong><span>{submissionMessage}</span>{transactionHash ? <a href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer">View transaction</a> : null}{createdVaultAddress ? <a href={`/funds/${createdVaultAddress}`}>View fund details</a> : null}</div></div> : null}
             </div>
           ) : null}
 

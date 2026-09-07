@@ -47,7 +47,7 @@ describe("asset catalogs", () => {
   });
 
   it("keeps production discovery chain-aware and informational", () => {
-    expect(productionAssetsForChain(4663).map((asset) => asset.symbol)).toEqual(["USDG", "WETH"]);
+    expect(productionAssetsForChain(4663).map((asset) => asset.symbol)).toEqual(["USDG", "WETH", "TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
     expect(productionAssetsForChain(46630)).toEqual([]);
   });
 

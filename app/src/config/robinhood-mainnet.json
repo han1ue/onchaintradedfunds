@@ -1,29 +1,29 @@
 {
   "network": "robinhood-mainnet",
   "chainId": 4663,
-  "protocolStatus": "configuration-required",
+  "protocolStatus": "not-deployed",
   "protocolContracts": {},
   "externalContracts": {
-    "ethUsdOracle": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9"
+    "ethUsdOracle": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+    "uniswapV3Factory": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+    "uniswapV3SwapRouter02": "0xcaf681a66d020601342297493863e78c959e5cb2",
+    "uniswapV4PoolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    "uniswapV4StateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+    "uniswapV4PositionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+    "uniswapUniversalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "uniswapV3Quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7"
   },
   "oracleValidation": {
     "interface": "AggregatorV3",
     "description": "ETH / USD",
     "decimals": 8,
-    "verifiedOnchainAt": "2026-09-02"
+    "verifiedOnchainAt": "2026-09-02",
+    "maxAgeSeconds": 90000
   },
   "requiredProductionInputs": [
-    "WETH",
-    "UNISWAP_V3_FACTORY",
-    "UNISWAP_V3_SWAP_ROUTER02",
-    "UNISWAP_V4_POOL_MANAGER",
-    "UNISWAP_V4_STATE_VIEW",
-    "UNISWAP_V4_POSITION_MANAGER",
-    "UNISWAP_UNIVERSAL_ROUTER",
-    "PERMIT2",
-    "ORACLE_MAX_AGE_SECONDS",
-    "PROTOCOL_MULTISIG",
-    "TEAM_BENEFICIARY"
+    "DEPLOYER_ADDRESS"
   ],
   "externalLiquidity": {
     "venue": "Uniswap",
@@ -38,5 +38,19 @@
     "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
     "universalRouterVersion": "2.1.1"
   },
-  "identitySource": "https://docs.robinhood.com/chain/contracts/"
+  "identitySource": "https://docs.robinhood.com/chain/contracts/",
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "deploymentPolicy": {
+    "broadcastEnabled": false,
+    "protocolAdministrator": "deployer",
+    "teamBeneficiary": "deployer"
+  },
+  "creation": {
+    "assetDataEndpoint": "https://api.robinhood.com/rhj/assets"
+  },
+  "routing": {
+    "status": "not-deployed",
+    "approvedAdapters": [],
+    "nativeEntryExitEnabled": false
+  }
 }

@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { formatUnits, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useChainId, usePublicClient, useReadContract, useWalletClient } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodMainnetLiquidity, robinhoodTestnetAddresses } from "@/lib/deployment";
+import { robinhoodMainnetLiquidity, protocolDeploymentForChain } from "@/lib/deployment";
 import { burnedSupply, feeBenefitRows } from "@/lib/otf-market";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com/token-and-fee-incentives";
@@ -106,12 +106,12 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const { data: walletClient } = useWalletClient({ chainId });
   const testnet = chainId === robinhoodChainTestnet.id;
   const mainnet = chainId === robinhoodChain.id;
-  const token = robinhoodTestnetAddresses.otfToken ?? zeroAddress;
-  const launch = robinhoodTestnetAddresses.launchManager ?? zeroAddress;
-  const weth = robinhoodTestnetAddresses.weth ?? zeroAddress;
-  const oracle = robinhoodTestnetAddresses.ethUsdOracle ?? zeroAddress;
-  const distributor = robinhoodTestnetAddresses.merkleRewardsDistributor;
-  const configured = testnet && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
+  const token = protocolDeploymentForChain(chainId)?.addresses.otfToken ?? zeroAddress;
+  const launch = protocolDeploymentForChain(chainId)?.addresses.launchManager ?? zeroAddress;
+  const weth = protocolDeploymentForChain(chainId)?.addresses.weth ?? zeroAddress;
+  const oracle = protocolDeploymentForChain(chainId)?.addresses.ethUsdOracle ?? zeroAddress;
+  const distributor = protocolDeploymentForChain(chainId)?.addresses.merkleRewardsDistributor;
+  const configured = protocolDeploymentForChain(chainId)?.routingReady === true && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
   const query = { enabled: configured, refetchInterval: 12_000 } as const;
   const totalSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "totalSupply", query });
   const phaseRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "phase", query });
@@ -152,7 +152,7 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
     } catch (error) { setFinalizeState(transactionError(error).state); }
   }
 
-  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><OtfCoinIcon className="tokenMarketTokenIcon" size={44} /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>{testnet ? "$OTF deployment unavailable" : "Switch to Robinhood Testnet"}</h2><p>{testnet ? "The Robinhood Testnet deployment configuration is incomplete or invalid." : "$OTF market and launch data are available on Robinhood Testnet."}</p></div></section></div>;
+  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><OtfCoinIcon className="tokenMarketTokenIcon" size={44} /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>$OTF deployment unavailable</h2><p>The OTF protocol is not deployed or configured on this network.</p></div></section></div>;
 
   const progressPercent = progressRead.data ? Math.min(100, Math.max(0, Number(progressRead.data[0]) / 100)) : undefined;
 

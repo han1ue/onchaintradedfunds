@@ -3,13 +3,16 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, verifyMainnetRoutingRuntime } from "./lib/mainnet-routing.mjs";
+import { mainnetPreparation } from "./lib/mainnet-preparation.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const pin = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-mainnet-routing.json"), "utf8"));
 const rehearsal = JSON.parse(readFileSync(join(root, "scripts/fixtures/robinhood-mainnet-rehearsal.json"), "utf8"));
 const mainnet = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-mainnet.json"), "utf8"));
+mainnetPreparation(mainnet, pin);
 if (mainnet.chainId !== rehearsal.chainId
-  || mainnet.externalContracts.ethUsdOracle.toLowerCase() !== rehearsal.oracle.address.toLowerCase()) {
+  || mainnet.externalContracts.ethUsdOracle.toLowerCase() !== rehearsal.oracle.address.toLowerCase()
+  || mainnet.oracleValidation.maxAgeSeconds !== rehearsal.oracle.maxAgeSeconds) {
   throw new Error("Mainnet configuration differs from the rehearsed chain or ETH/USD oracle");
 }
 pin.dependencies = { ...pin.dependencies, ...mainnetRehearsalDependencies(rehearsal) };
@@ -36,6 +39,7 @@ writeFileSync(report, JSON.stringify({
   chainId: pin.chainId, blockNumber: String(blockNumber), blockHash: block.hash,
   dependencies: pin.dependencies, result: "passed",
   rehearsal: { accountMode: "funded-local-rehearsal-accounts", oracleMaxAgeSeconds: rehearsal.oracle.maxAgeSeconds,
-    stockSymbols: rehearsal.stocks.map((stock) => stock.symbol), productionRolesValidated: false },
+    stockSymbols: rehearsal.stocks.map((stock) => stock.symbol), rolePolicy: mainnet.deploymentPolicy,
+    productionRolesValidated: false },
 }, null, 2) + "\n");
 console.log("Mainnet routing validation passed.");

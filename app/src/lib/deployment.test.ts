@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  protocolDeploymentForChain,
   robinhoodMainnetAddresses,
   robinhoodTestnetAddresses,
   robinhoodTestnetRewardsDeploymentBlock,
@@ -43,6 +44,17 @@ describe("Robinhood Testnet V4 deployment", () => {
 });
 
 describe("Robinhood mainnet oracle configuration", () => {
+  it("keeps undeployed mainnet actions and rewards disabled without borrowing testnet addresses", () => {
+    const mainnet = protocolDeploymentForChain(4663)!;
+    expect(mainnet.creationReady).toBe(false);
+    expect(mainnet.routingReady).toBe(false);
+    expect(mainnet.addresses.factory).toBeUndefined();
+    expect(mainnet.addresses.otfToken).toBeUndefined();
+    expect(mainnet.rewardsDeployedAtMs).toBeUndefined();
+    expect(mainnet.addresses.weth).not.toBe(protocolDeploymentForChain(46630)?.addresses.weth);
+    expect(protocolDeploymentForChain(46630)?.creationReady).toBe(true);
+    expect(protocolDeploymentForChain(1)).toBeUndefined();
+  });
   it("uses the onchain-verified ETH/USD AggregatorV3 proxy", () => {
     expect(robinhoodMainnetAddresses.ethUsdOracle).toBe(
       "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",

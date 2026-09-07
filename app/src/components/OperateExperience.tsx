@@ -44,10 +44,8 @@ import {
   robinhoodMainnetAddresses,
   robinhoodMainnetBasketDeployment,
   robinhoodMainnetUniswap,
-  robinhoodTestnetAddresses,
-  robinhoodTestnetCreationReady,
+  protocolDeploymentForChain,
   robinhoodTestnetDeploymentReady,
-  robinhoodTestnetV4,
 } from "@/lib/deployment";
 import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
 import { accountedRewardWeightOtf, estimatedRewardsApy } from "@/lib/incentive-apy";
@@ -187,10 +185,10 @@ function configuredAssetsFor(chainId: number): SwapAsset[] {
     kind: "erc20",
     decimals: asset.decimals,
     metadataResolved: true,
-    verified: true,
+    verified: chainId === robinhoodChainTestnet.id || fundAssetsVerified(chainId, [asset.address]),
   }));
   const canonicalWeth = chainId === robinhoodChainTestnet.id
-    ? robinhoodTestnetAddresses.weth
+    ? protocolDeploymentForChain(chainId)?.addresses.weth
     : chainId === robinhoodChain.id
       ? robinhoodMainnetAddresses.weth
       : undefined;
@@ -204,7 +202,7 @@ function configuredAssetsFor(chainId: number): SwapAsset[] {
     verified: true,
   });
   const protocolToken = chainId === robinhoodChainTestnet.id
-    ? robinhoodTestnetAddresses.otfToken
+    ? protocolDeploymentForChain(chainId)?.addresses.otfToken
     : chainId === robinhoodChain.id
       ? robinhoodMainnetAddresses.otfToken
       : undefined;
@@ -629,12 +627,12 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const configuredWeth = configuredWethFor(chainId);
   const nativeWrapPair = isNativeWrapPair(input, output, configuredWeth?.address);
   const missingOtfAsset = pairValid && !hasOtfSide && !nativeWrapPair;
-  const protocolToken = robinhoodTestnetAddresses.otfToken;
-  const canonicalWeth = robinhoodTestnetAddresses.weth;
-  const launchManager = robinhoodTestnetAddresses.launchManager;
-  const launchRouter = robinhoodTestnetAddresses.launchRouter;
+  const protocolToken = protocolDeploymentForChain(chainId)?.addresses.otfToken;
+  const canonicalWeth = protocolDeploymentForChain(chainId)?.addresses.weth;
+  const launchManager = protocolDeploymentForChain(chainId)?.addresses.launchManager;
+  const launchRouter = protocolDeploymentForChain(chainId)?.addresses.launchRouter;
   const canonicalOtfPair = Boolean(
-    chainId === robinhoodChainTestnet.id
+    protocolDeploymentForChain(chainId)?.routingReady
     && protocolToken
     && canonicalWeth
     && ((input.address.toLowerCase() === protocolToken.toLowerCase() && output.address.toLowerCase() === canonicalWeth.toLowerCase())
@@ -1006,8 +1004,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     if (canonicalOtfPair) {
       if (!canonicalQuoteUsable || !canonicalQuote || !canonicalAmountRaw || !launchManager) return;
       const bootstrap = canonicalPhase === 1;
-      const universalRouter = robinhoodTestnetV4.universalRouter;
-      const permit2 = robinhoodTestnetV4.permit2;
+      const universalRouter = protocolDeploymentForChain(chainId)?.v4.universalRouter;
+      const permit2 = protocolDeploymentForChain(chainId)?.v4.permit2;
       const target = bootstrap ? launchRouter : universalRouter;
       if (!target || (!bootstrap && input.kind !== "native" && !permit2)) {
         setExecution("failure");
@@ -1164,7 +1162,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         await publicClient.call({ account: address, to: target, data, value });
         await publicClient.estimateGas({ account: address, to: target, data, value });
       } else {
-        const basketDeployment = chainId === robinhoodChain.id ? robinhoodMainnetBasketDeployment : chainId === robinhoodChainTestnet.id ? robinhoodTestnetAddresses : undefined;
+        const basketDeployment = chainId === robinhoodChain.id ? robinhoodMainnetBasketDeployment : chainId === robinhoodChainTestnet.id ? protocolDeploymentForChain(chainId)?.addresses : undefined;
         if (basketDeployment?.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()
           || basketDeployment?.uniswapV3Adapter?.toLowerCase() !== executionPlan.adapter.toLowerCase()
           || (executionPlan.v4Adapter && basketDeployment?.uniswapV4Adapter?.toLowerCase() !== executionPlan.v4Adapter.toLowerCase())) throw new Error("The basket plan has an unsupported router or adapter target.");
@@ -1238,7 +1236,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const canonicalExecutionConfigured = Boolean(
     launchManager && (canonicalPhase === 1
       ? launchRouter
-      : canonicalPhase === 3 && robinhoodTestnetV4.universalRouter && (input.kind === "native" || robinhoodTestnetV4.permit2)),
+      : canonicalPhase === 3 && protocolDeploymentForChain(chainId)?.v4.universalRouter && (input.kind === "native" || protocolDeploymentForChain(chainId)?.v4.permit2)),
   );
   const canExecute = Boolean(address && publicClient && walletClient && pairExecutable && !insufficientBalance && !executionBusy && (
     nativeWrapPair
@@ -1424,7 +1422,7 @@ function CreatedFundSurface() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!address || !transactionHash || chainId !== robinhoodChainTestnet.id || !publicClient) {
+    if (!address || !transactionHash || !protocolDeploymentForChain(chainId)?.creationReady || !publicClient) {
       setConfirmation("failure");
       return;
     }
@@ -1499,7 +1497,7 @@ function CreatedFundSurface() {
                 <p>Inspect the transaction before trying again. The interface will not invent a successful launch when the factory event is unavailable.</p>
               </div>
             </div>
-            {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
+            {transactionHash ? <a className="createdTransactionLink" href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
             <div className="createdActions"><Link className="secondaryAction" href="/launch"><ArrowLeft size={14} />Back to launch</Link></div>
           </section>
         </div>
@@ -1563,12 +1561,12 @@ function CreatedFundSurface() {
               <div><span>OTF contract address</span><code>{address}</code></div>
               <div className="createdAddressActions">
                 <button className="iconOnly" type="button" onClick={() => void copyAddress()} title="Copy OTF address" aria-label="Copy OTF address">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
-                <a className="iconOnly" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open OTF in explorer" aria-label="Open OTF in explorer"><ExternalLink size={15} /></a>
+                <a className="iconOnly" href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/address/${address}`} target="_blank" rel="noreferrer" title="Open OTF in explorer" aria-label="Open OTF in explorer"><ExternalLink size={15} /></a>
               </div>
             </div>
           ) : null}
           {copied ? <span className="createdCopyFeedback" role="status" aria-live="polite">Address copied</span> : null}
-          {transactionHash ? <a className="createdTransactionLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
+          {transactionHash ? <a className="createdTransactionLink" href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${transactionHash}`} target="_blank" rel="noreferrer"><ReceiptText size={15} /><span>View launch transaction</span><code>{shortAddress(transactionHash)}</code><ExternalLink size={14} /></a> : null}
           <div className="createdActions">
             <Link className="secondaryAction" href="/launch"><FilePlus2 size={14} />Launch another</Link>
             {confirmation === "confirmed" ? <Link className="primaryAction" href={destination}><ArrowRight size={14} />View OTF</Link> : null}
@@ -1591,12 +1589,12 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
-  const collector = robinhoodTestnetAddresses.buybackCollector;
-  const canonicalWeth = robinhoodTestnetAddresses.weth;
-  const launchManager = robinhoodTestnetAddresses.launchManager;
-  const settlementAdapter = robinhoodTestnetAddresses.uniswapV3Adapter;
-  const configured = chainId === robinhoodChainTestnet.id
-    && Boolean(collector && canonicalWeth && launchManager && settlementAdapter && robinhoodTestnetDeploymentReady);
+  const collector = protocolDeploymentForChain(chainId)?.addresses.buybackCollector;
+  const canonicalWeth = protocolDeploymentForChain(chainId)?.addresses.weth;
+  const launchManager = protocolDeploymentForChain(chainId)?.addresses.launchManager;
+  const settlementAdapter = protocolDeploymentForChain(chainId)?.addresses.uniswapV3Adapter;
+  const configured = Boolean(protocolDeploymentForChain(chainId)?.routingReady
+    && collector && canonicalWeth && launchManager && settlementAdapter);
   const [slippageBps, setSlippageBps] = useState(50);
   const [routePreference, setRoutePreference] = useState<FeeSettlementRoutePreference>("best");
   const [quoteState, setQuoteState] = useState<"idle" | "loading" | "ready" | "missing">("idle");
@@ -1931,6 +1929,7 @@ type IncentivePricing = {
   weeklyCreatorEmissionOtf?: number;
   week?: number;
   ended: boolean;
+  otfToken?: Address;
 };
 
 function valuationAsset(value: unknown): CreationAssetData | undefined {
@@ -1961,7 +1960,7 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
 
   useEffect(() => {
     let cancelled = false;
-    if (!fund || !publicClient || chainId !== robinhoodChainTestnet.id) {
+    if (!fund || !publicClient || !protocolDeploymentForChain(chainId)?.creationReady) {
       setValuation({ state: fund ? "unavailable" : "loading", history: [], usesBootstrapNav: false });
       return;
     }
@@ -2057,8 +2056,8 @@ function useDirectoryAum(vaults: FactoryVaultSummary[], directoryState: FactoryV
 
   useEffect(() => {
     let cancelled = false;
-    const otfToken = robinhoodTestnetAddresses.otfToken;
-    if (directoryState !== "ready" || !publicClient || chainId !== robinhoodChainTestnet.id || !otfToken) {
+    const otfToken = protocolDeploymentForChain(chainId)?.addresses.otfToken;
+    if (directoryState !== "ready" || !publicClient || !protocolDeploymentForChain(chainId)?.creationReady || !otfToken) {
       setDirectoryAum({ state: directoryState === "loading" ? "loading" : "unavailable" });
       return;
     }
@@ -2131,7 +2130,7 @@ function useIncentivePricing(): IncentivePricing {
   const [pricing, setPricing] = useState<IncentivePricing>({ state: "loading", ended: false });
 
   useEffect(() => {
-    if (chainId !== robinhoodChainTestnet.id) {
+    if (!protocolDeploymentForChain(chainId)?.routingReady) {
       setPricing({ state: "unavailable", ended: false });
       return;
     }
@@ -2178,12 +2177,12 @@ function useIncentivePricing(): IncentivePricing {
     };
   }, [chainId]);
 
-  return pricing;
+  return { ...pricing, otfToken: protocolDeploymentForChain(chainId)?.addresses.otfToken };
 }
 
 function fundApyPercent(fund: FactoryVaultSummary | undefined, aumUsd: number | undefined, pricing: IncentivePricing, directory: DirectoryAum): number | undefined {
-  const hasOtf = fund && robinhoodTestnetAddresses.otfToken
-    ? fund.assets.some((asset) => asset.toLowerCase() === robinhoodTestnetAddresses.otfToken!.toLowerCase()) : undefined;
+  const hasOtf = fund && pricing.otfToken
+    ? fund.assets.some((asset) => asset.toLowerCase() === pricing.otfToken!.toLowerCase()) : undefined;
   const weight = fund ? directory.rewardWeights?.get(fund.address.toLowerCase()) : undefined;
   if (hasOtf === false || fund?.totalSupply === 0n || aumUsd === 0 || weight === 0) return 0;
   if (pricing.state !== "ready" || directory.state !== "ready" || aumUsd === undefined) return undefined;
@@ -2219,7 +2218,7 @@ function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
   directory: DirectoryAum;
 }) {
   const [explanationOpen, setExplanationOpen] = useState(false);
-  const otfToken = robinhoodTestnetAddresses.otfToken;
+  const otfToken = pricing.otfToken;
   const hasOtf = fund && otfToken ? fund.assets.some((asset) => asset.toLowerCase() === otfToken.toLowerCase()) : undefined;
   const fundRewardWeightOtf = fund ? directory.rewardWeights?.get(fund.address.toLowerCase()) : undefined;
   const zeroApy = hasOtf === false || fund?.totalSupply === 0n || aumUsd === 0 || fundRewardWeightOtf === 0;
@@ -2423,7 +2422,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
   const { address } = useAccount();
   const testnet = chainId === robinhoodChainTestnet.id;
   const explorerUrl = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
-  const directoryDeploymentReady = testnet && robinhoodTestnetCreationReady;
+  const directoryDeploymentReady = protocolDeploymentForChain(chainId)?.creationReady === true;
   const { state: factoryDirectoryState, vaults } = useFactoryVaults();
   const [directoryView, setDirectoryView] = useState<"rows" | "cards">("rows");
   const [mobileDirectory, setMobileDirectory] = useState(false);
@@ -2559,8 +2558,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
           </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
-        {!testnet ? (
-          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Canonical USDG is configured, but no OTF deployments or typed execution service are available on Robinhood Mainnet. Enable Testnet in Settings to use the current protocol deployment.</p></section>
+        {!directoryDeploymentReady ? (
+          <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Protocol deployment unavailable</h2><p>Fund discovery will become available when the protocol is deployed and configured on this network.</p></section>
         ) : (
           <>
             {!directoryDeploymentReady ? <div className="validationSummary directoryDataNotice" role="status"><History size={15} /><div><strong>Onchain directory unavailable</strong><span>The configured factory directory could not be loaded. No preview funds or aggregate values are substituted.</span></div></div> : null}
@@ -2609,7 +2608,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
                   );
                 })}</div>
               ) : (
-                <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load testnet OTFs" : normalizedSearch ? "No matching OTFs" : "No testnet OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
+                <div className="emptyDirectory">{directoryState === "loading" ? <ActivitySpinner size={18} /> : <><Search size={18} /><strong>{directoryState === "failure" ? "Could not load OTFs" : normalizedSearch ? "No matching OTFs" : "No OTFs yet"}</strong><span>{directoryState === "failure" ? "The configured factory directory could not be read. Refresh to try again or inspect a known OTF address directly." : normalizedSearch ? "Try another name, symbol, or contract address." : "New OTFs will appear here after their launch transaction is confirmed."}</span></>}</div>
               )}
             </section>
           </>
@@ -2630,7 +2629,7 @@ function VerifiedSurface() {
         {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
           <section className="sectionCard walletAssets">
             <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{assets.length} verified</span></div>
-            <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td></tr>)}</tbody></table></div>
+            <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td></tr>)}</tbody></table></div>
           </section>
         )}
       </div>
@@ -2646,7 +2645,7 @@ function WalletSurface() {
   const chainId = useChainId();
   const testnet = chainId === robinhoodChainTestnet.id;
   const { address } = useAccount();
-  const { state: vaultDirectoryState, vaults } = useFactoryVaults({ enabled: testnet && Boolean(address) });
+  const { state: vaultDirectoryState, vaults } = useFactoryVaults({ enabled: Boolean(address) });
   const balanceContracts = useMemo(() => address ? vaults.map((vault) => ({
     address: vault.address,
     abi: managedOtfVaultAbi,
@@ -2655,9 +2654,9 @@ function WalletSurface() {
   })) : [], [address, vaults]);
   const { data: vaultBalanceReads, isLoading: vaultBalancesLoading } = useReadContracts({
     contracts: balanceContracts,
-    query: { enabled: Boolean(address && testnet && balanceContracts.length) },
+    query: { enabled: Boolean(address && protocolDeploymentForChain(chainId)?.creationReady && balanceContracts.length) },
   });
-  const walletAum = useDirectoryAum(vaults, vaultDirectoryState, Boolean(address && testnet));
+  const walletAum = useDirectoryAum(vaults, vaultDirectoryState, Boolean(address && protocolDeploymentForChain(chainId)?.creationReady));
   const walletRewards = useIncentivePricing();
   const orderedPositions = sortFunds(vaults, "nav-desc", (fund, key) => fundSortValue(fund, key, walletRewards, walletAum));
   const positions = orderedPositions.flatMap((vault) => {
@@ -2676,15 +2675,15 @@ function WalletSurface() {
           description="Your OTF share positions and managed funds."
           icon={<Wallet size={18} />}
         />
-        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Robinhood Mainnet is not supported yet</h2><p>Switch to Robinhood Testnet in Settings to view deployed OTF positions.</p></section> : address ? (
+        {!protocolDeploymentForChain(chainId)?.creationReady ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Protocol deployment unavailable</h2><p>Wallet positions will become available when the protocol is deployed and configured on this network.</p></section> : address ? (
           <>
             <section className="sectionCard depositPositions">
               <div className="managedVaultsHeading"><div><span className="appPageIcon"><CircleDollarSign size={16} /></span><div><h2>OTF positions</h2><p>Share-token balances held by the connected wallet.</p></div></div><span className="stateBadge muted">{vaultDataLoading ? <ActivitySpinner size={13} /> : `${positions.length} position${positions.length === 1 ? "" : "s"}`}</span></div>
-              {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow walletPositionRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
+              {positions.length ? <div className="walletVaultRows">{positions.map(({ vault, balance }) => <Link className="walletVaultRow walletPositionRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Balance</span><strong>{formatShareSupply(balance)} {vault.symbol}</strong></div></Link>)}</div> : <div className="inlineEmptyState walletPositionEmpty">{vaultDataLoading ? <LoaderCircle className="createAssetSpinner" size={18} /> : <CircleDollarSign size={18} />}<div><strong>{vaultDataLoading ? "Checking OTF balances" : vaultDirectoryState === "failure" ? "Could not load OTF positions" : "No OTF positions found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured network RPC." : "Your OTF shares will appear here after a purchase or deposit."}</span></div></div>}
             </section>
             <section className="sectionCard managedVaultsPanel">
               <div className="managedVaultsHeading"><div><span className="appPageIcon"><UserCog size={16} /></span><div><h2>Funds managed by you</h2><p>Funds launched by this wallet, discovered from the factory directory.</p></div></div><div className="managedVaultsHeaderActions"><Link className="secondaryAction" href="/launch?from=wallet">Launch OTF</Link></div></div>
-              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Fees</span><strong><FundFees fund={vault} /></strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs launched by this wallet" : vaultDirectoryState === "failure" ? "Could not load launched OTFs" : "No launched OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured testnet RPC." : "OTFs will appear here after this wallet launches them through the factory."}</span></div></div>}
+              {managedVaults.length ? <div className="walletVaultRows">{managedVaults.map((vault) => <Link className="walletVaultRow" href={`/funds/${vault.address}`} key={vault.address}><div className="walletVaultIdentity"><AssetLogo symbol={vault.symbol} /><span><strong>{vault.name}</strong><small>{vault.symbol} · {shortAddress(vault.address)}</small></span></div><div className="walletVaultStat"><span>Constituents</span><strong>{vault.assetCount}</strong></div><div className="walletVaultStat"><span>Fees</span><strong><FundFees fund={vault} /></strong></div></Link>)}</div> : <div className="inlineEmptyState">{vaultDirectoryState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} /> : <UserCog size={18} />}<div><strong>{vaultDirectoryState === "loading" ? "Finding OTFs launched by this wallet" : vaultDirectoryState === "failure" ? "Could not load launched OTFs" : "No launched OTFs found"}</strong><span>{vaultDirectoryState === "failure" ? "The factory directory could not be read from the configured network RPC." : "OTFs will appear here after this wallet launches them through the factory."}</span></div></div>}
             </section>
           </>
         ) : (

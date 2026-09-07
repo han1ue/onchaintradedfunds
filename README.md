@@ -60,13 +60,35 @@ Run the main application with `corepack pnpm --filter @onchaintradedfunds/app de
 
 ### Basket quote configuration
 
-Testnet basket quotes use the configured V3 pools and combine USDG proceeds before a final WETH swap. Mainnet quotes use `UNISWAP_API_KEY` to request independent V3/V4 routes for each constituent. Mint quotes request exact output, then budget exact-input adapter swaps to cover those amounts. Burn quotes request exact input. The planner translates split routes and mixed V3/V4 paths into approved adapter calls, with ETH wrapping and unwrapping in the basket router.
+Testnet basket quotes use the configured V3 pools and the canonical V4 OTF/WETH pool for protocol OTF constituents. Mainnet quotes use `UNISWAP_API_KEY` to request independent V3/V4 routes for each constituent. Mint quotes request exact output, then budget exact-input adapter swaps to cover those amounts. Burn quotes request exact input. The planner translates split routes and mixed V3/V4 paths into approved adapter calls, with ETH wrapping and unwrapping in the basket router.
 
 Mainnet basket quotes require deployment addresses in `app/src/config/robinhood-mainnet.json`: `protocolContracts.factory.address`, `protocolContracts.entryRouter.address`, `protocolContracts.uniswapV3Adapter.address`, and `protocolContracts.uniswapV4Adapter.address`. The `externalContracts` section must identify `uniswapV3Factory`, `uniswapV3SwapRouter02`, `uniswapV4PoolManager`, and `uniswapV4StateView`. Universal Router and Permit2 come from `uniswapTradingApi`; WETH comes from the production asset catalog. Protocol deployment addresses are not populated yet.
 
 The V4 adapter accepts ERC-20 and native-ETH pool hops. It unwraps canonical WETH for native input and wraps native output before returning it to the basket router. Route data encodes `abi.encode(address currencyIn, PathKey[])`, with address zero representing ETH inside the V4 path. The planner compares WETH and native-ETH endpoint quotes and preserves hook data when supplied; otherwise it uses empty bytes. If a hook needs data the API does not supply, simulation rejects the route. Mixed-protocol boundaries cannot consume a token reserved for another basket constituent.
 
 Set `RH_MAINNET_RPC_URL` to an RPC supporting `eth_simulateV1`; otherwise the app uses its configured mainnet RPC. Before returning an executable quote, the server checks deployment bindings and simulates approvals followed by the entire basket transaction using the caller's actual balances. Unsupported simulation or a reverted call makes the quote unavailable. The wallet repeats preflight after approval and before submission.
+
+### Mainnet preparation
+
+The mainnet manifest records the external Uniswap contracts and ETH/USD oracle. Protocol contracts remain undeployed. Both the initial protocol administrator and team vesting beneficiary resolve to the deployer; an administrator handoff can follow later. Set `DEPLOYER_ADDRESS` to the public address when preparing a concrete deployment plan.
+
+Run these commands from the repository root:
+
+```sh
+node scripts/prepare-mainnet.mjs
+node --env-file=app/.env.local scripts/check-mainnet-services.mjs
+node scripts/verify-mainnet-routing.mjs
+```
+
+Store `UNISWAP_API_KEY` in the ignored `app/.env.local`. Optionally set `RH_MAINNET_RPC_URL` in the process environment to override the public RPC for these commands. Preparation verifies 23 pinned external runtimes and writes the role plan to `test-results/mainnet/preparation.json`. The service check tests RPC simulation support, oracle freshness, stock identities and Uniswap buy/sell quotes. Missing credentials or a failed service check produce a nonzero exit. Reports under `test-results/mainnet/` are ignored by Git.
+
+The service checker sends Uniswap requests sequentially with a 1.1-second pause. The app spaces provider requests by at least 210 milliseconds per server process, honors `Retry-After` on HTTP 429, and makes at most three attempts. This pacing does not coordinate separate Vercel instances sharing the API key. Sustained traffic across instances needs a shared rate limiter or a higher provider quota; exhausted retries return `PROVIDER_RATE_LIMITED`.
+
+The fork rehearsal creates contracts and exercises V3/V4 routing, stock baskets, launch graduation, vesting and administrator handoff on a local copy of mainnet state. These commands do not broadcast transactions. `deploymentPolicy.broadcastEnabled` stays false during preparation.
+
+The app selects protocol addresses and rewards timing by network. Mainnet fund creation and discovery stay disabled until the manifest records deployed contracts and approved adapters. Creation previews use Robinhood identities for the five rehearsed stocks and Yahoo prices and market caps; assets with a changed share multiplier or missing pricing are omitted. This catalog does not add mainnet pricing routes to the verification registry.
+
+After deployment, record the confirmed protocol addresses, rewards deployment block and timestamp, and approved adapters. Initialize the canonical OTF pool and check live basket quotes and simulations before setting routing ready. A successful stock quote or local fork rehearsal does not prove that the Trading API can discover the future OTF pool.
 
 ## Further reading
 

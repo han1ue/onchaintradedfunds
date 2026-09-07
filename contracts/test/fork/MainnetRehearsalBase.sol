@@ -79,8 +79,12 @@ abstract contract MainnetRehearsalBase is Test {
         assertEq(oracle.description(), "ETH / USD");
 
         deployer = makeAddr("mainnet rehearsal deployer");
-        administrator = makeAddr("mainnet rehearsal protocol administrator");
-        beneficiary = makeAddr("mainnet rehearsal team beneficiary");
+        string memory manifest = vm.readFile("../app/src/config/robinhood-mainnet.json");
+        assertEq(vm.parseJsonString(manifest, ".deploymentPolicy.protocolAdministrator"), "deployer");
+        assertEq(vm.parseJsonString(manifest, ".deploymentPolicy.teamBeneficiary"), "deployer");
+        assertFalse(vm.parseJsonBool(manifest, ".deploymentPolicy.broadcastEnabled"));
+        administrator = deployer;
+        beneficiary = deployer;
         investor = makeAddr("mainnet rehearsal investor");
         vm.deal(deployer, 100 ether);
         vm.deal(administrator, 100 ether);

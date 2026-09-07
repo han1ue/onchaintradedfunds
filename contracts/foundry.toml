@@ -52,7 +52,7 @@ show_metrics = true
 test = "test/fork"
 out = "out/mainnet"
 skip = []
-fs_permissions = [{ access = "read", path = "../scripts/fixtures" }]
+fs_permissions = [{ access = "read", path = "../scripts/fixtures" }, { access = "read", path = "../app/src/config/robinhood-mainnet.json" }]
 
 [fmt]
 line_length = 100

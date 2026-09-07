@@ -3,6 +3,8 @@
   "private": true,
   "packageManager": "pnpm@11.17.0",
   "scripts": {
+    "mainnet:prepare": "node scripts/prepare-mainnet.mjs",
+    "mainnet:check-services": "node --env-file-if-exists=app/.env.local scripts/check-mainnet-services.mjs",
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:abi": "node scripts/generate-contract-abis.mjs",
     "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
