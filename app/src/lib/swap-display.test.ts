@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { formatSwapDisplay, quoteRefreshDelay } from "./swap-display";
-import { QUOTE_MAX_AGE_MS, type SwapQuote } from "./swap-model";
 
 describe("swap display", () => {
   it("truncates displayed amounts without rounding a minimum upward or losing integer precision", () => {
@@ -15,17 +14,18 @@ describe("swap display", () => {
 });
 
 describe("quote refresh scheduling", () => {
-  const quote: SwapQuote = { id: "basket", route: "basket", routeLabel: "Mint basket", state: "available", inputAmount: "1", queriedAt: 100_000 };
-  it("refreshes before the age limit even when provider expiry is later", () => {
-    expect(quoteRefreshDelay([{ ...quote, expiresAt: 200_000 }], 100_000)).toBe(QUOTE_MAX_AGE_MS - 5_000);
+  it("waits 45 seconds from each request, including failed quotes", () => {
+    expect(quoteRefreshDelay(100_000, 100_000)).toBe(45_000);
+    expect(quoteRefreshDelay(100_000, 120_000)).toBe(25_000);
+    expect(quoteRefreshDelay(100_000, 144_999)).toBe(1);
+    expect(quoteRefreshDelay(100_000, 145_000)).toBe(0);
   });
-  it("uses the earliest provider expiry across routes", () => {
-    expect(quoteRefreshDelay([quote, { ...quote, expiresAt: 110_000 }], 100_000)).toBe(5_000);
+  it("keeps the original deadline when route states change or the tab resumes late", () => {
+    expect(quoteRefreshDelay(100_000, 130_000)).toBe(15_000);
+    expect(quoteRefreshDelay(100_000, 160_000)).toBe(0);
   });
-  it("does not overlap an in-flight request and backs off unavailable routes", () => {
-    expect(quoteRefreshDelay([], 100_000)).toBeUndefined();
-    expect(quoteRefreshDelay([{ ...quote, state: "loading" }], 100_000)).toBeUndefined();
-    expect(quoteRefreshDelay([{ ...quote, state: "unavailable" }], 100_000)).toBe(30_000);
-    expect(quoteRefreshDelay([quote], 130_000)).toBe(1_000);
+  it("resets the countdown for a manual refresh and does not schedule before the first request", () => {
+    expect(quoteRefreshDelay(undefined, 100_000)).toBeUndefined();
+    expect(quoteRefreshDelay(120_000, 120_000)).toBe(45_000);
   });
 });

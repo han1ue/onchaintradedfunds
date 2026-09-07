@@ -901,6 +901,8 @@ h2 { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.0
 .swapReviewHeader button svg { display: block; flex: 0 0 auto; }
 .swapReviewHeader button span { line-height: 1; }
 .swapReviewHeader button:disabled { cursor: wait; }
+.swapRefreshCountdown circle { fill: none; stroke: currentColor; stroke-width: 2.5; }
+.swapRefreshTrack { opacity: 0.2; }
 .swapRouteInspection p[role="status"] { display: flex; align-items: center; gap: 6px; }
 .swapReviewHeader button:hover { color: var(--lime-hover); }
 
@@ -1503,23 +1505,11 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .stateBadge.muted { background: var(--card-raised); color: var(--text-muted); }
 
 .directoryTableWrap { overflow-x: auto; }
-.fundSortControl { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 0.7rem; }
-.fundSortControl select { width: 100%; min-height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); color: var(--text); padding: 6px 28px 6px 10px; font: inherit; }
-.fundSortHeader { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; text-transform: inherit; cursor: pointer; }
-.fundSortHeader svg { opacity: 0.4; }
-th[aria-sort="ascending"] .fundSortHeader,
-th[aria-sort="descending"] .fundSortHeader { color: var(--text); }
-th[aria-sort="ascending"] .fundSortHeader svg,
-th[aria-sort="descending"] .fundSortHeader svg { opacity: 1; }
-.fundSortHeader .ascending { transform: rotate(180deg); }
-.fundFeesInline { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 8px; font-variant-numeric: tabular-nums; }
-.fundFeesInline > span { white-space: nowrap; }
-.walletVaultStat .fundFeesInline > span { color: inherit; font-size: inherit; }
-.managedVaultsPanel > .fundSortControl,
-.depositPositions > .fundSortControl { justify-content: flex-end; padding: 10px 14px; }
+.fundSortHeader { border: 0; background: transparent; color: inherit; padding: 4px 0; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.fundFeesInline { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.walletVaultStat .fundFeesInline { color: inherit; font-size: inherit; }
 @media (max-width: 620px) {
   .directoryPanel td[data-label="Fees"] { grid-column: 1 / -1; }
-  .fundSortControl .selectControl { flex: 1; }
 }
 
 .directoryCardsWrap { overflow: hidden; }
@@ -1620,13 +1610,14 @@ th[aria-sort="descending"] .fundSortHeader svg { opacity: 1; }
 .fundMetricAddressLink { max-width: 100%; }
 .fundMetricAddressLink code { overflow: hidden; font: inherit; text-overflow: ellipsis; }
 .fundRewardsValue,
-.fundDetailMetrics .fundRewardsValue { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; line-height: inherit; }
+.fundDetailMetrics .fundRewardsValue { display: inline-flex; align-items: center; gap: 2px; vertical-align: baseline; line-height: inherit; }
 .fundDetailMetrics .fundRewardsValue,
 .fundDetailMetrics .fundRewardsValue > span { color: inherit; font: inherit; letter-spacing: normal; text-transform: none; }
 .fundDetailMetrics .fundRewardsMetric { display: flex; align-items: center; overflow: visible; }
 .rewardsInfoButton { position: relative; z-index: 1; display: inline-grid; width: 14px; height: 14px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); padding: 0; transition: color 160ms ease, background 160ms ease; }
 .rewardsInfoButton::before { content: ""; position: absolute; inset: -7px; }
 .rewardsInfoButton svg { display: block; }
+.directoryTable .rewardsInfoButton { top: -1px; }
 .rewardsInfoButton:hover { background: var(--card-raised); color: var(--accent-text); }
 .rewardsInfoButton:disabled { opacity: 0.4; }
 .rewardsDialog { width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--card); color: var(--text); padding: 0; text-align: left; font-size: 0.8rem; font-weight: 400; line-height: 1.55; white-space: normal; }

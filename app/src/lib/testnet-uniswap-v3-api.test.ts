@@ -132,6 +132,8 @@ describe("Uniswap V3 testnet quote planner", () => {
     expect(transaction.to).toBe(testnetVenue.swapRouter02);
     expect(decodeFunctionData({ abi: uniswapV3SwapRouterAbi, data: transaction.data })).toMatchObject({ functionName: "exactInput" });
     const parsed = parseResponse(result.body, request);
+    expect(parsed.expiresAt).toBe(NOW + 45_000);
+    expect(execution.expiresAtMs).toBe(NOW + 45_000);
     expect(parsed.execution).toMatchObject({ kind: "direct-v3", amountIn: 10_000_000n });
     expect(parsed.hops?.[0]).toMatchObject({ venue: "Uniswap V3", feeTier: 500 });
   });
@@ -222,6 +224,9 @@ describe("Uniswap V3 testnet quote planner", () => {
     const mintResult = await quoteTestnetSwap(mint, dependencies(client));
     const redeemResult = await quoteTestnetSwap(redeem, dependencies(client));
     const convertResult = await quoteTestnetSwap(convert, dependencies(client));
+    for (const result of [mintResult, redeemResult, convertResult]) {
+      expect(result.body).toMatchObject({ expiresAtMs: NOW + 45_000 });
+    }
 
     expect(parseResponse(mintResult.body, mint).execution).toMatchObject({ kind: "basket-router", call: { method: "mintFromToken" } });
     expect(parseResponse(redeemResult.body, redeem).execution).toMatchObject({ kind: "basket-router", call: { method: "redeemToToken" } });

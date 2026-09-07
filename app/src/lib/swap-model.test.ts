@@ -17,6 +17,7 @@ import {
   nativeMaxAmount,
   parseTypedQuoteResponse,
   quoteNeedsRefresh,
+  quoteIsFresh,
   requestConcurrentQuotes,
   routerArgsForExecution,
   supportedSwapDirection,
@@ -279,12 +280,20 @@ describe("swap state model", () => {
   });
 
   it("rejects stale quotes and preserves the first-mint minimum", () => {
-    const stale = quote("basket", 20n, NOW - 20_001);
+    const stale = quote("basket", 20n, NOW - 45_001);
     expect(bestQueriedQuote([stale], NOW)).toBeUndefined();
     expect(quoteNeedsRefresh(stale, NOW)).toBe(true);
     const below = { ...quote("basket", 1n), minimumReceivedRaw: 9_999_999_999_999_999n };
     expect(enforceFirstPurchaseMinimum([below], FUND_A, 0n)[0].state).toBe("unavailable");
     expect(enforceFirstPurchaseMinimum([quote("basket", 1n)], FUND_A, undefined)[0].state).toBe("unavailable");
+  });
+
+  it("keeps quotes fresh for the 45-second cycle without overriding earlier provider expiries", () => {
+    const current = { ...quote("basket", 20n), expiresAt: NOW + 45_000 };
+    expect(quoteIsFresh(current, NOW + 44_999)).toBe(true);
+    expect(quoteIsFresh(current, NOW + 45_000)).toBe(false);
+    expect(quoteIsFresh({ ...current, expiresAt: NOW + 10_000 }, NOW + 10_000)).toBe(false);
+    expect(quoteIsFresh({ ...current, expiresAt: NOW + 120_000 }, NOW + 45_001)).toBe(false);
   });
 
   it("validates decimal input and caps its displayed precision", () => {

@@ -59,6 +59,14 @@ function provider(overrides: Record<string, unknown> = {}) {
 }
 
 describe("same-origin Uniswap quote API", () => {
+  it("defaults to 45-second quotes and preserves explicit provider deadlines", async () => {
+    const fallback = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: provider({ deadline: undefined }) });
+    expect(fallback.status).toBe(200);
+    expect(fallback.body).toMatchObject({ expiresAtMs: NOW + 45_000 });
+    const explicit = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: provider() });
+    expect(explicit.body).toMatchObject({ expiresAtMs: NOW + 20_000 });
+  });
+
   it("requests exact-input BEST_PRICE V3/V4 CLASSIC quotes and returns validated targets", async () => {
     const requestProvider = provider();
     const result = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });

@@ -198,7 +198,7 @@ export type SwapExecutionState = "ready" | "blocked" | "unavailable" | "pending"
 
 export const MAX_SWAP_LEGS = 40;
 export const MAX_V3_HOPS_PER_LEG = 3;
-export const QUOTE_MAX_AGE_MS = 20_000;
+export const QUOTE_MAX_AGE_MS = 45_000;
 export const QUOTE_MAX_FUTURE_DEADLINE_SECONDS = 300;
 export const FIRST_PURCHASE_MINIMUM_SHARES = 10_000_000_000_000_000n;
 

@@ -1,4 +1,4 @@
-import { QUOTE_MAX_AGE_MS, type SwapQuote } from "./swap-model";
+import { QUOTE_MAX_AGE_MS } from "./swap-model";
 
 export function formatSwapDisplay(value: string | undefined, digits = 8): string {
   if (value === undefined) return "—";
@@ -9,10 +9,6 @@ export function formatSwapDisplay(value: string | undefined, digits = 8): string
   });
 }
 
-export function quoteRefreshDelay(quotes: readonly SwapQuote[], now: number): number | undefined {
-  if (!quotes.length || quotes.some((quote) => quote.state === "loading")) return undefined;
-  const deadlines = quotes.filter((quote) => quote.state === "available").map((quote) => (
-    Math.min(quote.queriedAt + QUOTE_MAX_AGE_MS, quote.expiresAt ?? Infinity)
-  ));
-  return deadlines.length ? Math.max(1_000, Math.min(...deadlines) - now - 5_000) : 30_000;
+export function quoteRefreshDelay(startedAt: number | undefined, now: number): number | undefined {
+  return startedAt === undefined ? undefined : Math.max(0, startedAt + QUOTE_MAX_AGE_MS - now);
 }

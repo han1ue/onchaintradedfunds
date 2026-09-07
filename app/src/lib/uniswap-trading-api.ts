@@ -1,11 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { decodeFunctionData, encodeFunctionData, getAddress, isAddress, type Address, type Hex } from "viem";
 import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady } from "./deployment";
-import { ERC20_APPROVE_ABI, swapIncludesOtf } from "./swap-model";
+import { ERC20_APPROVE_ABI, QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
 import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
 
 const UNISWAP_API_BASE = "https://trade-api.gateway.uniswap.org/v1";
-const QUOTE_LIFETIME_MS = 20_000;
 const MAX_QUOTE_LIFETIME_MS = 300_000;
 
 type ObjectRecord = Record<string, unknown>;
@@ -262,7 +261,7 @@ function quoteSemantics(response: unknown, request: ValidatedQuoteRequest, now: 
     : uint(String(providerMinimumValue), "Uniswap quote minimum output", false);
   if (minAmountOut > expectedAmountOut || minAmountOut < floorMinimum) throw new Error("Uniswap quote minimum output violates the requested slippage.");
   const deadlineValue = valueAt(providerQuote, ["deadline", "expiresAt"]);
-  const expiresAtMs = deadlineValue === undefined ? now + QUOTE_LIFETIME_MS : Number(deadlineValue) * 1_000;
+  const expiresAtMs = deadlineValue === undefined ? now + QUOTE_MAX_AGE_MS : Number(deadlineValue) * 1_000;
   if (!Number.isSafeInteger(expiresAtMs) || expiresAtMs <= now || expiresAtMs > now + MAX_QUOTE_LIFETIME_MS) throw new Error("Uniswap quote expiry is invalid.");
   return { providerQuote, expectedAmountOut, minAmountOut, expiresAtMs, permitData: root.permitData ?? undefined };
 }

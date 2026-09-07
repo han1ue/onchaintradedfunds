@@ -29,8 +29,8 @@ import {
 } from "./asset-catalog";
 import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetNativeEntryReady } from "./deployment";
 import { verifyTestnetV3Adapter } from "./testnet-v3-bindings";
+import { QUOTE_MAX_AGE_MS } from "./swap-model";
 
-const QUOTE_LIFETIME_MS = 20_000;
 const ROUTER_DEADLINE_SECONDS = 120;
 const ONE_OTF = 1_000_000_000_000_000_000n;
 
@@ -413,7 +413,7 @@ function availableResponse(
       chainId: request.chainId,
       caller: request.caller,
       quotedAtMs: now,
-      expiresAtMs: now + QUOTE_LIFETIME_MS,
+      expiresAtMs: now + QUOTE_MAX_AGE_MS,
       inputAmountRaw: request.inputAmountRaw.toString(),
       outputAmount: formatRaw(expectedOutput, request.output.decimals),
       expectedOutput: formatRaw(expectedOutput, request.output.decimals),
@@ -453,7 +453,7 @@ async function directQuote(request: TestnetPlannerRequest, client: TestnetRoutin
     swapRouter02: testnetVenue.swapRouter02,
     amountIn: request.inputAmountRaw.toString(),
     minAmountOut: minimumOutput.toString(),
-    expiresAtMs: now + QUOTE_LIFETIME_MS,
+    expiresAtMs: now + QUOTE_MAX_AGE_MS,
     approval: { token: request.input.address, spender: testnetVenue.swapRouter02, amount: request.inputAmountRaw.toString() },
     path: route.path,
     transaction,
