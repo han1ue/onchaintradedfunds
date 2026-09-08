@@ -80,7 +80,9 @@ abstract contract MainnetRehearsalBase is Test {
 
         deployer = makeAddr("mainnet rehearsal deployer");
         string memory manifest = vm.readFile("../app/src/config/robinhood-mainnet.json");
-        assertEq(vm.parseJsonString(manifest, ".deploymentPolicy.protocolAdministrator"), "deployer");
+        assertEq(
+            vm.parseJsonString(manifest, ".deploymentPolicy.protocolAdministrator"), "deployer"
+        );
         assertEq(vm.parseJsonString(manifest, ".deploymentPolicy.teamBeneficiary"), "deployer");
         assertFalse(vm.parseJsonBool(manifest, ".deploymentPolicy.broadcastEnabled"));
         administrator = deployer;

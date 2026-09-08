@@ -114,7 +114,11 @@ contract OTFFactory is ReentrancyGuard {
         emit VaultCreated(msg.sender, vault, params.name, params.symbol);
     }
 
-    function otfTokenURI(string memory tokenName, string memory ticker) external pure returns (string memory) {
+    function otfTokenURI(string memory tokenName, string memory ticker)
+        external
+        pure
+        returns (string memory)
+    {
         return OTFMetadata.shareTokenURI(tokenName, ticker);
     }
 }
