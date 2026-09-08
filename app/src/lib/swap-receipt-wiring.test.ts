@@ -22,8 +22,9 @@ describe("swap receipt wiring", () => {
     expect(component).not.toContain("Review and submit swap");
   });
 
-  it("does not offer a fund-detail action for the protocol token", () => {
-    expect(component).toContain("!receipt.fund.isProtocolToken");
+  it("offers a fund-detail action only outside embedded fund pages", () => {
+    expect(component).toContain("showFundLink && !receipt.fund.isProtocolToken");
+    expect(component).toContain("showFundLink={!embedded}");
   });
 
   it("caps pay and receive amounts at eight fractional digits", () => {

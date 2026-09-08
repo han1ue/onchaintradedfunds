@@ -1,3 +1,4 @@
+import { readDeploymentAssetCatalog, registerProtocolDeployment } from "./lib/registry.mjs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -244,7 +245,7 @@ verifyEmbeddedAddress("Universal Router Permit2", universalRouterCode, permit2);
 
 await verifyTestnetRoutingRuntime(publicClient, networkConfig, routingPin);
 
-const assetCatalog = JSON.parse(readFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), "utf8"));
+const assetCatalog = await readDeploymentAssetCatalog(chainId);
 for (const pool of assetCatalog.pools) {
   const liquidity = await publicClient.readContract({ address: pool.address,
     abi: [{ type: "function", name: "liquidity", stateMutability: "view", inputs: [], outputs: [{ type: "uint128" }] }], functionName: "liquidity" });
@@ -857,15 +858,6 @@ const deployment = {
 mkdirSync(dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, `${json(deployment)}\n`);
 if (!simulation) {
-  const verifiedPath = join(root, "app/src/config/verified_assets.json");
-  const verified = JSON.parse(readFileSync(verifiedPath, "utf8")).filter((asset) => !(
-    asset.chainId === chainId
-      && Array.isArray(asset.approvedPricingConfigs)
-      && asset.approvedPricingConfigs.some((config) => config.source === "otf-launch-manager")
-  ));
-  verified.unshift({ chainId, tokenAddress: otfToken.address, approvedPricingConfigs: [{ source: "otf-launch-manager", feedAddress: launchManager.address, maxStaleness: 90000 }] });
-  writeFileSync(verifiedPath, `${json(verified)}\n`);
-  for (const pool of assetCatalog.pools) pool.status = "seeded";
-  writeFileSync(join(root, "app/src/config/robinhood-testnet-assets.json"), `${json(assetCatalog)}\n`);
+  await registerProtocolDeployment({ chainId, otfToken: otfToken.address, launchManager: launchManager.address, pools: assetCatalog.pools });
 }
 console.log(`Deployment ${simulation ? "simulation" : "configuration"} written to ${outputPath}; gas ${totalGas}`);

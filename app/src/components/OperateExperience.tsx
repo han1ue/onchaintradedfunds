@@ -17,7 +17,6 @@ import {
   ChevronDown,
   CircleDollarSign,
   Copy,
-  Droplets,
   ExternalLink,
   FilePlus2,
   History,
@@ -47,7 +46,11 @@ import {
   protocolDeploymentForChain,
   robinhoodTestnetDeploymentReady,
 } from "@/lib/deployment";
-import { productionAssetsForChain, testnetAssets, testnetVenue } from "@/lib/asset-catalog";
+import { fundAssetsVerified, type AssetRegistry } from "@/lib/asset-catalog";
+import { useAssetRegistry } from "@/lib/use-asset-registry";
+import { chartHistory, type FundHistoryResponse } from "@/lib/fund-history";
+import { usePageVisible } from "@/lib/use-page-visible";
+import { testnetVenue } from "@/lib/venue-config";
 import { accountedRewardWeightOtf, estimatedRewardsApy } from "@/lib/incentive-apy";
 import { swapErrorMessage } from "@/lib/swap-error";
 import { FundRewardsDialog } from "./FundRewardsDialog";
@@ -101,14 +104,14 @@ import {
   type FeeSettlementRoutes,
 } from "@/lib/fee-settlement";
 import { readVaultSummary, useFactoryVaults, type FactoryVaultDirectoryState, type FactoryVaultSummary } from "@/lib/use-factory-vaults";
-import { formatAnnualExpenseRatioPercentage, parseFixedDecimal, type CreationAssetData } from "@/lib/creation-model";
+import { formatAnnualExpenseRatioPercentage, type CreationAssetData } from "@/lib/creation-model";
 import {
   formatStoredPercentage,
   loadCreationMetadata,
   weightingMethodLabel,
   type OtfCreationMetadata,
 } from "@/lib/creation-metadata";
-import { fundAllocationRows, fundAllocationWeights, fundAssetsVerified, type FundAllocationRow, type FundAllocationWeights } from "@/lib/fund-composition";
+import { formatAllocationQuantity, fundAllocationRows, fundAllocationWeights, type FundAllocationRow, type FundAllocationWeights } from "@/lib/fund-composition";
 import { SplashPage } from "./SplashPage";
 import { TestnetLiquiditySurface } from "./TestnetLiquiditySurface";
 import { CreateOTFForm } from "./CreateOTFForm";
@@ -132,6 +135,11 @@ const PERMIT2_APPROVE_ABI = [{
     { name: "expiration", type: "uint48" },
   ],
   outputs: [],
+}] as const;
+const PERMIT2_ALLOWANCE_ABI = [{
+  type: "function", name: "allowance", stateMutability: "view",
+  inputs: [{name:"owner",type:"address"},{name:"token",type:"address"},{name:"spender",type:"address"}],
+  outputs: [{name:"amount",type:"uint160"},{name:"expiration",type:"uint48"},{name:"nonce",type:"uint48"}],
 }] as const;
 const ERC20_BALANCE_ABI = [{
   type: "function",
@@ -172,12 +180,8 @@ const EMPTY_OTF: SwapAsset = {
   isFactoryVault: false,
 };
 
-function configuredAssetsFor(chainId: number): SwapAsset[] {
-  const assets = chainId === robinhoodChainTestnet.id
-    ? testnetAssets
-    : chainId === robinhoodChain.id
-      ? productionAssetsForChain(chainId)
-      : [];
+function configuredAssetsFor(registry: AssetRegistry, chainId: number): SwapAsset[] {
+  const assets = registry.assets.filter(asset => asset.chainId === chainId && asset.enabled && asset.featured);
   const configured = assets.map((asset): SwapAsset => ({
     address: asset.address,
     symbol: asset.symbol,
@@ -185,7 +189,8 @@ function configuredAssetsFor(chainId: number): SwapAsset[] {
     kind: "erc20",
     decimals: asset.decimals,
     metadataResolved: true,
-    verified: chainId === robinhoodChainTestnet.id || fundAssetsVerified(chainId, [asset.address]),
+    verified: asset.verified,
+    isProtocolToken: asset.assetType === "protocol_token" && asset.address.toLowerCase() === protocolDeploymentForChain(chainId)?.addresses.otfToken?.toLowerCase(),
   }));
   const canonicalWeth = chainId === robinhoodChainTestnet.id
     ? protocolDeploymentForChain(chainId)?.addresses.weth
@@ -199,44 +204,29 @@ function configuredAssetsFor(chainId: number): SwapAsset[] {
     kind: "native",
     decimals: 18,
     metadataResolved: true,
-    verified: true,
-  });
-  const protocolToken = chainId === robinhoodChainTestnet.id
-    ? protocolDeploymentForChain(chainId)?.addresses.otfToken
-    : chainId === robinhoodChain.id
-      ? robinhoodMainnetAddresses.otfToken
-      : undefined;
-  if (protocolToken) configured.push({
-    address: protocolToken,
-    symbol: "OTF",
-    name: "OTF Protocol Token",
-    kind: "erc20",
-    decimals: 18,
-    metadataResolved: true,
-    verified: true,
-    isProtocolToken: true,
+    verified: false,
   });
   return configured;
 }
 
-function configuredUsdgFor(chainId: number): SwapAsset | undefined {
-  return configuredAssetsFor(chainId).find((asset) => asset.symbol === "USDG");
+function configuredUsdgFor(registry: AssetRegistry, chainId: number): SwapAsset | undefined {
+  return configuredAssetsFor(registry, chainId).find((asset) => asset.address.toLowerCase() === protocolDeploymentForChain(chainId)?.addresses.usdg?.toLowerCase());
 }
 
-function configuredNativeFor(chainId: number): SwapAsset | undefined {
-  return configuredAssetsFor(chainId).find((asset) => asset.kind === "native");
+function configuredNativeFor(registry: AssetRegistry, chainId: number): SwapAsset | undefined {
+  return configuredAssetsFor(registry, chainId).find((asset) => asset.kind === "native");
 }
 
-function configuredWethFor(chainId: number): SwapAsset | undefined {
-  return configuredAssetsFor(chainId).find((asset) => asset.kind === "erc20" && asset.symbol === "WETH");
+function configuredWethFor(registry: AssetRegistry, chainId: number): SwapAsset | undefined {
+  return configuredAssetsFor(registry, chainId).find((asset) => asset.kind === "erc20" && asset.address.toLowerCase() === protocolDeploymentForChain(chainId)?.addresses.weth?.toLowerCase());
 }
 
-function configuredDefaultInputFor(chainId: number): SwapAsset | undefined {
-  return configuredNativeFor(chainId) ?? configuredWethFor(chainId);
+function configuredDefaultInputFor(registry: AssetRegistry, chainId: number): SwapAsset | undefined {
+  return configuredNativeFor(registry, chainId) ?? configuredWethFor(registry, chainId);
 }
 
-function configuredProtocolTokenFor(chainId: number): SwapAsset | undefined {
-  return configuredAssetsFor(chainId).find((asset) => asset.isProtocolToken === true);
+function configuredProtocolTokenFor(registry: AssetRegistry, chainId: number): SwapAsset | undefined {
+  return configuredAssetsFor(registry, chainId).find((asset) => asset.isProtocolToken === true);
 }
 
 function addressFromLocation(): Address | undefined {
@@ -522,7 +512,7 @@ function SwapCelebration({ active }: { active: boolean }) {
   );
 }
 
-function SwapReceiptPanel({ receipt, onBack, celebrating }: { receipt: SwapReceipt; onBack: () => void; celebrating: boolean }) {
+function SwapReceiptPanel({ receipt, onBack, celebrating, showFundLink }: { receipt: SwapReceipt; onBack: () => void; celebrating: boolean; showFundLink: boolean }) {
   const chain = receipt.chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain;
   const [refundsExpanded, setRefundsExpanded] = useState(false);
   const refundDisclosure = receiptRefundDisclosure(receipt.refunds, refundsExpanded);
@@ -555,7 +545,7 @@ function SwapReceiptPanel({ receipt, onBack, celebrating }: { receipt: SwapRecei
         <div><dt>Gas fee</dt><dd title={`${formatUnits(receipt.gasFee, chain.nativeCurrency.decimals)} ${chain.nativeCurrency.symbol}`}>{formatSwapDisplay(formatUnits(receipt.gasFee, chain.nativeCurrency.decimals))} {chain.nativeCurrency.symbol}</dd></div>
         <div><dt>Gas used</dt><dd>{receipt.gasUsed.toLocaleString()}</dd></div>
       </dl>
-      {!receipt.fund.isProtocolToken ? <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link> : null}
+      {showFundLink && !receipt.fund.isProtocolToken ? <Link className="swapPrimary swapReceiptPrimary" href={receipt.fundHref}>View {receipt.fund.symbol}<ArrowRight size={14} /></Link> : null}
     </div>
   );
 }
@@ -567,7 +557,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const { switchChain } = useSwitchChain();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
-  const configuredAssets = useMemo(() => configuredAssetsFor(chainId), [chainId]);
+  const { registry } = useAssetRegistry();
+  const pageVisible = usePageVisible();
+  const configuredAssets = useMemo(() => configuredAssetsFor(registry, chainId), [registry, chainId]);
   const { state: otfDirectoryState, vaults: factoryVaults } = useFactoryVaults();
   const otfAssets = useMemo<SwapAsset[]>(() => factoryVaults.map((vault) => ({
     address: vault.address,
@@ -580,9 +572,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   })), [factoryVaults]);
   const routeFundAddress = addressFromLocation();
   const routeFund = embeddedFund ?? (routeFundAddress ? { address: routeFundAddress, symbol: "OTF", name: "Unresolved fund route address", kind: "otf" as const, decimals: 18, metadataResolved: false } : undefined);
-  const pinnedAsset = protocolTokenMode ? configuredProtocolTokenFor(chainId) : embeddedFund;
-  const [input, setInput] = useState<SwapAsset>(() => configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
-  const [output, setOutput] = useState<SwapAsset>(() => embeddedFund ?? (protocolTokenMode ? configuredProtocolTokenFor(chainId) ?? EMPTY_OTF : EMPTY_OTF));
+  const pinnedAsset = protocolTokenMode ? configuredProtocolTokenFor(registry, chainId) : embeddedFund;
+  const [input, setInput] = useState<SwapAsset>(() => configuredDefaultInputFor(registry, chainId) ?? EMPTY_ERC20);
+  const [output, setOutput] = useState<SwapAsset>(() => embeddedFund ?? (protocolTokenMode ? configuredProtocolTokenFor(registry, chainId) ?? EMPTY_OTF : EMPTY_OTF));
   const [amount, setAmount] = useState("");
   const [slippageBps, setSlippageBps] = useState(50);
   const [swapSettingsOpen, setSwapSettingsOpen] = useState(false);
@@ -624,7 +616,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const sameAssetSelected = sameAsset(input, output);
   const pairExecutable = assetHasExecutableMetadata(input) && assetHasExecutableMetadata(output);
   const hasOtfSide = swapIncludesOtf(input, output);
-  const configuredWeth = configuredWethFor(chainId);
+  useEffect(() => {
+    if (protocolTokenMode && !output.metadataResolved) { const token = configuredProtocolTokenFor(registry, chainId); if (token) setOutput(token); }
+  }, [registry, chainId, protocolTokenMode, output.metadataResolved]);
+  const configuredWeth = configuredWethFor(registry, chainId);
   const nativeWrapPair = isNativeWrapPair(input, output, configuredWeth?.address);
   const missingOtfAsset = pairValid && !hasOtfSide && !nativeWrapPair;
   const protocolToken = protocolDeploymentForChain(chainId)?.addresses.otfToken;
@@ -748,7 +743,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   ));
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000);
+    const interval = window.setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 1_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -783,23 +778,27 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     ));
   }, [now]);
 
+  const selectionNetwork = useRef<number | undefined>(undefined);
   useEffect(() => {
+    if (!registry.assets.length || selectionNetwork.current === chainId) return;
+    selectionNetwork.current = chainId;
     if (protocolTokenMode) {
-      setInput(configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
-      setOutput(configuredProtocolTokenFor(chainId) ?? EMPTY_OTF);
+      setInput(configuredDefaultInputFor(registry, chainId) ?? EMPTY_ERC20);
+      setOutput(configuredProtocolTokenFor(registry, chainId) ?? EMPTY_OTF);
       return;
     }
     if (embedded) {
-      const networkUsdg = configuredUsdgFor(chainId);
+      const networkUsdg = configuredUsdgFor(registry, chainId);
       setInput((current) => current.verified ? networkUsdg ?? EMPTY_ERC20 : current);
       setOutput((current) => current.verified ? EMPTY_ERC20 : current);
       return;
     }
-    setInput(configuredDefaultInputFor(chainId) ?? EMPTY_ERC20);
+    setInput(configuredDefaultInputFor(registry, chainId) ?? EMPTY_ERC20);
     setOutput(EMPTY_OTF);
-  }, [chainId, embedded, protocolTokenMode]);
+  }, [chainId, embedded, protocolTokenMode, registry]);
 
   useEffect(() => {
+    if (!pageVisible) return;
     if (nativeWrapPair) {
       setQuotes([]);
       setActiveQuote(undefined);
@@ -818,7 +817,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     const requestedAt = Date.now();
     setQuoteStartedAt(requestedAt);
     setNow(requestedAt);
-    const request = { chainId, input, output, inputAmount: amount, slippageBps, requestedAt, caller: address };
+    const controller = new AbortController();
+    const request = { chainId, input, output, inputAmount: amount, slippageBps, requestedAt, caller: address, signal: controller.signal };
     const direction = classifySwapDirection(input, output);
     const loadingQuotes: SwapQuote[] = [
       { id: `direct-loading-${requestedAt}`, route: "direct", state: "loading", queriedAt: requestedAt, inputAmount: amount, routeLabel: "Direct pool" },
@@ -872,8 +872,8 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         if (!cancelled) setQuotes([unavailableQuote("direct", request, "Quote request failed.")]);
       });
     }, 400);
-    return () => { cancelled = true; window.clearTimeout(quoteTimer); };
-  }, [address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, nativeWrapPair, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(quoteTimer); };
+  }, [pageVisible, address, amount, amountValid, canonicalOtfPair, chainId, directionSupported, input, nativeWrapPair, output, pairExecutable, pairValid, publicClient, quoteRequest, quoteService, slippageBps, supportedNetwork]);
 
   function selectAsset(which: "input" | "output", asset: SwapAsset) {
     if (pinnedAsset && ((which === "input" && sameAsset(input, pinnedAsset)) || (which === "output" && sameAsset(output, pinnedAsset)))) return;
@@ -1137,6 +1137,15 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
             if (approvalReceipt.status !== "success") throw new Error("The required Permit2 token authorization reverted.");
           });
+          if (executionPlan.registered) {
+            const [permitted,expiration]=await publicClient.readContract({address:permit2,abi:PERMIT2_ALLOWANCE_ABI,functionName:"allowance",args:[address,executionPlan.inputToken,executionPlan.universalRouter]});
+            const deadline=Math.floor(executionPlan.expiresAt/1000);
+            if(permitted!==executionPlan.amountIn || expiration<deadline) {
+              const permitHash = await walletClient.writeContract({ account: address, address: permit2, abi: PERMIT2_APPROVE_ABI,
+                functionName: "approve", args: [executionPlan.inputToken,executionPlan.universalRouter,executionPlan.amountIn,deadline] });
+              if ((await publicClient.waitForTransactionReceipt({hash:permitHash})).status !== "success") throw new Error("The exact router authorization reverted.");
+            }
+          }
         }
         const signature = executionPlan.permitData
           ? await walletClient.signTypedData({
@@ -1246,12 +1255,12 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
 
   const executionBusy = execution === "approval" || execution === "simulation" || execution === "submission";
   useEffect(() => {
-    if (executionBusy || swapReceipt || !quotes.length || quotes.some((quote) => quote.state === "loading")) return;
+    if (!pageVisible || executionBusy || swapReceipt || !quotes.length || quotes.some((quote) => quote.state === "loading")) return;
     const delay = quoteRefreshDelay(quoteStartedAt, Date.now());
     if (delay === undefined) return;
     const timer = window.setTimeout(() => setQuoteRequest((current) => current + 1), delay);
     return () => window.clearTimeout(timer);
-  }, [quotes, quoteStartedAt, executionBusy, swapReceipt]);
+  }, [pageVisible, quotes, quoteStartedAt, executionBusy, swapReceipt]);
   const canonicalExecutionConfigured = Boolean(
     launchManager && (canonicalPhase === 1
       ? launchRouter
@@ -1381,9 +1390,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
               <button type="button" className="swapPrimary" aria-busy={executionBusy || primaryLabel === "Finding quote…"} disabled={missingOtfAsset || (address && supportedNetwork ? !canExecute : false)} onClick={handlePrimaryAction}>{executionBusy || primaryLabel === "Finding quote…" ? <ActivitySpinner size={14} /> : null}{primaryLabel}</button>
               {canonicalPhase === 1 && canonicalQuote && !canonicalQuote.fullyFilled ? <p className="swapPreflight">This amount crosses a launch price limit. Only the input needed to reach that limit will be used; unused {input.symbol} {input.kind === "native" ? "is refunded" : "stays in your wallet"}.</p> : null}
               {statusMessage ? <p className={`swapStatusLine ${execution === "failure" ? "failure" : execution === "success" ? "success" : ""}`} aria-live="polite">{statusMessage}{executionMessage && executionHash ? <a href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/tx/${executionHash}`} target="_blank" rel="noreferrer">View transaction<ExternalLink size={11} /></a> : null}</p> : null}
+              {quotes.some(quote => quote.state === "unavailable" && quote.reason) ? <div className="quoteFailureNotice" role="status">{quotes.filter(quote => quote.state === "unavailable" && quote.reason).map(quote => <p key={quote.id}>{quote.routeLabel}: {quote.reason}{quote.requestId ? <small> Reference: {quote.requestId}</small> : null}</p>)}{quotes.some(quote => ["PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMITED", "QUOTE_TIMEOUT", "QUOTE_EXPIRED"].includes(quote.failureCode ?? "")) ? <button type="button" className="secondaryAction" disabled={executionBusy} onClick={() => setQuoteRequest(current => current + 1)}>Refresh quote</button> : null}</div> : null}
               {quotes.length ? <QuoteReview quotes={quotes} activeQuote={activeQuote} onChoose={(quote) => { setActiveQuote(quote); setExecution("idle"); setExecutionMessage(undefined); }} onRefresh={() => setQuoteRequest((current) => current + 1)} outputSymbol={output.symbol} now={now} quoteStartedAt={quoteStartedAt} executionBusy={executionBusy} /> : null}
             </div>
-            {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} celebrating={celebrationActive} /></div> : null}
+            {swapReceipt ? <div className="swapCardPane swapReceiptPane"><SwapReceiptPanel receipt={swapReceipt} onBack={backToSwap} celebrating={celebrationActive} showFundLink={!embedded} /></div> : null}
           </div>
         </section>
   );
@@ -1605,6 +1615,7 @@ type FeeClaimTransactionState = "idle" | "wallet" | "pending" | "success" | "rej
 
 function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; beneficiary: Address; explorer: string }) {
   const chainId = useChainId();
+  const pageVisible = usePageVisible();
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
@@ -1618,7 +1629,6 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   const [routePreference, setRoutePreference] = useState<FeeSettlementRoutePreference>("best");
   const [quoteState, setQuoteState] = useState<"idle" | "loading" | "ready" | "missing">("idle");
   const [settlementRoutes, setSettlementRoutes] = useState<FeeSettlementRoutes>({});
-  const [quoteRequest, setQuoteRequest] = useState(0);
   const [claimState, setClaimState] = useState<FeeClaimTransactionState>("idle");
   const [claimHash, setClaimHash] = useState<Hex>();
   const collectorAddress = collector ?? zeroAddress;
@@ -1627,7 +1637,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       { address: collectorAddress, abi: buybackCollectorAbi, functionName: "feeAccounts", args: [vault] },
       { address: vault, abi: managedOtfVaultAbi, functionName: "previewExpenseFees" },
     ],
-    query: { enabled: configured, refetchInterval: 12_000 },
+    query: { enabled: configured, refetchOnWindowFocus: false, refetchOnReconnect: false },
   });
   const feeAccountsRead = feeReads.data?.[0];
   const previewExpenseFeesRead = feeReads.data?.[1];
@@ -1655,8 +1665,9 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   }, [pending?.total, routePreference, slippageBps]);
 
   useEffect(() => {
+    if (!pageVisible) return;
+    const controller = new AbortController();
     let cancelled = false;
-    let refreshTimer: number | undefined;
     if (
       !configured || !accountMatches || !collector || !canonicalWeth || !settlementAdapter
       || !pending
@@ -1689,7 +1700,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       kind: "erc20",
       decimals: 18,
       metadataResolved: true,
-      verified: true,
+      verified: false,
     };
     const request = {
       chainId,
@@ -1699,6 +1710,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       slippageBps,
       requestedAt,
       caller: collector,
+      signal: controller.signal,
     } as const;
     void Promise.allSettled([
       quoteService.quoteBasket(request),
@@ -1727,14 +1739,6 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       };
       setSettlementRoutes(routes);
       setQuoteState(routes.redemption || routes.shareSale ? "ready" : "missing");
-      const expiries = [
-        routes.redemption ? redemptionQuote?.expiresAt : undefined,
-        routes.shareSale ? shareSaleQuote?.expiresAt : undefined,
-      ].filter((value): value is number => value !== undefined);
-      if (expiries.length !== 0) {
-        const refreshAfter = Math.max(1_000, Math.min(...expiries) - now + 25);
-        refreshTimer = window.setTimeout(() => setQuoteRequest((current) => current + 1), refreshAfter);
-      }
     }).catch(() => {
       if (!cancelled) {
         setSettlementRoutes({});
@@ -1743,9 +1747,9 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
     });
     return () => {
       cancelled = true;
-      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      controller.abort();
     };
-  }, [accountMatches, canonicalWeth, chainId, collector, configured, pending, quoteRequest, quoteService, settlementAdapter, slippageBps, vault]);
+  }, [pageVisible, accountMatches, canonicalWeth, chainId, collector, configured, pending, quoteService, settlementAdapter, slippageBps, vault]);
 
   const settlementRoute = useMemo(
     () => selectFeeSettlementRoute(settlementRoutes, routePreference),
@@ -1765,7 +1769,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "permanentLiquidity" },
       { address: launchAddress, abi: otfLaunchManagerAbi, functionName: "bootstrapSqrtPriceBounds" },
     ],
-    query: { enabled: configured && Boolean(settlementRoute), refetchInterval: 12_000 },
+    query: { enabled: configured && Boolean(settlementRoute), refetchOnWindowFocus: false, refetchOnReconnect: false },
   });
   const minimumBuybackWeth = settlementRoute && pending
     ? proportionalWethSplit(settlementRoute.minWethOut, pending.creator, pending.buyback).buybackWeth
@@ -1842,7 +1846,6 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       if (receipt.status !== "success") throw new Error("Fee settlement reverted.");
       setClaimState("success");
       await feeReads.refetch();
-      setQuoteRequest((current) => current + 1);
     } catch (error) {
       const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
       setClaimState(/rejected|denied|cancelled/iu.test(message) ? "rejected" : "failure");
@@ -1951,197 +1954,79 @@ type IncentivePricing = {
   otfToken?: Address;
 };
 
-function valuationAsset(value: unknown): CreationAssetData | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const asset = value as Record<string, unknown>;
-  if (
-    typeof asset.address !== "string" || !isAddress(asset.address)
-    || typeof asset.symbol !== "string" || typeof asset.name !== "string"
-    || typeof asset.priceUsd !== "string" || typeof asset.marketCapUsd !== "string"
-    || !Number.isInteger(asset.decimals)
-  ) return undefined;
-  return {
-    address: getAddress(asset.address),
-    symbol: asset.symbol,
-    name: asset.name,
-    decimals: Number(asset.decimals),
-    priceUsd: asset.priceUsd,
-    marketCapUsd: asset.marketCapUsd,
-    priceUpdatedAt: typeof asset.priceUpdatedAt === "string" ? asset.priceUpdatedAt : undefined,
-    verified: asset.verified === true,
-  };
-}
 
 function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
   const chainId = useChainId();
-  const publicClient = usePublicClient({ chainId });
+  const { registry } = useAssetRegistry();
+  const pageVisible = usePageVisible();
   const [valuation, setValuation] = useState<FundValuation>({ state: "loading", history: [], usesBootstrapNav: false });
-
   useEffect(() => {
-    let cancelled = false;
-    if (!fund || !publicClient || !protocolDeploymentForChain(chainId)?.creationReady) {
-      setValuation({ state: fund ? "unavailable" : "loading", history: [], usesBootstrapNav: false });
-      return;
-    }
-    setValuation((current) => ({ ...current, state: "loading" }));
-    const usesBootstrapNav = fund.totalSupply === 0n;
-    const assetRequest = fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
-      return response.json() as Promise<{ data?: unknown[]; marketCapSnapshotAt?: unknown }>;
-    });
-    void Promise.all([
-      assetRequest,
-      publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "accountedBalances" }),
-      usesBootstrapNav
-        ? publicClient.readContract({ address: fund.address, abi: managedOtfVaultAbi, functionName: "bootstrapBasketUnits" })
-        : Promise.resolve(undefined),
-    ]).then(([payload, accountedBalances, bootstrapUnits]) => {
-      const allocationQuantities = bootstrapUnits ?? accountedBalances;
-      const prices = (payload.data ?? []).flatMap((value) => {
-        const parsed = valuationAsset(value);
-        return parsed ? [parsed] : [];
-      });
-      const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
-      const pricedAssets = fund.assets.map((address) => priceByAddress.get(address.toLowerCase()));
-      if (pricedAssets.some((asset) => !asset) || accountedBalances.length !== fund.assets.length || allocationQuantities.length !== fund.assets.length) {
-        throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
-      }
-      const usdWadFor = (quantities: readonly bigint[]) => quantities.reduce((total, quantity, index) => {
-        const asset = pricedAssets[index]!;
-        const priceUsdWad = parseFixedDecimal(asset.priceUsd, 18);
-        if (!priceUsdWad) throw new Error("VALUATION_PRICE_INVALID");
-        return total + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
-      }, 0n);
-      const aumUsdWad = usdWadFor(accountedBalances);
-      const allocationWeights = fundAllocationWeights(pricedAssets as CreationAssetData[], allocationQuantities);
-      const navUsdWad = usesBootstrapNav
-        ? usdWadFor(allocationQuantities)
-        : aumUsdWad * 10n ** 18n / fund.totalSupply;
-      const at = typeof payload.marketCapSnapshotAt === "string" && Number.isFinite(Date.parse(payload.marketCapSnapshotAt))
-        ? Date.parse(payload.marketCapSnapshotAt)
-        : Date.now();
-      const current = {
-        at,
-        navUsd: Number(formatUnits(navUsdWad, 18)),
-        aumUsd: Number(formatUnits(aumUsdWad, 18)),
-      };
-      const storageKey = `otf:valuation-history:${chainId}:${fund.address.toLowerCase()}`;
-      let history: FundValuationSnapshot[] = [];
+    if (!fund || !pageVisible) return;
+    const controller = new AbortController();
+    let timer: number | undefined;
+    const load = async () => {
       try {
-        const stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]") as unknown;
-        if (Array.isArray(stored)) {
-          history = stored.flatMap((value) => {
-            if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-            const row = value as Record<string, unknown>;
-            return typeof row.at === "number" && Number.isFinite(row.at)
-              && typeof row.navUsd === "number" && Number.isFinite(row.navUsd) && row.navUsd >= 0
-              && typeof row.aumUsd === "number" && Number.isFinite(row.aumUsd) && row.aumUsd >= 0
-              ? [{ at: row.at, navUsd: row.navUsd, aumUsd: row.aumUsd }]
-              : [];
-          });
-        }
-      } catch {
-        history = [];
-      }
-      const previous = history.at(-1);
-      const nextHistory = (previous && Math.abs(current.at - previous.at) < 5 * 60_000
-        ? [...history.slice(0, -1), current]
-        : [...history, current]).slice(-180);
-      try {
-        window.localStorage.setItem(storageKey, JSON.stringify(nextHistory));
-      } catch {
-        // Live values remain available when browser storage is disabled.
-      }
-      return { current, history: nextHistory, usesBootstrapNav, allocationWeights, assetPrices: prices, fundAddress: fund.address };
-    }).then((result) => {
-      if (!cancelled) {
-        setValuation({ state: "ready", ...result });
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setValuation({ state: "unavailable", history: [], usesBootstrapNav: false });
-      }
-    });
-    return () => { cancelled = true; };
-  }, [chainId, fund, publicClient]);
-
+        const response = await fetch(`/api/fund-history?chainId=${chainId}&address=${fund.address}`, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error("HISTORY_UNAVAILABLE");
+        const payload = await response.json() as FundHistoryResponse;
+        const latest = payload.latest;
+        const history = chartHistory(payload.history);
+        const usable = latest && latest.status !== "unpriced" && Date.now()-Date.parse(latest.block_at) <= 10*60_000;
+        const prices = payload.holdings.flatMap(holding => {
+          const asset = registry.assets.find(asset => asset.chainId === chainId && asset.address.toLowerCase() === holding.address.toLowerCase());
+          return asset && holding.price_usd ? [{ address: asset.address, symbol: asset.symbol, name: asset.name, decimals: holding.decimals,
+            priceUsd: holding.price_usd, marketCapUsd: holding.market_cap_usd ?? "", verified: asset.verified, priceUpdatedAt: holding.source_at ?? undefined }] : [];
+        });
+        const amounts = payload.holdings.map(holding => BigInt(latest?.status === "bootstrap" ? holding.bootstrap_amount ?? "0" : holding.amount));
+        if (controller.signal.aborted) return;
+        setValuation({ state: usable ? "ready" : "unavailable", fundAddress: fund.address, history,
+          current: usable ? { at: Date.parse(latest.block_at), aumUsd: Number(latest.total_nav_usd), navUsd: Number(latest.status === "bootstrap" ? latest.bootstrap_nav_usd : latest.nav_per_share_usd) } : undefined,
+          usesBootstrapNav: latest?.status === "bootstrap", assetPrices: prices,
+          allocationWeights: prices.length === amounts.length ? fundAllocationWeights(prices, amounts) : undefined,
+        });
+      } catch { if (!controller.signal.aborted) setValuation(current => ({ ...current, state: "unavailable", current: undefined })); }
+      if (!controller.signal.aborted) timer = window.setTimeout(load, 60_000);
+    };
+    void load();
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [chainId, fund, registry, pageVisible]);
   return valuation;
 }
 
 function useDirectoryAum(vaults: FactoryVaultSummary[], directoryState: FactoryVaultDirectoryState, includeNav: boolean): DirectoryAum {
-  const chainId = useChainId();
-  const publicClient = usePublicClient({ chainId });
-  const [directoryAum, setDirectoryAum] = useState<DirectoryAum>({ state: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    const otfToken = protocolDeploymentForChain(chainId)?.addresses.otfToken;
-    if (directoryState !== "ready" || !publicClient || !protocolDeploymentForChain(chainId)?.creationReady || !otfToken) {
-      setDirectoryAum({ state: directoryState === "loading" ? "loading" : "unavailable" });
-      return;
-    }
-    if (!vaults.length) {
-      setDirectoryAum({ state: "ready", value: 0, byFund: new Map(), rewardWeights: new Map(), totalRewardWeightOtf: 0 });
-      return;
-    }
-    setDirectoryAum({ state: "loading" });
-    const controller = new AbortController();
-    const assetRequest = includeNav ? fetch(`/api/creation-assets?chainId=${chainId}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error("VALUATION_PRICES_UNAVAILABLE");
-      return response.json() as Promise<{ data?: unknown[] }>;
-    }) : Promise.resolve(undefined);
-    const balancesRequest = Promise.all(vaults.map((vault) => !includeNav && !vault.assets.some((asset) => asset.toLowerCase() === otfToken.toLowerCase()) ? Promise.resolve([]) : publicClient.readContract({
-        address: vault.address,
-        abi: managedOtfVaultAbi,
-        functionName: "accountedBalances",
-      }))).then((balancesByVault) => {
-      const rewardWeights = new Map<string, number>();
-      let totalRewardWeightOtf = 0;
-      vaults.forEach((vault, index) => {
-        const weight = accountedRewardWeightOtf(vault.assets, balancesByVault[index], otfToken);
-        if (weight === undefined) throw new Error("REWARD_BALANCES_INVALID");
-        rewardWeights.set(vault.address.toLowerCase(), weight);
-        totalRewardWeightOtf += weight;
-      });
-      if (!cancelled) setDirectoryAum((current) => ({ ...current, rewardWeights, totalRewardWeightOtf }));
-      return { balancesByVault, rewardWeights, totalRewardWeightOtf };
-    });
-    void Promise.all([assetRequest, balancesRequest]).then(([payload, { balancesByVault, rewardWeights, totalRewardWeightOtf }]) => {
-      if (!payload) return { rewardWeights, totalRewardWeightOtf };
-      const prices = (payload.data ?? []).flatMap((value) => {
-        const parsed = valuationAsset(value);
-        return parsed ? [parsed] : [];
-      });
-      const priceByAddress = new Map(prices.map((asset) => [asset.address.toLowerCase(), asset]));
-      const byFund = new Map<string, number>();
-      const totalAumUsdWad = vaults.reduce((directoryTotal, vault, vaultIndex) => {
-        const balances = balancesByVault[vaultIndex];
-        if (!balances || balances.length !== vault.assets.length) throw new Error("VALUATION_BALANCES_INVALID");
-        const fundAumUsdWad = balances.reduce((fundTotal, quantity, assetIndex) => {
-          const asset = priceByAddress.get(vault.assets[assetIndex]!.toLowerCase());
-          if (!asset) throw new Error("VALUATION_ASSET_METADATA_UNAVAILABLE");
-          const priceUsdWad = parseFixedDecimal(asset.priceUsd, 18);
-          if (!priceUsdWad) throw new Error("VALUATION_PRICE_INVALID");
-          return fundTotal + quantity * priceUsdWad / 10n ** BigInt(asset.decimals);
-        }, 0n);
-        byFund.set(vault.address.toLowerCase(), Number(formatUnits(fundAumUsdWad, 18)));
-        return directoryTotal + fundAumUsdWad;
-      }, 0n);
-      return { value: Number(formatUnits(totalAumUsdWad, 18)), byFund, rewardWeights, totalRewardWeightOtf };
-    }).then((result) => {
-      if (!cancelled) setDirectoryAum({ state: "ready", ...result });
-    }).catch((error) => {
-      if (!cancelled && !(error instanceof Error && error.name === "AbortError")) {
-        setDirectoryAum((current) => ({ ...current, state: "unavailable" }));
-      }
-    });
-    return () => {
-      cancelled = true;
-      controller.abort();
+  const chainId=useChainId(),pageVisible=usePageVisible();
+  const [value,setValue]=useState<DirectoryAum>({state:"loading"});
+  useEffect(()=>{
+    if(!pageVisible)return;
+    if(directoryState!=="ready") {setValue({state:directoryState==="loading"?"loading":"unavailable"});return;}
+    if(!vaults.length) {setValue({state:"ready",value:0,byFund:new Map(),rewardWeights:new Map(),totalRewardWeightOtf:0});return;}
+    const controller=new AbortController();let timer:number|undefined;
+    const load=async()=>{
+      try {
+        const response=await fetch('/api/fund-valuations?chainId='+chainId,{signal:controller.signal,cache:"no-store"});
+        if(!response.ok)throw new Error("VALUATIONS_UNAVAILABLE");
+        const payload=await response.json() as {funds:{address:string;status:string;total_nav_usd:string|null;otf_balance:string|null}[]};
+        const byFund=new Map<string,number>(),rewardWeights=new Map<string,number>();
+        let total=0,totalRewardWeightOtf=0,complete=true;
+        const otfToken=protocolDeploymentForChain(chainId)?.addresses.otfToken;
+        for(const fund of vaults) {
+          const row=payload.funds.find(row=>row.address.toLowerCase()===fund.address.toLowerCase());
+          if(!row) {complete=false;continue;}
+          if(otfToken) {
+            const weight=accountedRewardWeightOtf([otfToken],[BigInt(row.otf_balance??"0")],otfToken)!;
+            rewardWeights.set(fund.address.toLowerCase(),weight);totalRewardWeightOtf+=weight;
+          }
+          if(includeNav && row.status!=="unpriced" && row.total_nav_usd!==null) {
+            const nav=Number(row.total_nav_usd);byFund.set(fund.address.toLowerCase(),nav);total+=nav;
+          } else if(includeNav)complete=false;
+        }
+        if(!controller.signal.aborted)setValue({state:complete?"ready":"unavailable",value:includeNav&&complete?total:undefined,byFund,rewardWeights,totalRewardWeightOtf});
+      } catch {if(!controller.signal.aborted)setValue({state:"unavailable"});}
+      if(!controller.signal.aborted)timer=window.setTimeout(load,60_000);
     };
-  }, [chainId, directoryState, includeNav, publicClient, vaults]);
-
-  return directoryAum;
+    void load();return()=>{controller.abort();window.clearTimeout(timer);};
+  },[chainId,directoryState,includeNav,vaults,pageVisible]);
+  return value;
 }
 
 function useIncentivePricing(): IncentivePricing {
@@ -2256,7 +2141,7 @@ function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
       {explanationOpen && fund ? <FundRewardsDialog
         fundName={fund.name}
         symbol={fund.symbol}
-        apyText={text}
+        apyText={loading ? text : formatApy(estimate?.percent, false)}
         hasOtf={hasOtf}
         zeroNav={fund.totalSupply === 0n || aumUsd === 0}
         loading={loading}
@@ -2277,11 +2162,11 @@ function formatUsd(value: number | undefined, maximumFractionDigits = 2): string
   return value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits });
 }
 
-function formatApy(value: number | undefined): string {
+function formatApy(value: number | undefined, compact = true): string {
   if (value === undefined || !Number.isFinite(value)) return "—";
-  return `${value.toLocaleString(undefined, value >= 10_000
+  return `${value.toLocaleString(undefined, compact && value >= 10_000
     ? { notation: "compact", maximumFractionDigits: 1 }
-    : { maximumFractionDigits: value >= 100 ? 0 : 2 })}%`;
+    : { maximumFractionDigits: compact && value >= 100 ? 0 : 2 })}%`;
 }
 
 function formatCompactNumber(value: number | undefined): string {
@@ -2326,6 +2211,7 @@ function useFundAllocation(fund?: FactoryVaultSummary) {
 }
 
 function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valuation: FundValuation; fund?: FactoryVaultSummary }) {
+  const { registry } = useAssetRegistry();
   const chainId = useChainId();
   const allocation = useFundAllocation(fund);
   const weights = valuation.state === "ready" && valuation.fundAddress === fund?.address ? valuation.allocationWeights : undefined;
@@ -2417,7 +2303,7 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
           <div className="creationAllocationTableWrap">
             <table className="creationAllocationTable">
               <thead><tr><th>Asset</th><th>Amount</th><th>Allocation</th><th>Price</th></tr></thead>
-              <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount">{asset.quantity}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
+              <tbody>{allocation.rows.map((asset) => { const weight = weightsByAddress.get(asset.address.toLowerCase()); return <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong className="allocationAssetTitle">{asset.symbol}{fundAssetsVerified(registry, chainId, [asset.address]) ? <span className="allocationAssetVerified" role="img" aria-label="Verified asset" title="Verified asset"><BadgeCheck aria-hidden="true" /></span> : null}</strong><small>{asset.name}</small></div></div></td><td data-label="Amount" title={`${asset.quantity}${asset.quantityIsRaw ? " raw units" : ` ${asset.symbol}`}`}>{formatAllocationQuantity(asset.quantity)}{asset.quantityIsRaw ? " raw units" : ""}</td><td data-label="Allocation">{weight ? formatStoredPercentage(weight.percentageUnits.toString()) : "—"}</td><td data-label="Price">{formatUsd(pricesByAddress.get(asset.address.toLowerCase()), 6)}</td></tr>; })}</tbody>
             </table>
           </div>
         ) : (
@@ -2429,7 +2315,8 @@ function FundValuationChart({ symbol, valuation, fund }: { symbol: string; valua
 }
 
 function FundVerificationBadge({ chainId, assets }: { chainId: number; assets: readonly Address[] }) {
-  if (!fundAssetsVerified(chainId, assets)) return null;
+  const { registry } = useAssetRegistry();
+  if (!fundAssetsVerified(registry, chainId, assets)) return null;
   return <span className="fundVerificationBadge" role="img" aria-label="All constituent assets verified" title="All constituent assets are in the verification registry"><BadgeCheck size={16} aria-hidden="true" /></span>;
 }
 
@@ -2639,21 +2526,24 @@ function FundsSurface({ detail }: { detail: boolean }) {
 
 function VerifiedSurface() {
   const chainId = useChainId();
-  const testnet = chainId === robinhoodChainTestnet.id;
-  const assets = configuredAssetsFor(chainId);
-  return (
-    <DashboardPage>
-      <div className="appView">
-        <AppPageHeader title="Verified Assets" description={<>Token identities and pricing routes checked against the app&apos;s <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification is informational and does not authorize OTF constituents.</>} icon={<ShieldCheck size={18} />} actions={testnet ? <a className="secondaryAction utilityAction" href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer"><Droplets size={14} />Testnet faucet<ExternalLink size={12} /></a> : undefined} />
-        {!testnet ? <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Mainnet verification is not available yet</h2><p>Switch on Testnet mode in Settings to inspect the current verified-asset registry.</p></section> : (
-          <section className="sectionCard walletAssets">
-            <div className="directoryPanelHeading"><div><h2>Verification details</h2><p>Registry verification paired with metadata read directly from each token contract.</p></div><span className="stateBadge success"><CheckCircle size={12} />{assets.length} verified</span></div>
-            <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map((asset) => <tr key={asset.address}><td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td><td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={`${(chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url}/address/${asset.address}`} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td></tr>)}</tbody></table></div>
-          </section>
-        )}
+  const { catalog, isPending, isError, refetch } = useAssetRegistry();
+  const [showUnverified, setShowUnverified] = useState(false);
+  const assets = catalog.assets.filter(asset => showUnverified || asset.verified);
+  const explorer = (chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url;
+  return <DashboardPage><div className="appView">
+    <AppPageHeader title="Verified Assets" description={<>Asset identities in the <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification does not authorize fund constituents or approve prices and swap routes.</>} icon={<ShieldCheck size={18} />} />
+    <section className="sectionCard walletAssets">
+      <div className="directoryPanelHeading"><div><h2>Asset registry</h2><p>{assets.length} {showUnverified ? "assets" : "verified assets"}</p></div>
+        <label className="registryToggle"><input type="checkbox" checked={showUnverified} onChange={event => setShowUnverified(event.target.checked)} />Show unverified</label>
       </div>
-    </DashboardPage>
-  );
+      {isPending ? <p role="status">Loading assets…</p> : isError ? <div role="alert"><p>Asset registry unavailable.</p><button type="button" className="secondaryAction" onClick={() => void refetch()}>Retry</button></div> : !assets.length ? <p>No {showUnverified ? "assets" : "verified assets"} registered on this network.</p> :
+      <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Status</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map(asset => <tr key={asset.address}>
+        <td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
+        <td data-label="Status"><span className={asset.verified ? "stateBadge success" : "stateBadge muted"}>{asset.verified ? "Verified" : "Unverified"}</span>{!asset.verified ? <small className="registryNote">Fund creation requires eligible metadata and current pricing.</small> : null}</td>
+        <td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={explorer + "/address/" + asset.address} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td>
+      </tr>)}</tbody></table></div>}
+    </section>
+  </div></DashboardPage>;
 }
 
 function TokenSurface() {

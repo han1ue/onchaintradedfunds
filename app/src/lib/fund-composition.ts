@@ -1,11 +1,6 @@
 import { formatUnits, type Address } from "viem";
 import { parseFixedDecimal, TOTAL_PERCENT_UNITS } from "./creation-model";
-import verifiedAssets from "../config/verified_assets.json";
 
-export function fundAssetsVerified(chainId: number, assets: readonly Address[]): boolean {
-  const verified = new Set(verifiedAssets.filter((asset) => asset.chainId === chainId).map((asset) => asset.tokenAddress.toLowerCase()));
-  return assets.length > 0 && assets.every((asset) => verified.has(asset.toLowerCase()));
-}
 
 type AllocationAsset = {
   address: Address;
@@ -21,6 +16,18 @@ export type FundAllocationRow = {
   quantity: string;
   quantityIsRaw: boolean;
 };
+
+export function formatAllocationQuantity(quantity: string): string {
+  const [whole, fraction = ""] = quantity.split(".");
+  const digits = BigInt(whole) === 0n ? 6 : 2;
+  const scale = 10n ** BigInt(digits);
+  const units = BigInt(whole) * scale + BigInt(fraction.slice(0, digits).padEnd(digits, "0"));
+  if (units === 0n && /[1-9]/u.test(fraction)) return "<0.000001";
+  const rounded = units + (Number(fraction[digits] ?? "0") >= 5 ? 1n : 0n);
+  const decimals = (rounded % scale).toString().padStart(digits, "0").replace(/0+$/u, "");
+  const integer = (rounded / scale).toLocaleString("en-US");
+  return decimals ? `${integer}.${decimals}` : integer;
+}
 
 export function fundAllocationRows(assets: readonly AllocationAsset[], quantities: readonly bigint[]): FundAllocationRow[] {
   if (assets.length !== quantities.length || quantities.some((quantity) => quantity < 0n)) {

@@ -1,6 +1,6 @@
 import { keccak256, parseAbi, type Address, type PublicClient } from "viem";
 import deployment from "../config/robinhood-testnet.json";
-import { testnetAssetById, testnetVenue } from "./asset-catalog";
+import { testnetVenue } from "./venue-config";
 
 type Reader = Pick<PublicClient, "getChainId" | "getCode" | "readContract">;
 const bindingAbi = parseAbi([
@@ -42,7 +42,7 @@ export async function verifyTestnetV3Adapter(client: Reader, factory: Address, r
   await assertBinding(client, adapter, "uniswapV3Factory", testnetVenue.factory);
   await assertBinding(client, adapter, "uniswapV3Router", testnetVenue.swapRouter02);
   await assertBinding(client, router, "factory", factory);
-  await assertBinding(client, router, "weth", testnetAssetById("weth")!.address);
+  await assertBinding(client, router, "weth", deployment.externalContracts.weth as Address);
   if (!await client.readContract({ address: router, abi: bindingAbi, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("The V3 adapter is not approved.");
 }
 

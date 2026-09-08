@@ -7,7 +7,7 @@
     "mainnet:check-services": "node --env-file-if-exists=app/.env.local scripts/check-mainnet-services.mjs",
     "contracts:solc": "node scripts/compile-contracts.mjs",
     "contracts:abi": "node scripts/generate-contract-abis.mjs",
-    "contracts:deploy:robinhood-testnet": "node scripts/deploy-robinhood-testnet.mjs",
+    "contracts:deploy:robinhood-testnet": "node --env-file-if-exists=app/.env.local scripts/deploy-robinhood-testnet.mjs",
     "oracle:verify:robinhood-mainnet": "node scripts/verify-robinhood-mainnet-oracle.mjs",
     "rewards:tree": "node scripts/build-merkle-rewards.mjs",
     "docs:dev": "corepack pnpm --filter @onchaintradedfunds/docs dev",
@@ -15,12 +15,14 @@
     "contracts:solhint": "solhint \"contracts/src/**/*.sol\" --max-warnings 0",
     "contracts:security": "node scripts/check-contract-security.mjs",
     "contracts:validate:mainnet-routing": "node scripts/verify-mainnet-routing.mjs",
-    "contracts:verify:testnet-v3": "node scripts/verify-uniswap-v3-testnet.mjs",
-    "contracts:seed:testnet-v3": "node scripts/seed-uniswap-v3-testnet.mjs",
+    "contracts:verify:testnet-v3": "node --env-file-if-exists=app/.env.local scripts/verify-uniswap-v3-testnet.mjs",
+    "contracts:seed:testnet-v3": "node --env-file-if-exists=app/.env.local scripts/seed-uniswap-v3-testnet.mjs",
     "contracts:coverage": "node scripts/check-contract-coverage.mjs",
     "lint": "corepack pnpm -r lint",
     "typecheck": "corepack pnpm -r typecheck",
-    "build": "corepack pnpm -r build"
+    "build": "corepack pnpm -r build",
+    "registry:migrate": "node --env-file-if-exists=app/.env.local app/scripts/database.mjs migrate",
+    "registry:seed": "node --env-file-if-exists=app/.env.local app/scripts/database.mjs seed"
   },
   "devDependencies": {
     "@openzeppelin/merkle-tree": "1.0.8",

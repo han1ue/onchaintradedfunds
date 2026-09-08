@@ -27,7 +27,9 @@ Percentages use 18-decimal fixed-point units, must be positive, and must sum to 
 
 `Market-cap weighted` means every final percentage unit matches its calculated default; any difference gives `Modified market-cap weighted`. Per-asset multipliers compare final and default percentages. Token rounding and vault balances do not affect the label.
 
-The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Fund details show each constituent’s name, ticker, verification badge, and accounted balance in units, including zero balances for empty vaults. The allocation table calculates allocation percentages from accounted balances at current prices. When share supply is zero, percentages use the contract’s initial basket quantities while amounts still show accounted balances. The bootstrap basket is only read when share supply is zero. Dollar prices and the market-cap comparison reuse the NAV pricing response with no additional price requests. A current market-cap match allows up to 0.01 percentage points difference per constituent; it does not classify the original launch settings.
+The thesis, constituents, and raw units go onchain. Prices, market caps, percentages, target value, and weighting method stay offchain. After confirming `VaultCreated`, the browser saves the weighting snapshot by chain and vault. Fund details show each constituent's name, ticker, verification badge, and accounted balance in units, including zero balances for empty vaults.
+
+The allocation table calculates percentages from the shared snapshot's holdings and prices. When share supply is zero, percentages use the contract's initial basket quantities while amounts still show accounted balances. Dollar prices and the market-cap comparison reuse the NAV response. A current market-cap match allows up to 0.01 percentage points difference per constituent; it does not classify the original launch settings.
 
 ### Submission state
 
@@ -39,7 +41,7 @@ After verifying the factory event, the application shows the transaction and new
 
 The Funds directory reads vault addresses, identity, creator, constituent count, supply, and fees from the configured factory and vaults. Confirmed vaults appear without a separate indexer.
 
-The fund page reads the permanent thesis and accounted balances onchain. NAV per share and AUM use offchain prices, with history stored in the browser. These informational values do not affect settlement or execution prices.
+The fund page reads the permanent thesis and accounted balances onchain. NAV per share and AUM use shared Postgres snapshots and approved price observations. The scheduled collector records holdings, supply, block identity and price references every five minutes. These informational values do not affect settlement or execution prices.
 
 The Funds summary shows the combined weekly OTF distribution. The directory shows each fund's total NAV in dollars and estimated depositor rewards APY. Each fund's weight is its accounted protocol OTF balance, capped at 10 million OTF. Its share of the depositor pool is that weight divided by the sum of capped weights across factory funds.
 
@@ -61,11 +63,11 @@ During protocol-token bootstrap, the launch router limits trades to the active r
 
 ### Quote sources and execution
 
-Production direct routes use the same-origin Uniswap Trading API integration with exact-input `BEST_PRICE` V3/V4 `CLASSIC` routing. `UNISWAP_API_KEY` stays server-only. Robinhood testnet fund routes use the configured Uniswap V3 factory, Quoter, SwapRouter02, and active pools.
+Production routes first quote approved direct and two-hop pool paths through the configured V3/V4 Quoters. The Uniswap Trading API supplies fallback routes when registered candidates fail or exceed policy limits. `UNISWAP_API_KEY` stays server-only, with shared Postgres request pacing. Robinhood testnet fund routes use registered pools and configured on-chain bindings.
 
 Testnet basket execution uses `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` with ordered adapter legs. Before submission, the application simulates the exact sender, target, calldata, value, and route using `eth_call` and `estimateGas`.
 
-`robinhood-testnet-assets.json` lists USDG and WETH quote assets, five constituents, and active V3 pools. Constituent pools support basket settlement and testnet liquidity, rather than general Swap pairs. `assets.json` supplies production discovery defaults, not an onchain allowlist.
+Postgres stores assets, verification decisions, price-source policies and approved pools. `/verified` has a Show unverified toggle, off by default. Pool approval and source approval remain independent of asset verification. The [registry operations guide](database/README.md) documents routing thresholds, freshness, migrations and production activation.
 
 Verification labels cover identity and ordinary metadata only. An OTF receives a badge in the Funds directory and fund details when every constituent address is in the verification registry for that chain. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
 

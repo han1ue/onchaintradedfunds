@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { productionAssetsForChain } from "./asset-catalog";
-import { mainnetStockAssetsFromRobinhood } from "./mainnet-creation-assets";
+import { registryFixture } from "../test/registry-fixture";
+import { mainnetStockAssetsFromRobinhood as select } from "./mainnet-creation-assets";
 
-const stock = productionAssetsForChain(4663).find((asset) => asset.symbol === "TSLA")!;
+const mainnetStockAssetsFromRobinhood = (payload: unknown) => select(payload, registryFixture.assets);
+const stock = registryFixture.assets.filter(asset=>asset.chainId===4663).find((asset) => asset.symbol === "TSLA")!;
 const row = {
   tokenSymbol: stock.symbol, tokenDecimals: stock.decimals, status: "ASSET_STATUS_ACTIVE",
   currentMultiplier: "1.000000000000000000",

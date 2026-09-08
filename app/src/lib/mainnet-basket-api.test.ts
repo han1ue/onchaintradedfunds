@@ -1,3 +1,4 @@
+import { emptyRegistry } from "./asset-catalog";
 import { decodeFunctionData, maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { type BasketPlannerRequest } from "./basket-planner";
@@ -57,7 +58,7 @@ function client(overrides: Partial<MainnetBasketClient> = {}): MainnetBasketClie
   };
 }
 function deps(routingClient = client(), quoteProvider = provider()) {
-  return { now: () => NOW, deployment: DEPLOYMENT, client: routingClient, requestQuote: quoteProvider };
+  return { registry: emptyRegistry, now: () => NOW, deployment: DEPLOYMENT, client: routingClient, requestQuote: quoteProvider };
 }
 function parse(body: unknown, req: BasketPlannerRequest) {
   return parseTypedQuoteResponse(body, {
@@ -281,7 +282,7 @@ describe("mainnet basket planner", () => {
       return dependencies.requestQuote(body);
     });
     const result = await handleSwapQuoteRequest({ action: "quote", ...req, inputAmountRaw: req.inputAmountRaw.toString() }, {
-      apiKey: "test", now: dependencies.now, mainnetClient: dependencies.client, mainnetDeployment: DEPLOYMENT, providerRequest,
+      registry: emptyRegistry, apiKey: "test", now: dependencies.now, mainnetClient: dependencies.client, mainnetDeployment: DEPLOYMENT, providerRequest,
     });
     expect(result.status).toBe(200);
     expect(providerRequest).toHaveBeenCalledTimes(2);

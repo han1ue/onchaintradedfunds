@@ -6,29 +6,22 @@ import {
   getAddress,
   http,
   keccak256,
-  maxUint256,
   parseAbi,
   zeroAddress,
   type Address,
   type Hex,
 } from "viem";
-import {
-  otfPoolDiscovery,
-  testnetAssetByAddress,
-  testnetAssetById,
-  testnetAssetRole,
-  testnetPoolRouteAllowed,
-  testnetSwapPairAllowed,
-  testnetPoolForPair,
-  testnetQuoteAssets,
-  testnetVenue,
-  type TestnetPool,
-} from "./asset-catalog";
+import { assetCatalog, testnetSwapPairAllowed, type AssetRegistry, type RegisteredPool } from "./asset-catalog";
+import { testnetVenue } from "./venue-config";
+import { readRegistry } from "../server/registry";
+import { registeredRouteClient } from "../server/registered-route-client";
+import { registeredCandidates, bestRegisteredQuote, registeredBasketRoutes, type RouteSegment } from "./registered-routes";
 import { robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetNativeEntryReady } from "./deployment";
 import { verifyTestnetV3Adapter } from "./testnet-v3-bindings";
 import { QUOTE_MAX_AGE_MS } from "./swap-model";
 import { availableResponse, basketQuote, sameAddress, applySlippageDown, applySlippageUp, type BasketPlannerRequest, type BasketRouteProvider } from "./basket-planner";
-import { routeFrom, reverseRoute, type Route } from "./v3-route";
+import { routeFrom } from "./v3-route";
+import { simulateTestnetQuote } from "../server/testnet-simulation";
 import { encodeV4Path, parseV4Path } from "./v4-route";
 import { testnetOtfRouting } from "./testnet-otf-routing";
 import { QuoteFailure, quoteStep } from "./quote-errors";
@@ -108,7 +101,8 @@ export type TestnetRoutingClient = {
   previewRedeem(vault: Address, shares: bigint, owner: Address, skipMask: bigint): Promise<readonly bigint[]>;
 };
 
-function defaultRoutingClient(): TestnetRoutingClient {
+function defaultRoutingClient(registry: AssetRegistry): TestnetRoutingClient {
+  const catalog = assetCatalog(registry,46630);
   const publicClient = createPublicClient({
     chain: {
       id: 46630,
@@ -136,7 +130,8 @@ function defaultRoutingClient(): TestnetRoutingClient {
     poolFor: async (tokenA, tokenB, fee) => {
       const pool = await publicClient.readContract({ address: testnetVenue.factory, abi: v3FactoryAbi, functionName: "getPool", args: [tokenA, tokenB, fee] });
       if (sameAddress(pool, zeroAddress)) return undefined;
-      const configured = testnetPoolForPair(tokenA, tokenB);
+      const configured = catalog.testnetPools.find(pool => pool.fee === fee && [pool.assetA.address.toLowerCase(), pool.assetB.address.toLowerCase()].sort().join(":") === [tokenA.toLowerCase(), tokenB.toLowerCase()].sort().join(":"));
+      if (!configured) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
       if (configured) {
         const code = await publicClient.getCode({ address: pool });
         if (!sameAddress(pool, configured.address) || !code || keccak256(code) !== configured.runtimeCodehash) throw new Error("The configured V3 pool runtime changed.");
@@ -167,53 +162,14 @@ async function assertVaults(request: BasketPlannerRequest, client: TestnetRoutin
   }
 }
 
-async function validatedConnection(
-  asset: { address: Address; kind: "native" | "erc20" | "otf" },
-  client: TestnetRoutingClient,
-): Promise<{ asset: Address; pool: Address; fee: number }> {
-  const usdg = testnetAssetById("usdg")!;
-  let configuredPool: TestnetPool | undefined;
-  let fee: number;
-  if (asset.kind === "otf") {
-    fee = otfPoolDiscovery.fee;
-  } else {
-    configuredPool = testnetPoolForPair(asset.address, usdg.address);
-    if (!configuredPool) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
-    fee = configuredPool.fee;
-  }
-  const pool = await quoteStep("POOL_VALIDATION_FAILED", () => client.poolFor(asset.address, usdg.address, fee));
-  if (!pool) throw new QuoteFailure("NO_ROUTE");
-  if (configuredPool && !sameAddress(pool, configuredPool.address)) throw new QuoteFailure("POOL_VALIDATION_FAILED");
-  if (await client.poolLiquidity(pool) === 0n) throw new QuoteFailure("NO_LIQUIDITY");
-  return { asset: asset.address, pool, fee };
-}
-
-async function routeFor(
-  input: { address: Address; kind: "native" | "erc20" | "otf" },
-  output: { address: Address; kind: "native" | "erc20" | "otf" },
-  client: TestnetRoutingClient,
-): Promise<Route> {
-  if (!testnetPoolRouteAllowed(input, output)) throw new Error("This pair is outside the configured testnet asset policy.");
-  const usdg = testnetAssetById("usdg")!;
-  const tokens: Address[] = [input.address];
-  const fees: number[] = [];
-  if (!sameAddress(input.address, usdg.address)) {
-    const connection = await validatedConnection(input, client);
-    fees.push(connection.fee);
-    tokens.push(usdg.address);
-  }
-  if (!sameAddress(output.address, usdg.address)) {
-    const connection = await validatedConnection(output, client);
-    fees.push(connection.fee);
-    tokens.push(output.address);
-  }
-  return routeFrom(tokens, fees);
-}
-
-async function directQuote(request: BasketPlannerRequest, client: TestnetRoutingClient, now: number) {
-  if (request.input.kind === "native" || request.output.kind === "native") throw new Error("The deployed Uniswap V3 router has no verified atomic native path.");
-  const route = await routeFor(request.input, request.output, client);
-  const expectedOutput = await quoteStep("NO_ROUTE", () => client.quoteExactInput(route.path, request.inputAmountRaw));
+async function directQuote(request: BasketPlannerRequest, registry: AssetRegistry, routing: RegisteredClient, now: number) {
+  if (request.input.kind === "native" || request.output.kind === "native") throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
+  const paths = registeredCandidates(registry.pools.filter(pool=>pool.protocolVersion===3),46630,request.input.address,request.output.address,robinhoodTestnetAddresses.weth!);
+  const best = await bestRegisteredQuote({paths,type:"EXACT_INPUT",amount:request.inputAmountRaw,quoteSegment:routing.quoteSegment,authenticate:routing.authenticate});
+  if (!best) throw new QuoteFailure("NO_ROUTE");
+  if (best.impactBps>200 || !await routing.withinTradeSize(request.input.address,best.amountIn)) throw new QuoteFailure("ROUTE_POLICY_EXCEEDED");
+  const route = routeFrom([best.path[0]!.tokenIn,...best.path.map(hop=>hop.tokenOut)],best.path.map(hop=>hop.pool.fee));
+  const expectedOutput = best.amountOut;
   const minimumOutput = applySlippageDown(expectedOutput, request.slippageBps);
   const transaction = {
     chainId: request.chainId,
@@ -242,7 +198,8 @@ async function directQuote(request: BasketPlannerRequest, client: TestnetRouting
   }, route.hops);
 }
 
-async function testnetBasketQuote(request: BasketPlannerRequest, client: TestnetRoutingClient, now: number, router: Address, adapter: Address, v4Adapter?: Address) {
+async function testnetBasketQuote(request: BasketPlannerRequest, client: TestnetRoutingClient, now: number, router: Address, adapter: Address, registry: AssetRegistry, routing: RegisteredClient, v4Adapter?: Address) {
+  const { testnetQuoteAssets, testnetAssetRole, testnetAssetById } = assetCatalog(registry,46630);
   const { otfToken, weth, launchManager } = robinhoodTestnetAddresses;
   const isOtfToken = (token: Address) => Boolean(otfToken && sameAddress(token, otfToken));
   for (const asset of [request.input, request.output]) {
@@ -256,19 +213,10 @@ async function testnetBasketQuote(request: BasketPlannerRequest, client: Testnet
       return assets;
     },
   };
-  const v3Routes: BasketRouteProvider = {
-    quote: async (type, tokenIn, tokenOut, amount) => {
-      const route = await routeFor({ address: tokenIn, kind: "erc20" }, { address: tokenOut, kind: "erc20" }, client);
-      const amountIn = type === "EXACT_INPUT" ? amount : applySlippageUp(await quoteStep("NO_ROUTE", () => client.quoteExactOutput(reverseRoute(route).path, amount)), request.slippageBps);
-      const amountOut = type === "EXACT_OUTPUT" ? amount : await quoteStep("NO_ROUTE", () => client.quoteExactInput(route.path, amount));
-      return { amountIn, amountOut, legs: [{
-        adapter, tokenIn, tokenOut,
-        amountIn: type === "EXACT_INPUT" ? maxUint256 : amountIn,
-        minAmountOut: type === "EXACT_OUTPUT" ? amountOut : applySlippageDown(amountOut, request.slippageBps),
-        data: route.path, hops: route.hops,
-      }] };
-    },
-  };
+  const v3Routes = registeredBasketRoutes({
+    pools:registry.pools,chainId:46630,weth:weth!,adapter,v4Adapter,slippageBps:request.slippageBps,
+    ...routing,
+  });
   const routes: BasketRouteProvider = {
     async quote(type, tokenIn, tokenOut, amount) {
       if (!isOtfToken(tokenIn) && !isOtfToken(tokenOut)) return v3Routes.quote(type, tokenIn, tokenOut, amount);
@@ -303,9 +251,14 @@ async function testnetBasketQuote(request: BasketPlannerRequest, client: Testnet
   return result;
 }
 
+type RegisteredClient = { authenticate(pool:RegisteredPool):Promise<void>; quoteSegment(segment:RouteSegment,type:"EXACT_INPUT"|"EXACT_OUTPUT",amount:bigint):Promise<{amount:bigint;gas?:bigint}>; withinTradeSize(token:Address,amount:bigint):Promise<boolean> };
+
 export async function quoteTestnetSwap(
   request: BasketPlannerRequest,
   dependencies: {
+    registry?: AssetRegistry;
+    registeredClient?: RegisteredClient;
+    simulate?: typeof simulateTestnetQuote;
     now?: () => number;
     client?: TestnetRoutingClient;
     deployment?: { factory: Address; entryRouter: Address; uniswapV3Adapter: Address; uniswapV4Adapter?: Address; nativeBasketReady?: boolean };
@@ -333,6 +286,10 @@ export async function quoteTestnetSwap(
   if (includesNative && request.route === "basket" && deployment.nativeBasketReady !== true) {
     return unavailableQuoteResponse(request, "native-entry", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
   }
+  let stage = "registry";
+  try {
+  const registry = dependencies.registry ?? await readRegistry(request.chainId);
+  const { testnetAssetByAddress } = assetCatalog(registry,46630);
   const metadataMatches = [request.input, request.output].every((asset) => (
     asset.kind === "otf"
       ? asset.decimals === 18
@@ -342,16 +299,20 @@ export async function quoteTestnetSwap(
     return unavailableQuoteResponse(request, "metadata", new QuoteFailure("INVALID_ASSET_METADATA"));
   }
   const now = (dependencies.now ?? Date.now)();
-  const client = dependencies.client ?? defaultRoutingClient();
-  let stage = "bindings";
-  try {
+  const client = dependencies.client ?? defaultRoutingClient(registry);
+  const routing = dependencies.registeredClient ?? registeredRouteClient(46630);
+    stage = "bindings";
     await quoteStep("DEPLOYMENT_MISMATCH", () => client.verifyBindings(deployment.factory, deployment.entryRouter, deployment.uniswapV3Adapter));
     stage = "vault-validation";
     await quoteStep("INVALID_ASSET_METADATA", () => assertVaults(request, client));
     stage = "routing";
-    return request.route === "direct"
-      ? await directQuote(request, client, now)
-      : await testnetBasketQuote(request, client, now, deployment.entryRouter, deployment.uniswapV3Adapter, deployment.uniswapV4Adapter);
+    const result = request.route === "direct"
+      ? await directQuote(request, registry, routing, now)
+      : await testnetBasketQuote(request, client, now, deployment.entryRouter, deployment.uniswapV3Adapter, registry, routing, deployment.uniswapV4Adapter);
+    stage="simulation";
+    await quoteStep("SIMULATION_FAILED",()=>(dependencies.simulate??simulateTestnetQuote)(result.body,request));
+    if((dependencies.now??Date.now)()>=result.body.expiresAtMs)throw new QuoteFailure("QUOTE_EXPIRED");
+    return result;
   } catch (error) {
     return unavailableQuoteResponse(request, stage, error);
   }

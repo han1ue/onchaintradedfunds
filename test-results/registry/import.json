@@ -1,0 +1,13 @@
+{
+  "schema": "otf_development",
+  "assets": 15,
+  "verified": 6,
+  "priceSources": 16,
+  "pools": 6,
+  "verifiedAt": "2026-09-08T01:31:06.604Z",
+  "sourceHashes": {
+    "assets": "e748c785e093d8d5dd65021c2fa93db14e69820b058cd6fafe797dc16e8b2788",
+    "verified_assets": "3388b01f592bd0991344705df9a0e07335169181d97f8e53606fe6c4f9177601",
+    "robinhood-testnet-assets": "45cc902a266b5c7ccbe2354927920bda216a7344541bffae548a09795b2a0506"
+  }
+}

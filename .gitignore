@@ -25,6 +25,8 @@ lovable-project-*.zip
 .env
 .env.local
 .env.deploy.local
+.env.*.local
+.vercel/
 
 # Generated prose-lint reports
 .slopless/findings/

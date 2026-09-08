@@ -14,7 +14,8 @@ import {
   robinhoodTestnetAddresses,
   robinhoodTestnetLiquidity,
 } from "./deployment";
-import { testnetSwapPairAllowed, testnetVenue } from "./asset-catalog";
+import { testnetSwapPairAllowed } from "./asset-catalog";
+import { testnetVenue } from "./venue-config";
 import { parseV4Path, v4BoundaryToken } from "./v4-route";
 import { quoteFailureReasons, type QuoteFailureCode } from "./quote-errors";
 
@@ -101,6 +102,7 @@ export type PermitData = {
 };
 
 export type DirectApiExecution = {
+  registered?: boolean;
   kind: "direct-api";
   chainId: number;
   caller: Address;
@@ -181,6 +183,7 @@ export type SwapQuote = {
 };
 
 export type SwapQuoteRequest = {
+  signal?: AbortSignal;
   chainId: number;
   input: SwapAsset;
   output: SwapAsset;
@@ -592,11 +595,12 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   if (!context.permit2 || !context.universalRouter || !context.request.caller) throw new Error("Direct execution targets are not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
+    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "registered",
     "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "permitData", "transaction",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "direct-api") throw new Error("Direct quote has the wrong execution kind.");
   const plan: DirectApiExecution = {
+    registered: execution.registered === true,
     kind: "direct-api",
     chainId: integer(execution.chainId, "execution.chainId"),
     caller: address(execution.caller, "execution.caller"),
@@ -1069,6 +1073,7 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     if (!inputAmountRaw) return unavailableQuote(route, request, "Enter a valid exact input amount.");
     const response = await fetch(config.endpoint, {
       method: "POST",
+      signal: request.signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         action: "quote",

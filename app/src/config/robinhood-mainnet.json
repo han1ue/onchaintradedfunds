@@ -13,7 +13,8 @@
     "uniswapUniversalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904",
     "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
     "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
-    "uniswapV3Quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7"
+    "uniswapV3Quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    "usdg": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
   },
   "oracleValidation": {
     "interface": "AggregatorV3",

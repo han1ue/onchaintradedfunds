@@ -1,194 +1,52 @@
-import productionCatalog from "../config/assets.json";
-import testnetCatalog from "../config/robinhood-testnet-assets.json";
-import { getAddress, isAddress, type Address, type Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export type CatalogAsset = {
-  id: string;
-  symbol: string;
-  name: string;
-  address: Address;
-  decimals: number;
+  id: string; chainId: number; address: Address; symbol: string; name: string; decimals: number;
+  assetType: "stock_token" | "stablecoin" | "wrapped_native" | "protocol_token" | "fund_share" | "other";
+  verified: boolean; enabled: boolean; featured: boolean; role?: "quote" | "fund";
+  verifiedAt?: string; verificationRevokedAt?: string;
 };
-
-export type TestnetAssetRole = "quote" | "fund";
-
-export type TestnetPool = {
-  id: string;
-  assetA: CatalogAsset;
-  assetB: CatalogAsset;
-  address: Address;
-  fee: number;
-  runtimeCodehash: Hex;
+export type RegisteredPool = {
+  id: string; chainId: number; venue: string; protocolVersion: 3 | 4;
+  assetA: CatalogAsset; assetB: CatalogAsset;
+  address?: Address; poolManager?: Address; poolId?: Hex;
+  fee: number; tickSpacing?: number; hooks?: Address; hookData: Hex;
+  approved: boolean; enabled: boolean; validatedAt?: string;
+  runtimeCodehash?: Hex; validationMetadata: Record<string, unknown>;
 };
+export type TestnetPool = RegisteredPool & { address: Address; runtimeCodehash: Hex };
+export type AssetRegistry = { assets: CatalogAsset[]; pools: RegisteredPool[] };
+export const emptyRegistry: AssetRegistry = { assets: [], pools: [] };
 
-type ObjectRecord = Record<string, unknown>;
-
-function record(value: unknown, label: string): ObjectRecord {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-  return value as ObjectRecord;
-}
-
-function nonempty(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string.`);
-  return value;
-}
-
-function address(value: unknown, label: string): Address {
-  const candidate = nonempty(value, label);
-  if (!isAddress(candidate)) throw new Error(`${label} must be an address.`);
-  return getAddress(candidate);
-}
-
-function positiveInteger(value: unknown, label: string, maximum = Number.MAX_SAFE_INTEGER): number {
-  if (!Number.isSafeInteger(value) || Number(value) <= 0 || Number(value) > maximum) throw new Error(`${label} must be a positive integer.`);
-  return Number(value);
-}
-
-function parseAsset(value: unknown, label: string): CatalogAsset {
-  const source = record(value, label);
+export function assetCatalog(registry: AssetRegistry, chainId: number) {
+  const assets = registry.assets.filter(asset => asset.chainId === chainId && asset.enabled);
+  const pools = registry.pools.filter(pool => pool.chainId === chainId && pool.approved && pool.enabled
+    && assets.some(asset => asset.address.toLowerCase() === pool.assetA.address.toLowerCase())
+    && assets.some(asset => asset.address.toLowerCase() === pool.assetB.address.toLowerCase()));
+  const byAddress = (address: Address) => assets.find(asset => asset.address.toLowerCase() === address.toLowerCase());
   return {
-    id: nonempty(source.id, `${label}.id`),
-    symbol: nonempty(source.symbol, `${label}.symbol`),
-    name: nonempty(source.name, `${label}.name`),
-    address: address(source.address, `${label}.address`),
-    decimals: positiveInteger(source.decimals, `${label}.decimals`, 36),
+    assets, pools,
+    testnetAssets: chainId === 46630 ? assets : [],
+    testnetFundAssets: assets.filter(asset => asset.role === "fund" && asset.assetType !== "protocol_token"),
+    testnetQuoteAssets: assets.filter(asset => asset.role === "quote"),
+    testnetPools: pools.filter((pool): pool is TestnetPool => pool.protocolVersion === 3 && Boolean(pool.address && pool.runtimeCodehash)),
+    testnetAssetById: (id: string) => assets.find(asset => asset.id === id),
+    testnetAssetByAddress: byAddress,
+    testnetAssetRole: (address: Address) => byAddress(address)?.role,
+    testnetPoolForPair: (left: Address, right: Address) => pools.find(pool => poolMatches(pool, left, right)),
   };
 }
 
-const testnet = record(testnetCatalog, "testnet asset catalog");
-if (testnet.chainId !== 46630) throw new Error("The testnet asset catalog has the wrong chain ID.");
-
-const quoteSources = Array.isArray(testnet.quoteAssets) ? testnet.quoteAssets : [];
-const fundSources = Array.isArray(testnet.fundAssets) ? testnet.fundAssets : [];
-if (quoteSources.length < 1 || fundSources.length < 1) throw new Error("The testnet asset catalog must define quote and fund assets.");
-
-export const testnetQuoteAssets = Object.freeze(quoteSources.map((value, index) => parseAsset(value, `quoteAssets[${index}]`)));
-export const testnetFundAssets = Object.freeze(fundSources.map((value, index) => parseAsset(value, `fundAssets[${index}]`)));
-export const testnetAssets = Object.freeze([...testnetQuoteAssets, ...testnetFundAssets]);
-
-const assetById = new Map<string, CatalogAsset>();
-const roleByAddress = new Map<string, TestnetAssetRole>();
-for (const [role, assets] of [["quote", testnetQuoteAssets], ["fund", testnetFundAssets]] as const) {
-  for (const asset of assets) {
-    if (assetById.has(asset.id) || roleByAddress.has(asset.address.toLowerCase())) throw new Error("The testnet asset catalog contains a duplicate asset.");
-    assetById.set(asset.id, asset);
-    roleByAddress.set(asset.address.toLowerCase(), role);
-  }
+export function poolMatches(pool: RegisteredPool, left: Address, right: Address): boolean {
+  return [pool.assetA.address.toLowerCase(), pool.assetB.address.toLowerCase()].sort().join(":") === [left.toLowerCase(), right.toLowerCase()].sort().join(":");
 }
 
-const venue = record(testnet.venue, "testnet asset catalog venue");
-const venueId = nonempty(venue.id, "venue.id");
-if (venueId !== "uniswap-v3") throw new Error("The testnet venue must be Uniswap V3.");
-const venueBaseUrl = nonempty(venue.baseUrl, "venue.baseUrl");
-if (new URL(venueBaseUrl).protocol !== "https:") throw new Error("venue.baseUrl must be HTTPS.");
-
-export const testnetVenue = Object.freeze({
-  id: venueId,
-  name: nonempty(venue.name, "venue.name"),
-  baseUrl: venueBaseUrl,
-  factory: address(venue.factory, "venue.factory"),
-  swapRouter02: address(venue.swapRouter02, "venue.swapRouter02"),
-  quoter: address(venue.quoter, "venue.quoter"),
-  positionManager: address(venue.positionManager, "venue.positionManager"),
-  weth9: address(venue.weth9, "venue.weth9"),
-});
-
-const poolSources = Array.isArray(testnet.pools) ? testnet.pools : [];
-const seenPoolIds = new Set<string>();
-const seenPoolAddresses = new Set<string>();
-const seenPoolPairs = new Set<string>();
-export const testnetPools = Object.freeze(poolSources.map((value, index): TestnetPool => {
-  const source = record(value, `pools[${index}]`);
-  const id = nonempty(source.id, `pools[${index}].id`);
-  const assetA = assetById.get(nonempty(source.assetA, `pools[${index}].assetA`));
-  const assetB = assetById.get(nonempty(source.assetB, `pools[${index}].assetB`));
-  if (!assetA || !assetB || assetA.id === assetB.id) throw new Error(`pools[${index}] has invalid assets.`);
-  const poolAddress = address(source.address, `pools[${index}].address`);
-  const pair = [assetA.address.toLowerCase(), assetB.address.toLowerCase()].sort().join(":");
-  if (seenPoolIds.has(id) || seenPoolAddresses.has(poolAddress.toLowerCase()) || seenPoolPairs.has(pair)) throw new Error("The testnet asset catalog contains a duplicate pool.");
-  seenPoolIds.add(id);
-  seenPoolAddresses.add(poolAddress.toLowerCase());
-  seenPoolPairs.add(pair);
-  const runtimeCodehash = nonempty(source.runtimeCodehash, `pools[${index}].runtimeCodehash`);
-  if (!/^0x[0-9a-f]{64}$/u.test(runtimeCodehash)) throw new Error("The configured pool runtime hash is invalid.");
-  return { id, assetA, assetB, address: poolAddress, runtimeCodehash: runtimeCodehash as Hex, fee: positiveInteger(source.fee, `pools[${index}].fee`, 1_000_000) };
-}));
-
-const discovery = record(testnet.otfPoolDiscovery, "otfPoolDiscovery");
-const discoveryQuoteAsset = assetById.get(nonempty(discovery.quoteAsset, "otfPoolDiscovery.quoteAsset"));
-if (!discoveryQuoteAsset || testnetAssetRole(discoveryQuoteAsset.address) !== "quote") throw new Error("otfPoolDiscovery.quoteAsset must name a quote asset.");
-export const otfPoolDiscovery = Object.freeze({
-  quoteAsset: discoveryQuoteAsset,
-  fee: positiveInteger(discovery.fee, "otfPoolDiscovery.fee", 1_000_000),
-});
-
-if (testnetAssets.some((asset) => (
-  asset.id !== discoveryQuoteAsset.id
-  && !testnetPoolForPair(asset.address, discoveryQuoteAsset.address)
-))) throw new Error("Every configured testnet asset must have a pool against the OTF discovery quote asset.");
-
-export function testnetAssetRole(value: Address): TestnetAssetRole | undefined {
-  return roleByAddress.get(value.toLowerCase());
+export function fundAssetsVerified(registry: AssetRegistry, chainId: number, addresses: readonly Address[]): boolean {
+  return addresses.length > 0 && addresses.every(address => registry.assets.some(asset =>
+    asset.chainId === chainId && asset.address.toLowerCase() === address.toLowerCase() && asset.enabled && asset.verified));
 }
 
-export function testnetAssetById(id: string): CatalogAsset | undefined {
-  return assetById.get(id);
-}
-
-export function testnetAssetByAddress(value: Address): CatalogAsset | undefined {
-  return testnetAssets.find((asset) => asset.address.toLowerCase() === value.toLowerCase());
-}
-
-export function testnetPoolForPair(left: Address, right: Address): TestnetPool | undefined {
-  return testnetPools.find((pool) => {
-    const a = pool.assetA.address.toLowerCase();
-    const b = pool.assetB.address.toLowerCase();
-    return (a === left.toLowerCase() && b === right.toLowerCase())
-      || (a === right.toLowerCase() && b === left.toLowerCase());
-  });
-}
-
-export function testnetPoolRouteAllowed(
-  input: { address: Address; kind: "native" | "erc20" | "otf" },
-  output: { address: Address; kind: "native" | "erc20" | "otf" },
-): boolean {
-  if (input.address.toLowerCase() === output.address.toLowerCase()) return false;
-  if (input.kind === "otf" && output.kind === "otf") return true;
-  if (input.kind === "otf" || output.kind === "otf") {
-    const token = input.kind !== "otf" ? input : output;
-    return testnetAssetRole(token.address) === "quote";
-  }
-  const inputRole = testnetAssetRole(input.address);
-  const outputRole = testnetAssetRole(output.address);
-  return Boolean(inputRole && outputRole && (inputRole === "quote" || outputRole === "quote"));
-}
-
-export function testnetSwapPairAllowed(
-  input: { address: Address; kind: "native" | "erc20" | "otf" },
-  output: { address: Address; kind: "native" | "erc20" | "otf" },
-): boolean {
-  return (input.kind === "otf" || output.kind === "otf")
-    && testnetPoolRouteAllowed(input, output);
-}
-
-const production = record(productionCatalog, "production asset catalog");
-const productionSources = Array.isArray(production.assets) ? production.assets : [];
-
-export function productionAssetsForChain(chainId: number): readonly CatalogAsset[] {
-  const chainKey = chainId.toString();
-  return productionSources.flatMap((value, index) => {
-    const source = record(value, `assets[${index}]`);
-    const deployments = record(source.deployments, `assets[${index}].deployments`);
-    const deploymentValue = deployments[chainKey];
-    if (deploymentValue === undefined) return [];
-    const deployment = record(deploymentValue, `assets[${index}].deployments.${chainKey}`);
-    if (deployment.featured !== true) return [];
-    return [{
-      id: nonempty(source.id, `assets[${index}].id`),
-      symbol: nonempty(source.symbol, `assets[${index}].symbol`),
-      name: nonempty(source.name, `assets[${index}].name`),
-      address: address(deployment.address, `assets[${index}].deployments.${chainKey}.address`),
-      decimals: positiveInteger(deployment.decimals, `assets[${index}].deployments.${chainKey}.decimals`, 36),
-    }];
-  });
+/** Endpoint policy only; metadata, provenance and pool authentication remain server checks. */
+export function testnetSwapPairAllowed(input: { address: Address; kind: string }, output: { address: Address; kind: string }): boolean {
+  return input.address.toLowerCase() !== output.address.toLowerCase() && (input.kind === "otf" || output.kind === "otf");
 }

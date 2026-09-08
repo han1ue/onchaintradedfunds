@@ -1,11 +1,7 @@
-import { otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
-import { createPublicClient, formatUnits, http } from "viem";
-import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   protocolDeploymentForChain,
 } from "@/lib/deployment";
 import {
-  coinGeckoEthUsd,
   incentiveWeekAt,
   OTF_INCENTIVE_WEEKS,
   weeklyEmissionBucketsOtf,
@@ -13,21 +9,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-async function currentEthUsd() {
-  const endpoint = new URL("https://api.coingecko.com/api/v3/simple/price");
-  endpoint.searchParams.set("ids", "ethereum");
-  endpoint.searchParams.set("vs_currencies", "usd");
-  endpoint.searchParams.set("include_last_updated_at", "true");
-  const response = await fetch(endpoint, {
-    headers: { accept: "application/json" },
-    next: { revalidate: 30 },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`COINGECKO_${response.status}`);
-  const quote = coinGeckoEthUsd(await response.json());
-  if (!quote) throw new Error("COINGECKO_ETH_USD_INVALID");
-  return quote;
-}
+import { readPrices } from "@/server/pricing";
 
 export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
@@ -63,26 +45,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const client = createPublicClient({
-      chain: chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain,
-      transport: http(
-        chainId === robinhoodChainTestnet.id
-          ? process.env.RH_TESTNET_RPC_URL?.trim() || robinhoodChainTestnet.rpcUrls.default.http[0]
-          : process.env.RH_MAINNET_RPC_URL?.trim() || robinhoodChain.rpcUrls.default.http[0],
-      ),
-    });
-    const [otfPriceWethWad, ethUsd] = await Promise.all([
-      client.readContract({ address: launchManager, abi: otfLaunchManagerAbi, functionName: "currentOtfPriceWethWad" }),
-      currentEthUsd(),
-    ]);
-    const otfPriceWeth = Number(formatUnits(otfPriceWethWad, 18));
-    if (!Number.isFinite(otfPriceWeth) || otfPriceWeth <= 0) throw new Error("OTF_PRICE_INVALID");
-    return Response.json({
-      ...schedule,
-      otfPriceUsd: otfPriceWeth * ethUsd.priceUsd,
-      ethUsd: ethUsd.priceUsd,
-      priceUpdatedAt: ethUsd.updatedAt,
-    }, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
+    const observation=(await readPrices(chainId)).find(price=>price.address.toLowerCase()===deployment?.addresses.otfToken?.toLowerCase() && price.usable);
+    return Response.json({...schedule,...(observation?{otfPriceUsd:Number(observation.priceUsd),priceUpdatedAt:observation.priceUpdatedAt,priceQuality:observation.quality}: {})},
+      {headers:{"cache-control":"no-store"}});
   } catch {
     return Response.json(schedule, { headers: { "cache-control": "public, s-maxage=30, stale-while-revalidate=60" } });
   }

@@ -1,10 +1,6 @@
 import mainnetDeployment from "../config/robinhood-mainnet.json";
 import testnetDeployment from "../config/robinhood-testnet.json";
-import {
-  productionAssetsForChain,
-  testnetAssetById,
-  testnetVenue,
-} from "./asset-catalog";
+import { testnetVenue } from "./venue-config";
 import { getAddress, isAddress, type Address } from "viem";
 
 type ContractDeployment = { address?: unknown; blockNumber?: unknown; blockTimestamp?: unknown };
@@ -73,8 +69,8 @@ export const robinhoodTestnetAddresses = Object.freeze({
   entryRouter: deployedTestnetContract("entryRouter"),
   uniswapV3Adapter: deployedTestnetContract("uniswapV3Adapter"),
   uniswapV4Adapter: deployedTestnetContract("uniswapV4Adapter"),
-  usdg: testnetAssetById("usdg")?.address,
-  weth: testnetAssetById("weth")?.address,
+  usdg: address(testnetExternalContracts.usdg),
+  weth: address(testnetExternalContracts.weth),
 });
 
 export const robinhoodTestnetRewardsDeploymentBlock = testnetConfigValid && testnet.status === "deployed"
@@ -161,7 +157,7 @@ const mainnetProtocolContracts = mainnetConfigValid ? record(mainnet.protocolCon
 const mainnetExternalContracts = mainnetConfigValid ? record(mainnet.externalContracts) : {};
 const mainnetLiquidity = mainnetConfigValid ? record(mainnet.externalLiquidity) : {};
 const mainnetTradingApi = mainnetConfigValid ? record(mainnet.uniswapTradingApi) : {};
-const mainnetAssets = mainnetConfigValid ? productionAssetsForChain(4663) : [];
+
 const mainnetDeployed = mainnetConfigValid && mainnet.protocolStatus === "deployed";
 
 function deployedMainnetContract(name: string): Address | undefined {
@@ -181,8 +177,8 @@ export const robinhoodMainnetAddresses = Object.freeze({
   uniswapV3Adapter: deployedMainnetContract("uniswapV3Adapter"),
   uniswapV4Adapter: deployedMainnetContract("uniswapV4Adapter"),
   otfToken: deployedMainnetContract("otfToken"),
-  usdg: mainnetAssets.find((asset) => asset.id === "usdg")?.address,
-  weth: mainnetAssets.find((asset) => asset.id === "weth")?.address,
+  usdg: address(mainnetExternalContracts.usdg),
+  weth: address(mainnetExternalContracts.weth),
   ethUsdOracle: address(mainnetExternalContracts.ethUsdOracle),
 });
 

@@ -1,4 +1,4 @@
-import { productionAssetsForChain } from "./asset-catalog";
+import { type CatalogAsset } from "./asset-catalog";
 import { parseFixedDecimal } from "./creation-model";
 
 function record(value: unknown): Record<string, unknown> {
@@ -7,10 +7,10 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** Only configured, active stock identities with a one-share multiplier can use stock prices. */
-export function mainnetStockAssetsFromRobinhood(payload: unknown) {
+export function mainnetStockAssetsFromRobinhood(payload: unknown, assets: readonly CatalogAsset[]) {
   const rows = record(payload).assets;
   if (!Array.isArray(rows)) return [];
-  return productionAssetsForChain(4663).filter((asset) => asset.id !== "usdg" && asset.id !== "weth").filter((asset) => rows.some((value) => {
+  return assets.filter(asset => asset.chainId === 4663).filter((asset) => asset.id !== "usdg" && asset.id !== "weth").filter((asset) => rows.some((value) => {
     const row = record(value);
     return row.tokenSymbol === asset.symbol && row.tokenDecimals === asset.decimals
       && row.status === "ASSET_STATUS_ACTIVE"

@@ -11,7 +11,7 @@ describe("$OTF page wiring", () => {
     expect(operate).toContain("export function SwapSurface");
     expect(operate).toContain("<OTFTokenSurface swap={<SwapSurface embedded protocolTokenMode />} />");
     expect(component).toContain("{swap}");
-    expect(operate).toContain("const pinnedAsset = protocolTokenMode ? configuredProtocolTokenFor(chainId) : embeddedFund");
+    expect(operate).toContain("const pinnedAsset = protocolTokenMode ? configuredProtocolTokenFor(registry, chainId) : embeddedFund");
     expect(operate).toMatch(/function reverse\(\)[\s\S]*setInput\(output\);[\s\S]*setOutput\(input\);/u);
     expect(operate).toContain('kind: "native"');
     expect(operate).toContain('symbol: "ETH"');
@@ -21,7 +21,7 @@ describe("$OTF page wiring", () => {
 
   it("offers native ETH for testnet protocol-token and fund routes", () => {
     expect(operate).toContain("if (canonicalWeth) configured.unshift");
-    expect(operate).toContain("configuredDefaultInputFor(chainId)");
+    expect(operate).toContain("configuredDefaultInputFor(registry, chainId)");
     expect(operate).not.toContain('asset.isProtocolToken && counterpart.kind === "native"');
     expect(operate).not.toContain('configuredAssets.filter((asset) => asset.kind !== "native")');
   });

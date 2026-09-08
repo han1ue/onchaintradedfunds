@@ -81,6 +81,18 @@ describe("OTF incentive APY model", () => {
     expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });
   });
 
+  it("gives equal rates to different-sized funds with the same OTF-to-NAV ratio", () => {
+    const first = estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 287_000, fundAumUsd: 2_870 })!;
+    const second = estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 231_000, fundAumUsd: 2_310 })!;
+    expect(first.percent).toBeCloseTo(second.percent, 10);
+  });
+
+  it("gives different rates when OTF balances differ at the same NAV", () => {
+    const first = estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 287_000 })!;
+    const second = estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 231_000 })!;
+    expect(first.percent / second.percent).toBeCloseTo(287 / 231, 10);
+  });
+
   it("returns zero APY for no OTF weight, including an entirely empty directory", () => {
     expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0 })).toEqual({ percent: 0 });
     expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0, totalRewardWeightOtf: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });

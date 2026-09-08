@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { type PublicClient, type Hex } from "viem";
 import manifest from "../../../scripts/fixtures/robinhood-testnet-v3.json";
-import { testnetAssetById, testnetVenue } from "./asset-catalog";
+import { testnetAssetById } from "../test/registry-fixture";
+import { testnetVenue } from "./venue-config";
 import { verifyTestnetV3Adapter, verifyTestnetV3Venue } from "./testnet-v3-bindings";
 
 const factory = "0x0000000000000000000000000000000000000011" as const;

@@ -1,3 +1,4 @@
+import { readDeploymentAssetCatalog } from "./lib/registry.mjs";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -10,7 +11,7 @@ const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const save = (path, value) => writeFileSync(resolve(root, path), JSON.stringify(value,
   (_key, item) => typeof item === "bigint" ? item.toString() : item, 2) + "\n");
 const config = read("app/src/config/robinhood-testnet.json");
-const catalog = read("app/src/config/robinhood-testnet-assets.json");
+const catalog = await readDeploymentAssetCatalog(46630);
 const client = createPublicClient({ transport: http(process.env.TESTNET_RPC_URL || config.rpcUrl) });
 if (await client.getChainId() !== 46630) throw new Error("Only Robinhood testnet chain 46630 is allowed");
 const block = await client.getBlock();

@@ -1,18 +1,34 @@
 import { describe, expect, it } from "vitest";
 import type { Address } from "viem";
-import registry from "../config/verified_assets.json";
-import { fundAllocationRows, fundAllocationWeights, fundAssetsVerified } from "./fund-composition";
+import { registryFixture } from "../test/registry-fixture";
+import { fundAssetsVerified } from "./asset-catalog";
+const registry = registryFixture.assets.filter(asset=>asset.verified);
+import { formatAllocationQuantity, fundAllocationRows, fundAllocationWeights } from "./fund-composition";
 
-const first = registry[0].tokenAddress as Address;
-const second = registry[1].tokenAddress as Address;
+const first = registry[0].address as Address;
+const second = registry[1].address as Address;
 const unknown = "0x0000000000000000000000000000000000000001" as Address;
+
+describe("allocation amount display", () => {
+  it("groups large balances and rounds token decimals without losing integer precision", () => {
+    expect(formatAllocationQuantity("231195.834930059083634444")).toBe("231,195.83");
+    expect(formatAllocationQuantity("287000.999")).toBe("287,001");
+    expect(formatAllocationQuantity("123456789123456789")).toBe("123,456,789,123,456,789");
+  });
+
+  it("keeps small holdings visible and distinguishes dust from zero", () => {
+    expect(formatAllocationQuantity("0.00123456789")).toBe("0.001235");
+    expect(formatAllocationQuantity("0.000000000000000001")).toBe("<0.000001");
+    expect(formatAllocationQuantity("0")).toBe("0");
+  });
+});
 
 describe("fund verification", () => {
   it("requires every constituent on the same chain, regardless of address casing", () => {
-    expect(fundAssetsVerified(46630, [first.toLowerCase() as Address, second])).toBe(true);
-    expect(fundAssetsVerified(4663, [first, second])).toBe(false);
-    expect(fundAssetsVerified(46630, [first, unknown])).toBe(false);
-    expect(fundAssetsVerified(46630, [])).toBe(false);
+    expect(fundAssetsVerified(registryFixture, 46630, [first.toLowerCase() as Address, second])).toBe(true);
+    expect(fundAssetsVerified(registryFixture, 4663, [first, second])).toBe(false);
+    expect(fundAssetsVerified(registryFixture, 46630, [first, unknown])).toBe(false);
+    expect(fundAssetsVerified(registryFixture, 46630, [])).toBe(false);
   });
 });
 

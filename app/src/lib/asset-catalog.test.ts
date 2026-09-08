@@ -1,63 +1,33 @@
 import { describe, expect, it } from "vitest";
-import {
-  otfPoolDiscovery,
-  productionAssetsForChain,
-  testnetAssetById,
-  testnetFundAssets,
-  testnetPoolRouteAllowed,
-  testnetPools,
-  testnetQuoteAssets,
-  testnetSwapPairAllowed,
-  testnetVenue,
-} from "./asset-catalog";
-import verifiedAssets from "../config/verified_assets.json";
+import { assetCatalog, fundAssetsVerified, testnetSwapPairAllowed } from "./asset-catalog";
+import { registryFixture, testnetAssetById, testnetFundAssets, testnetPools, testnetQuoteAssets } from "../test/registry-fixture";
+import { registeredCandidates } from "./registered-routes";
 
-const OTF_A = { address: "0x00000000000000000000000000000000000000F1" as const, kind: "otf" as const };
-const OTF_B = { address: "0x00000000000000000000000000000000000000F2" as const, kind: "otf" as const };
-
-describe("asset catalogs", () => {
-  it("separates testnet quote rails from the five fund constituents", () => {
-    expect(testnetQuoteAssets.map((asset) => [asset.symbol, asset.decimals])).toEqual([
-      ["USDG", 6],
-      ["WETH", 18],
-    ]);
-    expect(testnetFundAssets.map((asset) => asset.symbol)).toEqual(["TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
+describe("database registry projections", () => {
+  it("preserves quote rails, constituents and the imported verification decisions", () => {
+    expect(testnetQuoteAssets.map(a=>[a.symbol,a.decimals])).toEqual([["USDG",6],["WETH",18]]);
+    expect(testnetFundAssets.map(a=>a.symbol)).toEqual(["TSLA","AMZN","PLTR","NFLX","AMD"]);
     expect(testnetPools).toHaveLength(6);
-    expect(testnetPools.find((pool) => pool.id === "weth-usdg")).toMatchObject({ fee: 500 });
-    expect(otfPoolDiscovery).toMatchObject({ quoteAsset: { symbol: "USDG" }, fee: 500 });
-    expect(testnetVenue.name).toBe("Uniswap V3");
+    expect(registryFixture.assets.filter(a=>a.verified)).toHaveLength(6);
+    expect(testnetQuoteAssets.every(a=>!a.verified)).toBe(true);
+    expect(fundAssetsVerified(registryFixture,46630,testnetFundAssets.map(a=>a.address))).toBe(true);
+    expect(fundAssetsVerified(registryFixture,4663,testnetFundAssets.map(a=>a.address))).toBe(false);
   });
-
-  it("keeps constituent pool routes internal and requires an OTF in user swaps", () => {
-    const usdg = { address: testnetAssetById("usdg")!.address, kind: "erc20" as const };
-    const weth = { address: testnetAssetById("weth")!.address, kind: "erc20" as const };
-    const tsla = { address: testnetAssetById("tsla")!.address, kind: "erc20" as const };
-    const amzn = { address: testnetAssetById("amzn")!.address, kind: "erc20" as const };
-
-    expect(testnetPoolRouteAllowed(usdg, weth)).toBe(true);
-    expect(testnetPoolRouteAllowed(usdg, tsla)).toBe(true);
-    expect(testnetPoolRouteAllowed(weth, tsla)).toBe(true);
-    expect(testnetSwapPairAllowed(usdg, weth)).toBe(false);
-    expect(testnetSwapPairAllowed(usdg, tsla)).toBe(false);
-    expect(testnetSwapPairAllowed(OTF_A, usdg)).toBe(true);
-    expect(testnetSwapPairAllowed(OTF_A, weth)).toBe(true);
-    expect(testnetSwapPairAllowed(OTF_A, OTF_B)).toBe(true);
-    expect(testnetSwapPairAllowed(tsla, amzn)).toBe(false);
-    expect(testnetSwapPairAllowed(OTF_A, tsla)).toBe(false);
+  it("keeps verification separate from pool approval and filters disabled assets", () => {
+    const registry=structuredClone(registryFixture);
+    registry.assets.find(a=>a.chainId===46630 && a.id==="tsla")!.verified=false;
+    expect(assetCatalog(registry,46630).pools).toHaveLength(6);
+    registry.assets.find(a=>a.chainId===46630 && a.id==="tsla")!.enabled=false;
+    expect(assetCatalog(registry,46630).assets.some(a=>a.id==="tsla")).toBe(false);
+    expect(assetCatalog(registry,46630).pools).toHaveLength(5);
   });
-
-  it("keeps production discovery chain-aware and informational", () => {
-    expect(productionAssetsForChain(4663).map((asset) => asset.symbol)).toEqual(["USDG", "WETH", "TSLA", "AMZN", "PLTR", "NFLX", "AMD"]);
-    expect(productionAssetsForChain(46630)).toEqual([]);
-  });
-
-  it("registers the protocol OTF and every testnet fund constituent as verified", () => {
-    const verifiedTestnetAddresses = verifiedAssets
-      .filter((asset) => asset.chainId === 46630)
-      .map((asset) => asset.tokenAddress.toLowerCase());
-    expect(verifiedTestnetAddresses).toContain("0x5cbbb475721ad3c4ab61bd241818e6774782df88");
-    expect(testnetFundAssets.every((asset) => (
-      verifiedTestnetAddresses.includes(asset.address.toLowerCase())
-    ))).toBe(true);
+  it("supports competing pools but never discovers share pools", () => {
+    const weth=testnetAssetById("weth")!.address,usdg=testnetAssetById("usdg")!.address;
+    const pool=testnetPools.find(p=>p.id.endsWith(":weth-usdg"))!;
+    const competing={...pool,id:"second-weth-usdg",fee:3000};
+    expect(registeredCandidates([pool,competing],46630,weth,usdg,weth)).toHaveLength(2);
+    expect(registeredCandidates([pool,competing],4663,weth,usdg,weth)).toHaveLength(0);
+    expect(registeredCandidates([pool],46630,weth,"0x00000000000000000000000000000000000000f1",weth)).toHaveLength(0);
+    expect(testnetSwapPairAllowed({address:weth,kind:"erc20"},{address:usdg,kind:"erc20"})).toBe(false);
   });
 });

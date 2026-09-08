@@ -1,3 +1,4 @@
+import { readDeploymentAssetCatalog } from "./lib/registry.mjs";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -9,7 +10,7 @@ const { createPublicClient, http, parseAbi, keccak256 } = require("viem");
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const config = read("app/src/config/robinhood-testnet.json");
-const catalog = read("app/src/config/robinhood-testnet-assets.json");
+const catalog = await readDeploymentAssetCatalog(46630);
 const seeds = read("deployments/robinhood-testnet-v3-liquidity.json");
 const budget = read("scripts/fixtures/robinhood-testnet-v3-budget.json");
 const journal = read("deployments/robinhood-testnet-v3-journal.json");

@@ -1,4 +1,5 @@
 export const quoteFailureReasons = {
+  ROUTE_POLICY_EXCEEDED: "Registered routes exceed the trade-size or price-impact limit for this amount.",
   ROUTE_NOT_CONFIGURED: "This quote route is not configured on the selected network.",
   UNSUPPORTED_CONSTITUENT: "A fund constituent has no supported quote route.",
   DEPLOYMENT_MISMATCH: "The configured router or adapter could not be verified.",

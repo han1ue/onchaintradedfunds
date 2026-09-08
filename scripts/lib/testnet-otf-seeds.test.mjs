@@ -3,10 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { testnetOtfSeedConfiguration, testnetSeedMarketSnapshot } from "./testnet-otf-seeds.mjs";
 
-const catalog = JSON.parse(readFileSync(
-  new URL("../../app/src/config/robinhood-testnet-assets.json", import.meta.url),
-  "utf8",
-));
+const catalog = { fundAssets: ["TSLA","AMZN","PLTR","NFLX","AMD"].map((symbol,i)=>({id:symbol.toLowerCase(),symbol,name:symbol,decimals:18,address:'0x'+String(i+10).padStart(40,'0')})) };
 const beneficiary = "0xc340D7085E321B82CF550904310EE44bae9e4CD2";
 const wad = 10n ** 18n;
 const snapshot = {

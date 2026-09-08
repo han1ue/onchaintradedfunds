@@ -36,6 +36,15 @@ describe("fund fee claim wiring", () => {
     expect(component).toContain("functionName: call.functionName");
   });
 
+  it("loads claim data and settlement quotes once without background refresh loops", () => {
+    const panel = component.slice(component.indexOf("function FeeClaimPanel"), component.indexOf("function formatShareSupply"));
+    expect(panel).toContain("refetchOnWindowFocus: false");
+    expect(panel).toContain("refetchOnReconnect: false");
+    expect(panel).not.toContain("refetchInterval");
+    expect(panel).not.toContain("refreshTimer");
+    expect(panel).not.toContain("quoteRequest");
+  });
+
   it("wires loading, empty, missing-route, rejected, pending, success, and failure states", () => {
     for (const state of ["Quoting…", "No fees to claim", "Route unavailable", "rejected", "pending", "success", "failure"]) {
       expect(component).toContain(state);

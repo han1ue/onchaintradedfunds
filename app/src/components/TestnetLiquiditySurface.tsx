@@ -14,8 +14,6 @@ import {
 import { useEffect, useState } from "react";
 import {
   formatUnits,
-  getAddress,
-  isAddress,
   isAddressEqual,
   keccak256,
   parseEventLogs,
@@ -32,12 +30,10 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import {
-  otfPoolDiscovery,
-  testnetAssetById,
-  testnetPools,
-  testnetVenue,
-} from "@/lib/asset-catalog";
+import { type TestnetPool } from "@/lib/asset-catalog";
+import { useAssetRegistry } from "@/lib/use-asset-registry";
+import { testnetVenue } from "@/lib/venue-config";
+import { robinhoodTestnetAddresses } from "@/lib/deployment";
 import { robinhoodChainTestnet } from "@/lib/chains";
 import { verifyTestnetV3Venue } from "@/lib/testnet-v3-bindings";
 
@@ -46,12 +42,7 @@ const MAX_TICK = 887272;
 
 const factory = testnetVenue.factory;
 const positionManager = testnetVenue.positionManager;
-const usdg = testnetAssetById("usdg")!.address;
-const markets = testnetPools.flatMap((pool) => {
-  if (pool.assetA.id === "usdg") return [{ symbol: pool.assetB.symbol, token: pool.assetB.address, fee: pool.fee }];
-  if (pool.assetB.id === "usdg") return [{ symbol: pool.assetA.symbol, token: pool.assetA.address, fee: pool.fee }];
-  return [];
-});
+const usdg = robinhoodTestnetAddresses.usdg!;
 
 const erc20Abi = [
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -189,14 +180,25 @@ function ConnectLiquidityWallet() {
 }
 
 export function TestnetLiquiditySurface() {
+  const { catalog, isPending, isError, refetch } = useAssetRegistry();
+  if (isPending) return <p role="status">Loading registered pools…</p>;
+  if (isError) return <div role="alert"><p>Pool registry unavailable.</p><button type="button" onClick={() => void refetch()}>Retry</button></div>;
+  if (!catalog.testnetPools.length) return <p>No approved pools are registered on this network.</p>;
+  return <RegisteredLiquiditySurface testnetPools={catalog.testnetPools} />;
+}
+
+function RegisteredLiquiditySurface({ testnetPools }: { testnetPools: TestnetPool[] }) {
+  const markets = testnetPools.flatMap(pool => {
+    if (pool.assetA.address.toLowerCase() === usdg.toLowerCase()) return [{ id: pool.id, symbol: pool.assetB.symbol, token: pool.assetB.address, fee: pool.fee }];
+    if (pool.assetB.address.toLowerCase() === usdg.toLowerCase()) return [{ id: pool.id, symbol: pool.assetA.symbol, token: pool.assetA.address, fee: pool.fee }];
+    return [];
+  });
   const { address } = useAccount();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { switchChainAsync, isPending: switchingNetwork } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const initialVault = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("vault") ?? "";
-  const [marketChoice, setMarketChoice] = useState(initialVault && isAddress(initialVault) ? "otf" : markets[0].token);
-  const [otfAddress, setOtfAddress] = useState(initialVault);
+  const [marketChoice, setMarketChoice] = useState(markets[0]?.id ?? "");
   const [amount0Text, setAmount0Text] = useState("");
   const [amount1Text, setAmount1Text] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");
@@ -204,11 +206,9 @@ export function TestnetLiquiditySurface() {
   const [statusText, setStatusText] = useState("Choose a market and enter token amounts.");
   const [lastHash, setLastHash] = useState<Hash>();
 
-  const selectedMarket = markets.find((market) => market.token.toLowerCase() === marketChoice.toLowerCase());
-  const isOtfMarket = marketChoice === "otf";
-  const validOtfAddress = isAddress(otfAddress) ? getAddress(otfAddress) : undefined;
-  const assetAddress = isOtfMarket ? validOtfAddress : selectedMarket?.token;
-  const fee = isOtfMarket ? otfPoolDiscovery.fee : selectedMarket?.fee;
+  const selectedMarket = markets.find((market) => market.id === marketChoice);
+  const assetAddress = selectedMarket?.token;
+  const fee = selectedMarket?.fee;
   const token0 = assetAddress ? (BigInt(assetAddress) < BigInt(usdg) ? assetAddress : usdg) : undefined;
   const token1 = assetAddress ? (token0 && isAddressEqual(token0, assetAddress) ? usdg : assetAddress) : undefined;
 
@@ -254,7 +254,7 @@ export function TestnetLiquiditySurface() {
       && amount0Desired && amount1Desired && amount0Desired <= (token0Balance ?? 0n) && amount1Desired <= (token1Balance ?? 0n)
       && slippageValid && !busy,
   );
-  const marketLabel = isOtfMarket ? `${token0Symbol === "USDG" ? token1Symbol ?? "OTF" : token0Symbol ?? "OTF"}/USDG` : `${selectedMarket?.symbol ?? "Test asset"}/USDG`;
+  const marketLabel = `${selectedMarket?.symbol ?? "Test asset"}/USDG`;
   const statusTone = phase === "confirmed" ? "success" : phase === "error" ? "danger" : busy ? "working" : "neutral";
 
   useEffect(() => {
@@ -263,7 +263,7 @@ export function TestnetLiquiditySurface() {
     setPhase("idle");
     setStatusText("Choose a market and enter token amounts.");
     setLastHash(undefined);
-  }, [marketChoice, otfAddress]);
+  }, [marketChoice]);
 
   function changeAmount0(value: string) {
     setAmount0Text(value);
@@ -298,8 +298,8 @@ export function TestnetLiquiditySurface() {
       await verifyTestnetV3Venue(publicClient);
       const currentPool = await publicClient.readContract({ address: factory, abi: factoryAbi, functionName: "getPool", args: [token0, token1, fee] });
       if (!poolAddress || !isAddressEqual(currentPool, poolAddress)) throw new Error("The selected pool binding changed.");
-      const configuredPool = testnetPools.find((pool) => pool.assetA.address.toLowerCase() === assetAddress?.toLowerCase() || pool.assetB.address.toLowerCase() === assetAddress?.toLowerCase());
-      if (!isOtfMarket && (!configuredPool || !isAddressEqual(currentPool, configuredPool.address))) throw new Error("The pool differs from the configured market.");
+      const configuredPool = testnetPools.find((pool) => pool.id === selectedMarket?.id);
+      if (!configuredPool || !isAddressEqual(currentPool, configuredPool.address)) throw new Error("The pool differs from the configured market.");
       if (configuredPool) {
         const code = await publicClient.getCode({ address: currentPool });
         if (!code || keccak256(code) !== configuredPool.runtimeCodehash) throw new Error("The pool runtime differs from the authenticated market.");
@@ -370,19 +370,11 @@ export function TestnetLiquiditySurface() {
             <span>Pool</span>
             <div className="selectControl">
               <select value={marketChoice} onChange={(event) => setMarketChoice(event.target.value)} aria-label="Liquidity pool">
-                {markets.map((market) => <option key={market.token} value={market.token}>{market.symbol}/USDG · {(market.fee / 10_000).toFixed(2)}%</option>)}
-                <option value="otf">OTF/USDG · {(otfPoolDiscovery.fee / 10_000).toFixed(2)}%</option>
+                {markets.map((market) => <option key={market.id} value={market.id}>{market.symbol}/USDG · {(market.fee / 10_000).toFixed(2)}%</option>)}
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </div>
           </label>
-          {isOtfMarket ? (
-            <label className="liquidityField">
-              <span>OTF address</span>
-              <input value={otfAddress} onChange={(event) => setOtfAddress(event.target.value.trim())} placeholder="0x…" spellCheck={false} autoComplete="off" />
-              <small>The OTF/USDG pool is resolved directly from the configured Uniswap V3 factory.</small>
-            </label>
-          ) : null}
           <div className="liquidityPoolRecord">
             <div><span>Selected market</span><strong>{marketLabel}</strong></div>
             <div><span>Pool</span><strong>{poolLoading ? <LoaderCircle className="createAssetSpinner" size={15} aria-label="Please wait" /> : shortAddress(poolAddress)}</strong></div>
@@ -390,7 +382,6 @@ export function TestnetLiquiditySurface() {
             <div><span>Active liquidity</span><strong className={poolLiquidity && poolLiquidity > 0n ? "successText" : "warningText"}>{poolLiquidity === undefined ? (poolAddress || poolLoading ? "Loading…" : "—") : poolLiquidity > 0n ? "Active" : "Empty"}</strong></div>
           </div>
           {poolAddress ? <a className="liquidityExplorerLink" href={`${robinhoodChainTestnet.blockExplorers.default.url}/address/${poolAddress}`} target="_blank" rel="noreferrer">Inspect pool contract <ExternalLink size={12} /></a> : null}
-          {isOtfMarket && otfAddress && !validOtfAddress ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Invalid OTF address</strong><span>Enter a valid EVM contract address.</span></div></div> : null}
           {assetAddress && !poolLoading && !poolReadError && !poolAddress ? <div className="validationSummary"><AlertTriangle size={15} /><div><strong>Pool not found</strong><span>No initialized USDG pool exists for this address and fee tier.</span></div></div> : null}
           {poolReadError ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool lookup unavailable</strong><span>Check the Robinhood Testnet connection and try again.</span></div></div> : null}
           {!poolVerified && poolAddress && !poolLoading && poolDetailsLoaded ? <div className="validationSummary danger"><AlertTriangle size={15} /><div><strong>Pool verification failed</strong><span>The pool does not match the canonical factory pair, fee, or initialized state.</span></div></div> : null}

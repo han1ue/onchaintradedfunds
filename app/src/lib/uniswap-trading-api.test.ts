@@ -49,17 +49,34 @@ function provider(overrides: Record<string, unknown> = {}) {
 }
 
 describe("same-origin Uniswap quote API", () => {
+  it("seals a simulated registered transaction without a Trading API discovery request",async()=>{
+    const providerRequest=provider();
+    const result=await handleSwapQuoteRequest(request(),{apiKey:"test-key",now:()=>NOW,providerRequest,
+      registeredDirect:async()=>({expectedAmountOut:AMOUNT*2n,minAmountOut:AMOUNT*199n/100n,expiresAtMs:NOW+45000,
+        transaction:{chainId:4663,from:CALLER,to:UNIVERSAL_ROUTER,data:"0x1234",value:"0"},gasEstimate:"100000",impactBps:10})});
+    expect(result.status).toBe(200);expect(providerRequest).not.toHaveBeenCalled();
+    const execution=(result.body as Record<string,unknown>).execution as Record<string,unknown>;
+    expect(execution.registered).toBe(true);
+    const plan=Object.fromEntries(Object.entries(execution).filter(([key])=>!["registered","permitData","transaction"].includes(key)));
+    const finalized=await handleSwapQuoteRequest({action:"finalize-direct",plan},{apiKey:"test-key",now:()=>NOW,providerRequest});
+    expect(finalized.status).toBe(200);expect(providerRequest).not.toHaveBeenCalled();
+  });
+  it("falls back when a registered transaction fails simulation",async()=>{
+    const providerRequest=provider();
+    const result=await handleSwapQuoteRequest(request(),{apiKey:"test-key",now:()=>NOW,providerRequest,registeredDirect:async()=>{throw new Error("SIMULATION_FAILED");}});
+    expect(result.status).toBe(200);expect(providerRequest.mock.calls.map(([path])=>path)).toEqual(["quote"]);
+  });
   it("defaults to 45-second quotes and preserves explicit provider deadlines", async () => {
-    const fallback = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: provider({ deadline: undefined }) });
+    const fallback = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: provider({ deadline: undefined }) });
     expect(fallback.status).toBe(200);
     expect(fallback.body).toMatchObject({ expiresAtMs: NOW + 45_000 });
-    const explicit = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: provider() });
+    const explicit = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: provider() });
     expect(explicit.body).toMatchObject({ expiresAtMs: NOW + 20_000 });
   });
 
   it("requests exact-input BEST_PRICE V3/V4 CLASSIC quotes and returns validated targets", async () => {
     const requestProvider = provider();
-    const result = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const result = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ state: "available", route: "direct", routeLabel: "Direct pool" });
     const quoteCall = requestProvider.mock.calls.find(([path]) => path === "quote");
@@ -92,7 +109,7 @@ describe("same-origin Uniswap quote API", () => {
       return { swap: { to: UNIVERSAL_ROUTER, from: CALLER, data: "0x1234", value: AMOUNT.toString(), chainId: 4663 } };
     });
     const nativeRequest = request({ input: { address: weth, decimals: 18, kind: "native", isFactoryVault: false, isProtocolToken: false } });
-    const quoted = await handleSwapQuoteRequest(nativeRequest, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const quoted = await handleSwapQuoteRequest(nativeRequest, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(quoted.status).toBe(200);
     const quoteCall = requestProvider.mock.calls.find(([path]) => path === "quote");
     expect(quoteCall?.[1]).toMatchObject({ tokenIn: NATIVE });
@@ -104,10 +121,10 @@ describe("same-origin Uniswap quote API", () => {
     const plan = Object.fromEntries(Object.entries(execution).filter(([key]) => [
       "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue",
     ].includes(key)));
-    const finalized = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const finalized = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(finalized.status).toBe(200);
     expect(((finalized.body as Record<string, unknown>).execution as Record<string, unknown>).transaction).toMatchObject({ value: AMOUNT.toString() });
-    expect((await handleSwapQuoteRequest({ action: "finalize-direct", plan: { ...plan, nativeValue: "0" } }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider })).status).toBe(400);
+    expect((await handleSwapQuoteRequest({ action: "finalize-direct", plan: { ...plan, nativeValue: "0" } }, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider })).status).toBe(400);
   });
 
   it("keeps native output explicit and rejects a forged native input identity", async () => {
@@ -122,31 +139,31 @@ describe("same-origin Uniswap quote API", () => {
     const result = await handleSwapQuoteRequest(request({
       input: { address: INPUT, decimals: 18, kind: "otf", isFactoryVault: true, isProtocolToken: false },
       output: { address: weth, decimals: 18, kind: "native", isFactoryVault: false, isProtocolToken: false },
-    }), { apiKey: "test-key", now: () => NOW, providerRequest: outputProvider });
+    }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: outputProvider });
     expect(result.status).toBe(200);
     expect(((result.body as Record<string, unknown>).execution as Record<string, unknown>)).toMatchObject({ nativeOutput: true, nativeValue: "0" });
-    const forged = await handleSwapQuoteRequest(request({ input: { address: INPUT, decimals: 18, kind: "native", isFactoryVault: false, isProtocolToken: false } }), { apiKey: "test-key", now: () => NOW, providerRequest: outputProvider });
+    const forged = await handleSwapQuoteRequest(request({ input: { address: INPUT, decimals: 18, kind: "native", isFactoryVault: false, isProtocolToken: false } }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: outputProvider });
     expect(forged.status).toBe(400);
   });
 
   it("returns truthful unavailable states without a key or supported deployment", async () => {
     expect((await handleSwapQuoteRequest(request(), { now: () => NOW })).body).toMatchObject({ state: "unavailable", route: "direct" });
-    expect((await handleSwapQuoteRequest(request({ chainId: 46630 }), { apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable" });
-    expect((await handleSwapQuoteRequest(request({ route: "basket", chainId: 46630 }), { apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable", route: "basket" });
+    expect((await handleSwapQuoteRequest(request({ chainId: 46630 }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable" });
+    expect((await handleSwapQuoteRequest(request({ route: "basket", chainId: 46630 }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: provider() })).body).toMatchObject({ state: "unavailable", route: "basket" });
   });
 
   it("does not contact Uniswap for token-to-token swaps", async () => {
     const requestProvider = provider();
     const result = await handleSwapQuoteRequest(request({
       output: { address: OUTPUT, decimals: 18, kind: "erc20", isFactoryVault: false, isProtocolToken: false },
-    }), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(result.body).toMatchObject({ state: "unavailable", reason: "Swap is only available for OTF assets." });
     expect(requestProvider).not.toHaveBeenCalled();
   });
 
   it("normalizes provider failures without exposing provider details", async () => {
     const result = await handleSwapQuoteRequest(request(), {
-      apiKey: "test-key",
+      registeredDirect: async () => undefined, apiKey: "test-key",
       now: () => NOW,
       providerRequest: async () => { throw new Error("private upstream detail"); },
     });
@@ -162,28 +179,28 @@ describe("same-origin Uniswap quote API", () => {
     ["deadline", { deadline: String(Math.floor((NOW + 600_000) / 1_000)) }],
   ])("rejects a provider quote with the wrong %s", async (_label, override) => {
     const body = _label === "chain" ? request(override) : request();
-    const result = await handleSwapQuoteRequest(body, { apiKey: "test-key", now: () => NOW, providerRequest: provider(_label === "chain" ? {} : override) });
+    const result = await handleSwapQuoteRequest(body, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: provider(_label === "chain" ? {} : override) });
     expect(result.status).toBe(503);
   });
 
   it("finalizes only a sealed unchanged plan and validates the Universal Router transaction", async () => {
     const requestProvider = provider();
-    const quoted = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const quoted = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     const execution = (quoted.body as Record<string, unknown>).execution as Record<string, unknown>;
     const plan = Object.fromEntries(Object.entries(execution).filter(([key]) => [
       "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue",
     ].includes(key)));
-    const finalized = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const finalized = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(finalized.status).toBe(200);
     expect(((finalized.body as Record<string, unknown>).execution as Record<string, unknown>).transaction).toMatchObject({ to: getAddress(UNIVERSAL_ROUTER), from: CALLER, value: "0" });
     expect(requestProvider.mock.calls.map(([path]) => path)).toEqual(["quote", "swap"]);
-    const tampered = await handleSwapQuoteRequest({ action: "finalize-direct", plan: { ...plan, minAmountOut: "1" } }, { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const tampered = await handleSwapQuoteRequest({ action: "finalize-direct", plan: { ...plan, minAmountOut: "1" } }, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(tampered.status).toBe(400);
   });
 
   it("rejects a provider transaction with the wrong final target", async () => {
     const requestProvider = provider();
-    const quoted = await handleSwapQuoteRequest(request(), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const quoted = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     const execution = (quoted.body as Record<string, unknown>).execution as Record<string, unknown>;
     const plan = Object.fromEntries(Object.entries(execution).filter(([key]) => [
       "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue",
@@ -194,13 +211,13 @@ describe("same-origin Uniswap quote API", () => {
     ): Promise<unknown> => path === "swap"
       ? { swap: { to: OUTPUT, from: CALLER, data: "0x1234", value: "0", chainId: 4663 } }
       : requestProvider(path, body);
-    const result = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { apiKey: "test-key", now: () => NOW, providerRequest: badSwapProvider });
+    const result = await handleSwapQuoteRequest({ action: "finalize-direct", plan }, { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: badSwapProvider });
     expect(result.status).toBe(400);
   });
 
   it("rejects malformed browser input before contacting Uniswap", async () => {
     const requestProvider = provider();
-    const result = await handleSwapQuoteRequest(request({ caller: "not-an-address" }), { apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
+    const result = await handleSwapQuoteRequest(request({ caller: "not-an-address" }), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(result.status).toBe(400);
     expect(requestProvider).not.toHaveBeenCalled();
   });

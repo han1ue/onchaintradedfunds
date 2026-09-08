@@ -6,8 +6,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   testnetAssetById,
   testnetPoolForPair,
-  testnetVenue,
-} from "./asset-catalog";
+  registryFixture,
+} from "../test/registry-fixture";
+import { testnetVenue } from "./venue-config";
+import { QuoteFailure } from "./quote-errors";
+import type { AssetRegistry, RegisteredPool } from "./asset-catalog";
+import { routeFrom } from "./v3-route";
+import type { RouteSegment } from "./registered-routes";
 import { parseTypedQuoteResponse, type SwapAsset, type SwapQuoteRequest } from "./swap-model";
 import {
   quoteTestnetSwap,
@@ -86,7 +91,19 @@ function routingClient(overrides: Partial<TestnetRoutingClient> = {}): TestnetRo
 }
 
 function dependencies(client = routingClient()) {
-  return { now: () => NOW, client, deployment: TEST_DEPLOYMENT };
+  const shares=[OTF_A,OTF_B].map((address,i)=>({...tsla,address,id:'share-'+i,assetType:'fund_share' as const,role:undefined}));
+  const registry:AssetRegistry={assets:[...registryFixture.assets,...shares],pools:[...registryFixture.pools,...shares.map((share,i)=>({...registryFixture.pools[0],id:'share-usdg-'+i,assetA:share,assetB:usdg,address:OTF_POOL,fee:500}))]};
+  const registeredClient={
+    authenticate:async(pool:RegisteredPool)=>{
+      const actual=await client.poolFor(pool.assetA.address,pool.assetB.address,pool.fee);
+      if(!actual)throw new QuoteFailure('NO_ROUTE');
+      if(actual.toLowerCase()!==pool.address?.toLowerCase())throw new QuoteFailure('POOL_VALIDATION_FAILED');
+      if(!await client.poolLiquidity(actual))throw new QuoteFailure('NO_LIQUIDITY');
+    },
+    quoteSegment:async(segment:RouteSegment,type:'EXACT_INPUT'|'EXACT_OUTPUT',amount:bigint)=>({amount:await (type==='EXACT_INPUT'?client.quoteExactInput(segment.data,amount):client.quoteExactOutput(routeFrom([...segment.tokens].reverse(),segment.hops.map(h=>h.pool.fee).reverse()).path,amount))}),
+    withinTradeSize:async()=>true,
+  };
+  return { now: () => NOW, client, registry, registeredClient, simulate:async()=>{}, deployment: TEST_DEPLOYMENT };
 }
 
 function swapAsset(value: BasketPlannerRequest["input"], symbol: string): SwapAsset {
@@ -100,6 +117,11 @@ function swapAsset(value: BasketPlannerRequest["input"], symbol: string): SwapAs
     isFactoryVault: value.kind === "otf",
   };
 }
+
+it("rejects a registered quote when complete transaction simulation fails",async()=>{
+  const result=await quoteTestnetSwap(plannerRequest(),{...dependencies(),simulate:async()=>{throw new QuoteFailure("SIMULATION_FAILED");}});
+  expect(result.status).toBe(503);expect(result.body).toMatchObject({code:"SIMULATION_FAILED"});
+});
 
 function parseResponse(response: unknown, request: BasketPlannerRequest) {
   const modelRequest: SwapQuoteRequest = {
@@ -344,7 +366,7 @@ describe("Uniswap V3 testnet quote planner", () => {
       previewRedeem: vi.fn(async (_vault, shares) => constituents.map(() => shares / 5n)),
       quoteExactInput: vi.fn(async (path, amount) => path === settlementPath
         // A nonlinear quote distinguishes one combined swap from independent quotes.
-        ? amount * 10n ** 18n / (10_000_000n + amount)
+        ? amount * 10n ** 18n / (1_000_000_000n + amount)
         : amount / 100_000_000_000n),
     });
     const output = outputKind === "usdg" ? asset(usdg) : { ...asset(weth), kind: outputKind === "native" ? "native" as const : "erc20" as const };
@@ -352,7 +374,7 @@ describe("Uniswap V3 testnet quote planner", () => {
     const result = await quoteTestnetSwap(request, dependencies(client));
     expect(result.status).toBe(200);
     const quote = parseResponse(result.body, request);
-    const expectedOutput = outputKind === "usdg" ? 10_000_000n : 500_000_000_000_000_000n;
+    const expectedOutput = outputKind === "usdg" ? 10_000_000n : 10_000_000n * 10n ** 18n / 1_010_000_000n;
     const minimumOutput = expectedOutput * 9950n / 10_000n;
     expect(quote.expectedOutputRaw).toBe(expectedOutput);
     expect(quote.minimumReceivedRaw).toBe(minimumOutput);
@@ -369,9 +391,9 @@ describe("Uniswap V3 testnet quote planner", () => {
         minAmountOut: 1_990_000n, data: encodeV3Path([token, usdg.address], [3000]),
       });
     }
-    expect(client.quoteExactInput).toHaveBeenCalledTimes(legs.length);
+    expect(client.quoteExactInput).toHaveBeenCalledTimes(legs.length * 2);
     if (outputKind !== "usdg") {
-      expect(client.quoteExactInput).toHaveBeenLastCalledWith(settlementPath, 10_000_000n);
+      expect(client.quoteExactInput).toHaveBeenCalledWith(settlementPath, 10_000_000n);
       expect(legs[5]).toMatchObject({
         tokenIn: usdg.address, tokenOut: weth.address, amountIn: maxUint256,
         minAmountOut: minimumOutput, data: settlementPath,
