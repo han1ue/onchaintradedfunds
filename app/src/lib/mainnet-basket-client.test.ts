@@ -8,12 +8,12 @@ import { v4PoolId } from "./v4-route";
 const rpc = vi.hoisted(() => ({ simulateCalls: vi.fn(), readContract: vi.fn(), getCode: vi.fn() }));
 vi.mock("viem", async (importOriginal) => ({ ...await importOriginal<typeof import("viem")>(), createPublicClient: () => rpc }));
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
-const deployment: MainnetBasketDeployment = { factory: addr(1), entryRouter: addr(2), uniswapV3Adapter: addr(3), weth: addr(4), uniswapV3Factory: addr(5), uniswapV3Router: addr(6), uniswapV4Adapter: addr(30), uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34) };
+const deployment: MainnetBasketDeployment = { factory: addr(1), entryRouter: addr(2), uniswapUniversalRouterAdapter: addr(3), weth: addr(4), uniswapV3Factory: addr(5), uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34) };
 function execution(native = false): BasketRouterExecution {
-  return { kind: "basket-router", chainId: 4663, caller: addr(7), router: deployment.entryRouter, adapter: deployment.uniswapV3Adapter,
+  return { kind: "basket-router", chainId: 4663, caller: addr(7), router: deployment.entryRouter, adapter: deployment.uniswapUniversalRouterAdapter,
     nativeValue: native ? 100n : 0n, approval: native ? undefined : { token: addr(8), spender: deployment.entryRouter, amount: 100n }, funding: [{ token: addr(8), amount: 100n }],
     call: native ? { method: "mintFromNative", args: [{ inputToken: deployment.weth, vault: addr(8), amountIn: 100n, minShares: 10n, deadline: 2000000000n }, []] }
-      : { method: "redeemToToken", args: [{ outputToken: deployment.weth, vault: addr(8), shares: 100n, minAmountOut: 10n, skipMask: 0n, deadline: 2000000000n }, [100n], [{ adapter: deployment.uniswapV3Adapter, tokenIn: addr(9), tokenOut: deployment.weth, amountIn: maxUint256, minAmountOut: 10n, data: "0x", hops: [] }]] },
+      : { method: "redeemToToken", args: [{ outputToken: deployment.weth, vault: addr(8), shares: 100n, minAmountOut: 10n, skipMask: 0n, deadline: 2000000000n }, [100n], [{ adapter: deployment.uniswapUniversalRouterAdapter, tokenIn: addr(9), tokenOut: deployment.weth, amountIn: maxUint256, minAmountOut: 10n, data: "0x", hops: [] }]] },
   };
 }
 describe("mainnet basket simulation", () => {

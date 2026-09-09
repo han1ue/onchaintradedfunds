@@ -22,7 +22,7 @@ export function registeredDirectExecution(input:{path:RegisteredPath;weth:Addres
   for(const segment of routeSegments(input.path)) {
     convert(segment.tokens[0]!);
     if(segment.version===3) {
-      push(0x00,encodeAbiParameters(parseAbiParameters("address recipient,uint256 amountIn,uint256 amountOutMinimum,bytes path,bool payerIsUser"),[ROUTER_ADDRESS_THIS,CONTRACT_BALANCE,1n,segment.data,false]));
+      push(0x00,encodeAbiParameters(parseAbiParameters("address recipient,uint256 amountIn,uint256 amountOutMinimum,bytes path,bool payerIsUser,uint256[] minHopPriceX36"),[ROUTER_ADDRESS_THIS,CONTRACT_BALANCE,1n,segment.data,false,[]]));
     } else {
       const settle=encodeAbiParameters(parseAbiParameters("address currency,uint256 amount,bool payerIsUser"),[current,CONTRACT_BALANCE,false]);
       const swap=encodeAbiParameters(parseAbiParameters("(address currencyIn,(address intermediateCurrency,uint24 fee,int24 tickSpacing,address hooks,bytes hookData)[] path,uint256[] minHopPriceX36,uint128 amountIn,uint128 amountOutMinimum)"),[{currencyIn:current,path:v4QuotePath(segment),minHopPriceX36:[],amountIn:0n,amountOutMinimum:1n}]);

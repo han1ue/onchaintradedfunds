@@ -7,10 +7,6 @@
       "address": "0x09b6D850382787115969A2699f107f5A974c781b",
       "codehash": "0x6fd25264cf4ace4e9a07e63d83238fae88ecac94dcec49f0275232d91adb0d2d"
     },
-    "uniswapV3SwapRouter02": {
-      "address": "0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4",
-      "codehash": "0x03119bd7ea4cbf742e8d7a31fec0162ce6c381aadea59f7734c9e2b0a076d20b"
-    },
     "uniswapV4PoolManager": {
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "codehash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
@@ -24,8 +20,7 @@
       "codehash": "0xf3a0edb689229fa4bf135a728f2ec2eb4a2fbee2e41e3e74ffadb7b4c56e8a6d"
     },
     "uniswapUniversalRouter": {
-      "address": "0x8876789976decbfcbbbe364623c63652db8c0904",
-      "codehash": "0xfdd90802f39ce5fc8bac4c2f1b3ac7bac530fd17ff46b0630f1bd00f1e14082f"
+      "address": "0xAb6CDcd3A4e313923A035644cF64Ce567FB15fAa"
     },
     "permit2": {
       "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
@@ -51,19 +46,6 @@
       "address": "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
       "codehash": "0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6"
     }
-  },
-  "universalRouterSource": {
-    "url": "https://developers.uniswap.org/docs/protocols/v4/deployments#robinhood-chain-4663",
-    "verified": false,
-    "deployment": "Robinhood mainnet-address V4 deployment on chain 46630",
-    "nativeWrapper": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
-    "exactInputParams": [
-      "Currency currencyIn;",
-      "PathKey[] path;",
-      "uint256[] minHopPriceX36;",
-      "uint128 amountIn;",
-      "uint128 amountOutMinimum;"
-    ]
   },
   "v3ArtifactManifest": "scripts/fixtures/robinhood-testnet-v3.json"
 }

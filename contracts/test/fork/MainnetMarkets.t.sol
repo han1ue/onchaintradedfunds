@@ -108,8 +108,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
             balances[i] = IERC20(stocks[i]).balanceOf(investor);
         }
         vm.startPrank(administrator);
-        router.setAdapterApproved(address(v3Adapter), false);
-        router.setAdapterApproved(address(v4Adapter), false);
+        router.setAdapterApproved(address(universalAdapter), false);
         vm.stopPrank();
         vm.startPrank(investor);
         vault.approve(address(router), 0);
@@ -197,7 +196,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
             bytes memory path =
                 abi.encodePacked(address(weth), wethFee, address(usdg), fees[i], stocks[i]);
             legs[i] = SwapLeg(
-                address(v3Adapter), address(weth), stocks[i], amount, _minimum(path, amount), path
+                address(universalAdapter), address(weth), stocks[i], amount, _minimum(path, amount), bytes.concat(hex"03", path)
             );
         }
     }
@@ -209,12 +208,12 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
             bytes memory path =
                 abi.encodePacked(stocks[i], fees[i], address(usdg), wethFee, address(weth));
             legs[i] = SwapLeg(
-                address(v3Adapter),
+                address(universalAdapter),
                 stocks[i],
                 address(weth),
                 type(uint256).max,
                 _minimum(path, amounts[i]),
-                path
+                bytes.concat(hex"03", path)
             );
         }
     }
@@ -243,8 +242,7 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
 
     function _tokenCleared(address token) private view {
         assertEq(IERC20(token).balanceOf(address(router)), 0);
-        assertEq(IERC20(token).balanceOf(address(v3Adapter)), 0);
-        assertEq(IERC20(token).allowance(address(router), address(v3Adapter)), 0);
-        assertEq(IERC20(token).allowance(address(v3Adapter), v3Router), 0);
+        assertEq(IERC20(token).balanceOf(address(universalAdapter)), 0);
+        assertEq(IERC20(token).allowance(address(router), address(universalAdapter)), 0);
     }
 }

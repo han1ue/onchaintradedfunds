@@ -34,7 +34,7 @@ describe.skipIf(!run)('Neon isolated registry and NAV integration',()=>{
     chain.client={
       getChainId:async()=>46630,getBlockNumber:async()=>blockNumber+12n,
       getBlock:async({blockNumber:n})=>({number:n,timestamp:BigInt(blockAt),hash:n===blockNumber?currentHash:hash(Number(n%10000n)+100)}),
-      getContractEvents:async()=>[],
+      getContractEvents:vi.fn(async()=>[]),
       readContract:vi.fn(async({address,functionName,blockNumber:n})=>{
         expect(n).toBe(blockNumber);
         if(functionName==='assets')return [address===unpriced?addr(999):token.address];
@@ -91,7 +91,9 @@ describe.skipIf(!run)('Neon isolated registry and NAV integration',()=>{
     await sql.query(`INSERT INTO ${schema}.asset_prices(source_id,price_usd,source_at,collected_at,quality) VALUES($1,'2.123456789012345678901234567890123456',$2,$3,'fresh')`,[source.id,sourceAt,collectedAt]);
     const prices=await readPrices(46630,new Date(blockAt*1000));expect(prices).toHaveLength(1);expect(prices[0].usable).toBe(true);expect(prices[0].marketCapUsd).toBeUndefined();
     for(const address of [vault,bootstrap,unpriced])await sql.query(`INSERT INTO ${schema}.funds(chain_id,address,factory,creation_block,creation_block_hash) VALUES(46630,$1,$2,$3,$4)`,[address,manifest.contracts.factory.address.toLowerCase(),(blockNumber-50n).toString(),hash(55)]);
+    await sql.query(`INSERT INTO ${schema}.collector_progress(job,block_number) VALUES ($1,$2)`,["funds:46630",(blockNumber+1000n).toString()]);
     const first=await collectFundSnapshots(46630);expect(first.snapshots).toBe(3);expect(first.unpriced).toBe(1);
+    expect(chain.client.getContractEvents).toHaveBeenCalledWith(expect.objectContaining({address:manifest.contracts.factory.address,fromBlock:BigInt(manifest.contracts.factory.blockNumber)}));
     const second=await collectFundSnapshots(46630);expect(second.snapshots).toBe(0);
     const history=await readFundHistory(46630,vault);expect(history.history).toHaveLength(1);
     const recomputed=navValues(history.holdings.map(h=>({amount:BigInt(h.amount),bootstrapAmount:BigInt(h.bootstrap_amount),decimals:h.decimals,priceUsd:h.price_usd})),BigInt(history.latest.total_supply));

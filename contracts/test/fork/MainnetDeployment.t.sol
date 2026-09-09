@@ -36,8 +36,8 @@ contract MainnetDeploymentTest is MainnetRehearsalBase {
         assertEq(vesting.pendingOwner(), address(0));
         assertEq(address(vesting.ethUsdOracle()), address(oracle));
         assertEq(vesting.maxOracleAge(), oracleMaxAge);
-        assertTrue(router.isAdapterApproved(address(v3Adapter)));
-        assertTrue(router.isAdapterApproved(address(v4Adapter)));
+        assertTrue(router.isAdapterApproved(address(universalAdapter)));
+        assertTrue(router.isAdapterApproved(address(universalAdapter)));
         assertEq(otf.balanceOf(deployer), launch.REQUIRED_OTF_BALANCE());
         assertEq(otf.allowance(deployer, address(launch)), launch.REQUIRED_OTF_BALANCE());
         assertEq(otf.balanceOf(address(launch)), 0);
@@ -91,8 +91,8 @@ contract MainnetDeploymentTest is MainnetRehearsalBase {
         router.acceptOwnership();
         assertEq(router.owner(), successor);
         vm.prank(successor);
-        router.setAdapterApproved(address(v3Adapter), false);
-        assertFalse(router.isAdapterApproved(address(v3Adapter)));
+        router.setAdapterApproved(address(universalAdapter), false);
+        assertFalse(router.isAdapterApproved(address(universalAdapter)));
 
         uint256 entitlement = 1_000 ether;
         bytes32 root = rewards.leafFor(investor, entitlement);

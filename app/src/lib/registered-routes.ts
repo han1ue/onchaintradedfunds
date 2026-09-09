@@ -4,6 +4,8 @@ import { applySlippageDown, applySlippageUp, sameAddress, type BasketRouteProvid
 import { routeFrom } from "./v3-route";
 import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4-route";
 import { QuoteFailure } from "./quote-errors";
+import { universalRouteData } from "./universal-route";
+import type { AdapterSwapLeg } from "./swap-model";
 
 export const REGISTERED_ROUTE_POLICY = { maxHops: 2, maxCandidates: 16, maxImpactBps: 200, maxTradeUsd: 10_000, probeDivisor: 100n } as const;
 export type RegisteredHop = { pool: RegisteredPool; tokenIn: Address; tokenOut: Address };
@@ -107,7 +109,7 @@ export async function bestRegisteredQuote(options:{
 }
 
 export function registeredBasketRoutes(options:{
-  pools:readonly RegisteredPool[];chainId:number;weth:Address;adapter:Address;v4Adapter?:Address;slippageBps:number;
+  pools:readonly RegisteredPool[];chainId:number;weth:Address;adapter:Address;slippageBps:number;
   reservedTokens?:readonly Address[];forbiddenTokens?:readonly Address[];
   authenticate:(pool:RegisteredPool)=>Promise<void>;
   quoteSegment:(segment:RouteSegment,type:"EXACT_INPUT"|"EXACT_OUTPUT",amount:bigint)=>Promise<SegmentQuote>;
@@ -116,7 +118,54 @@ export function registeredBasketRoutes(options:{
   fallback?:BasketRouteProvider;
 }):BasketRouteProvider {
   const pending=new Map<string,Promise<BasketRouteQuote>>();
-  return {quote(type,tokenIn,tokenOut,amount) {
+  const selected = new WeakMap<AdapterSwapLeg, RegisteredPath>();
+  return {async optimizeMint(legs) {
+    // The registry policy permits two-hop routes. Merge only a complete group of
+    // independent, hookless routes with one shared prefix and distinct leaf pools.
+    // Any unsupported route or failed quote retains the original executable plan.
+    if (legs.length < 2 || legs.length > 20) return legs;
+    const paths = legs.map(leg => selected.get(leg));
+    const first = paths[0];
+    if (!first || paths.some(path => !path || path.length !== 2)) return legs;
+    const prefix = first[0]!;
+    const identity = (hop: RegisteredHop) => `${hop.pool.chainId}:${hop.pool.protocolVersion}:${hop.pool.address ?? hop.pool.poolId}:${hop.pool.fee}:${hop.pool.tickSpacing}:${hop.pool.hooks}:${hop.tokenIn.toLowerCase()}:${hop.tokenOut.toLowerCase()}`;
+    const safe = (hop: RegisteredHop) => hop.pool.protocolVersion === 3 || (hop.pool.hooks?.toLowerCase() === "0x0000000000000000000000000000000000000000" && hop.pool.hookData === "0x" && hop.pool.fee < 0x800000);
+    if (paths.some(path => identity(path![0]!) !== identity(prefix) || !path!.every(safe))
+      || new Set(paths.map(path => identity(path![1]!))).size !== legs.length
+      || legs.some(leg => leg.amountIn === maxUint256 || !sameAddress(leg.adapter, options.adapter))
+      || legs.some(leg => sameAddress(leg.tokenOut, v4BoundaryToken(prefix.tokenOut, options.weth)))
+      || options.reservedTokens?.some(token => sameAddress(token, v4BoundaryToken(prefix.tokenOut, options.weth)))) return legs;
+    try {
+      const amount = legs.reduce((sum,leg) => sum + leg.amountIn, 0n);
+      const combined = await quoteRegisteredPath([prefix], "EXACT_INPUT", amount, options.quoteSegment);
+      const probeAmount = amount / REGISTERED_ROUTE_POLICY.probeDivisor;
+      if (!probeAmount || !await options.withinTradeSize(legs[0]!.tokenIn, amount)) return legs;
+      const probe = await quoteRegisteredPath([prefix], "EXACT_INPUT", probeAmount, options.quoteSegment);
+      const expected = probe.amountOut * amount / probeAmount;
+      if (!expected || (expected - combined.amountOut) * 10_000n > expected * BigInt(REGISTERED_ROUTE_POLICY.maxImpactBps)) return legs;
+      const demands = await Promise.all(paths.map((path,i) => quoteRegisteredPath([path![1]!], "EXACT_OUTPUT", legs[i]!.minAmountOut, options.quoteSegment)));
+      const total = demands.reduce((sum,quote) => sum + quote.amountIn, 0n);
+      if (!total || combined.amountOut < total) return legs;
+      // Split quoted headroom between the prefix minimum and downstream budgets.
+      // Original final-token minimums remain unchanged; unused intermediate is refunded.
+      const available = total + (combined.amountOut - total) / 2n;
+      // Allocate the guaranteed intermediate amount in proportion to leaf costs.
+      // Floors go to the first leaves; the last receives the integer remainder.
+      let allocated = 0n;
+      const budgets = demands.map((quote,i) => {
+        const budget = i === demands.length - 1 ? available - allocated : available * quote.amountIn / total;
+        allocated += budget; return budget;
+      });
+      const quotes = await Promise.all(paths.map((path,i) => quoteRegisteredPath([path![1]!], "EXACT_INPUT", budgets[i]!, options.quoteSegment)));
+      if (quotes.some((quote,i) => quote.amountOut < legs[i]!.minAmountOut)) return legs;
+      const leg = (path: RegisteredPath, amountIn: bigint, minAmountOut: bigint): AdapterSwapLeg => {
+        const segment = routeSegments(path)[0]!;
+        return { adapter: options.adapter, tokenIn: v4BoundaryToken(path[0]!.tokenIn,options.weth), tokenOut: v4BoundaryToken(path.at(-1)!.tokenOut,options.weth), amountIn, minAmountOut,
+          data: universalRouteData(segment.version,segment.data), hops: segment.version === 3 ? routeFrom(segment.tokens,segment.hops.map(hop=>hop.pool.fee)).hops : parseV4Path(segment.data) };
+      };
+      return [leg([prefix],amount,available), ...paths.map((path,i) => leg([path![1]!],budgets[i]!,legs[i]!.minAmountOut))];
+    } catch { return legs; }
+  }, quote(type,tokenIn,tokenOut,amount) {
     const key=`${type}:${tokenIn.toLowerCase()}:${tokenOut.toLowerCase()}:${amount}`;
     const existing=pending.get(key);if(existing)return existing;
     const run=async()=>{
@@ -124,7 +173,7 @@ export function registeredBasketRoutes(options:{
       const paths=registeredCandidates(options.pools,options.chainId,tokenIn,tokenOut,options.weth).filter(path=>
         !path.some(hop=>options.forbiddenTokens?.some(token=>sameAddress(token,boundary(hop.tokenIn))||sameAddress(token,boundary(hop.tokenOut))))
         && !routeSegments(path).slice(1).some(segment=>options.reservedTokens?.some(token=>sameAddress(token,boundary(segment.tokens[0]!))))
-        && (options.v4Adapter || path.every(hop=>hop.pool.protocolVersion===3)));
+        );
       let best:PathQuote|undefined;
       try {
         best=await bestRegisteredQuote({paths,type,amount,quoteSegment:options.quoteSegment,authenticate:options.authenticate,
@@ -142,10 +191,11 @@ export function registeredBasketRoutes(options:{
       const legs=best.segments.map((segment,i)=>{
         const last=i===best.segments.length-1;
         const minimum=last?(type==="EXACT_OUTPUT"?best.amountOut:applySlippageDown(best.amountOut,options.slippageBps)):1n;
-        return {adapter:segment.version===3?options.adapter:options.v4Adapter!,tokenIn:boundary(segment.tokens[0]!),tokenOut:boundary(segment.tokens.at(-1)!),
-          amountIn:i===0?type==="EXACT_OUTPUT"?amountIn:maxUint256:maxUint256,minAmountOut:minimum,data:segment.data,
+        return {adapter:options.adapter,tokenIn:boundary(segment.tokens[0]!),tokenOut:boundary(segment.tokens.at(-1)!),
+          amountIn:i===0?type==="EXACT_OUTPUT"?amountIn:maxUint256:maxUint256,minAmountOut:minimum,data:universalRouteData(segment.version,segment.data),
           hops:segment.version===3?routeFrom(segment.tokens,segment.hops.map(hop=>hop.pool.fee)).hops:parseV4Path(segment.data)};
       });
+      if (type === "EXACT_OUTPUT" && legs.length === 1) selected.set(legs[0]!, best.path);
       return {amountIn,amountOut:best.amountOut,legs};
     };
     const result=run().catch(error=>{pending.delete(key);throw error;});pending.set(key,result);return result;

@@ -1,6 +1,6 @@
 import { otfLaunchManagerAbi } from "@onchaintradedfunds/generated";
 import { decodeFunctionResult, encodeFunctionData, parseAbi, type Address, type PublicClient } from "viem";
-import { robinhoodTestnetAddresses, robinhoodTestnetV4, robinhoodTestnetV4AdapterReady } from "./deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetV4, robinhoodTestnetUniversalAdapterReady } from "./deployment";
 import { sameAddress } from "./basket-planner";
 
 export const otfQuoterAbi = parseAbi([
@@ -20,10 +20,10 @@ const bindings = parseAbi([
 
 export function testnetOtfRouting(client: Pick<PublicClient, "readContract" | "call">) {
   let verified: Promise<void> | undefined;
-  const { otfToken, weth, launchManager, uniswapV4Adapter, entryRouter } = robinhoodTestnetAddresses;
+  const { otfToken, weth, launchManager, uniswapUniversalRouterAdapter, entryRouter } = robinhoodTestnetAddresses;
   const verify = async (router: Address, adapter: Address) => {
-    if (!robinhoodTestnetV4AdapterReady || !entryRouter || !uniswapV4Adapter || !launchManager || !weth || !otfToken || !robinhoodTestnetV4.quoter
-      || !sameAddress(router, entryRouter) || !sameAddress(adapter, uniswapV4Adapter)) throw new Error("The OTF basket adapter is unavailable.");
+    if (!robinhoodTestnetUniversalAdapterReady || !entryRouter || !uniswapUniversalRouterAdapter || !launchManager || !weth || !otfToken || !robinhoodTestnetV4.quoter
+      || !sameAddress(router, entryRouter) || !sameAddress(adapter, uniswapUniversalRouterAdapter)) throw new Error("The OTF basket adapter is unavailable.");
     const checks = [
       [adapter, "entryExitRouter", router], [adapter, "weth", weth],
       [adapter, "uniswapV4PoolManager", robinhoodTestnetV4.poolManager!],

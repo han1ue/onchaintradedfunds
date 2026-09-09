@@ -240,7 +240,7 @@ contract OTFEntryExitRouterTest is AtomicRouterTestBase {
 
         adapterA.setBehavior(false, true, 0, 0);
         vm.prank(ALICE);
-        vm.expectPartialRevert(OTFEntryExitRouter.SwapInputMismatch.selector);
+        vm.expectPartialRevert(OTFEntryExitRouter.SwapOutputMismatch.selector);
         router.mintFromToken(_mintRequest(2 * ONE, ONE), legs);
 
         adapterA.setBehavior(false, false, 0, 0);

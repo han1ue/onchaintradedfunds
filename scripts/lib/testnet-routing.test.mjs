@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { compileUniversalRouter, v3PoolInitCodeHash } from "./universal-router.mjs";
 import { assertTestnetDeploymentEncoding, assertTestnetRoutingConfiguration, verifyTestnetRoutingRuntime } from "./testnet-routing.mjs";
 
 const { keccak256 } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
@@ -23,9 +24,7 @@ test("rejects an unvalidated replacement router", () => {
 });
 
 test("rejects a changed encoding or chain", () => {
-  const changed = structuredClone(pin);
-  changed.universalRouterSource.exactInputParams.splice(2, 1);
-  assert.throws(() => assertTestnetRoutingConfiguration(config, changed), /five-field/);
+  assert.throws(() => assertTestnetDeploymentEncoding({ ...pin, chainId: 1 }), /chain/);
   assert.throws(() => assertTestnetRoutingConfiguration({ ...config, chainId: 4663 }, pin), /chain 46630/);
 });
 
@@ -38,12 +37,23 @@ const runtimeHash = keccak256(runtimeCode);
 const runtimeConfig = { ...config, expectedCodehashes: { ...config.expectedCodehashes, uniswapV3Weth9: runtimeHash } };
 const runtimePin = { ...pin, dependencies: { uniswapV3Weth9: { ...pin.dependencies.uniswapV3Weth9, codehash: runtimeHash } } };
 
+
+const compiled = compileUniversalRouter();
+let universalRuntime = compiled.evm.deployedBytecode.object;
+const immutableValues = { WETH9: config.externalContracts.weth, PERMIT2: config.externalContracts.permit2, UNISWAP_V3_FACTORY: config.externalContracts.uniswapV3Factory, UNISWAP_V3_POOL_INIT_CODE_HASH: v3PoolInitCodeHash, poolManager: config.externalContracts.uniswapV4PoolManager };
+for (const [id,locations] of Object.entries(compiled.evm.deployedBytecode.immutableReferences)) {
+  const value = immutableValues[compiled.immutableNames.get(id)];
+  if (value) for (const {start,length} of locations) universalRuntime = universalRuntime.slice(0,start*2)+value.slice(2).toLowerCase().padStart(length*2,"0")+universalRuntime.slice((start+length)*2);
+}
+
 for (const details of ["unsupported block number 1000", "metadata is not found"]) {
   test(`retries transient state errors without changing the runtime-check block: ${details}`, async () => {
     let calls = 0;
     await verifyTestnetRoutingRuntime({
       getChainId: async () => 46630,
-      getCode: async ({ blockNumber }) => {
+      getCode: async ({ address, blockNumber }) => {
+        if (address.toLowerCase() === config.externalContracts.uniswapUniversalRouter.toLowerCase()) return `0x${universalRuntime}`;
+        if (blockNumber === undefined) return runtimeCode;
         assert.equal(blockNumber, 1000n);
         if (++calls === 1) throw Object.assign(new Error("RPC request failed"), { details });
         return runtimeCode;

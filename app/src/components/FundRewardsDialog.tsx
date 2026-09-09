@@ -9,6 +9,7 @@ type Props = {
   fundName: string;
   symbol: string;
   apyText: string;
+  error?: string;
   hasOtf?: boolean;
   zeroNav: boolean;
   loading: boolean;
@@ -62,6 +63,8 @@ export function FundRewardsDialog(props: Props) {
     ? "This fund currently holds no OTF through deposits, so its reward weight is zero."
     : props.loading
     ? "The estimate is loading fund balances and current prices."
+    : props.error
+    ? props.error
     : props.apyText === "—"
     ? "Some balances or prices are unavailable, so this fund's APY cannot be calculated yet."
     : `This fund receives ${shareText} of the depositor pool. Its APY compares the dollar value of those rewards with its NAV.`;

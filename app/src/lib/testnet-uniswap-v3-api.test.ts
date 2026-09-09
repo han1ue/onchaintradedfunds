@@ -1,5 +1,7 @@
+import { universalRouteData, decodeUniversalRouteData } from "./universal-route";
+import { UNIVERSAL_ROUTER_EXECUTE_ABI } from "./canonical-v4-execution";
 import { encodeV3Path } from "./v3-route";
-import { robinhoodTestnetAddresses } from "./deployment";
+import { robinhoodTestnetAddresses, robinhoodTestnetV4 } from "./deployment";
 import { sameAddress, type BasketPlannerRequest } from "./basket-planner";
 import { decodeFunctionData, maxUint256, type Address, type Hex } from "viem";
 import { describe, expect, it, vi } from "vitest";
@@ -8,7 +10,6 @@ import {
   testnetPoolForPair,
   registryFixture,
 } from "../test/registry-fixture";
-import { testnetVenue } from "./venue-config";
 import { QuoteFailure } from "./quote-errors";
 import type { AssetRegistry, RegisteredPool } from "./asset-catalog";
 import { routeFrom } from "./v3-route";
@@ -16,7 +17,6 @@ import type { RouteSegment } from "./registered-routes";
 import { parseTypedQuoteResponse, type SwapAsset, type SwapQuoteRequest } from "./swap-model";
 import {
   quoteTestnetSwap,
-  uniswapV3SwapRouterAbi,
   type TestnetRoutingClient,
 } from "./testnet-uniswap-v3-api";
 
@@ -28,8 +28,7 @@ const NOW = 1_750_000_000_000;
 const TEST_DEPLOYMENT = {
   factory: "0x00000000000000000000000000000000000000d1",
   entryRouter: "0x00000000000000000000000000000000000000d2",
-  uniswapV3Adapter: "0x00000000000000000000000000000000000000d3",
-  uniswapV4Adapter: "0x00000000000000000000000000000000000000d4",
+  uniswapUniversalRouterAdapter: "0x00000000000000000000000000000000000000d3",
   nativeBasketReady: true,
 } as const;
 
@@ -139,10 +138,10 @@ function parseResponse(response: unknown, request: BasketPlannerRequest) {
     chainId: 46630,
     now: NOW,
     entryRouter: TEST_DEPLOYMENT.entryRouter,
-    adapter: TEST_DEPLOYMENT.uniswapV3Adapter,
-    v4Adapter: TEST_DEPLOYMENT.uniswapV4Adapter,
+    adapter: TEST_DEPLOYMENT.uniswapUniversalRouterAdapter,
     weth: weth.address,
-    swapRouter02: testnetVenue.swapRouter02,
+    universalRouter: robinhoodTestnetV4.universalRouter!,
+    permit2: robinhoodTestnetV4.permit2,
   });
 }
 
@@ -159,7 +158,7 @@ describe("Uniswap V3 testnet quote planner", () => {
   it("identifies a missing OTF V4 adapter", async () => {
     const client = routingClient({ vaultAssets: async () => [robinhoodTestnetAddresses.otfToken!], previewMint: async (_vault, shares) => [shares] });
     const result = await quoteTestnetSwap(plannerRequest(asset(usdg), otf(OTF_A), "basket"), {
-      ...dependencies(client), deployment: { ...TEST_DEPLOYMENT, uniswapV4Adapter: undefined },
+      ...dependencies(client), deployment: { ...TEST_DEPLOYMENT }, client: { ...client, verifyOtfBindings: undefined },
     });
     expect(result.body).toMatchObject({ code: "ROUTE_NOT_CONFIGURED" });
   });
@@ -181,8 +180,8 @@ describe("Uniswap V3 testnet quote planner", () => {
     if (execution?.kind !== "basket-router") throw new Error("Missing basket execution");
     if (execution.call.method !== "mintFromToken" && execution.call.method !== "mintFromNative") throw new Error("Missing mint execution");
     const legs = execution.call.args[1];
-    expect(legs.some((leg) => sameAddress(leg.adapter, TEST_DEPLOYMENT.uniswapV4Adapter) && sameAddress(leg.tokenIn, weth.address) && sameAddress(leg.tokenOut, robinhoodTestnetAddresses.otfToken!))).toBe(true);
-    expect(client.verifyOtfBindings).toHaveBeenCalledWith(TEST_DEPLOYMENT.entryRouter, TEST_DEPLOYMENT.uniswapV4Adapter);
+    expect(legs.some((leg) => decodeUniversalRouteData(leg.data).version === 4 && sameAddress(leg.tokenIn, weth.address) && sameAddress(leg.tokenOut, robinhoodTestnetAddresses.otfToken!))).toBe(true);
+    expect(client.verifyOtfBindings).toHaveBeenCalledWith(TEST_DEPLOYMENT.entryRouter, TEST_DEPLOYMENT.uniswapUniversalRouterAdapter);
     expect(client.quoteOtf).toHaveBeenCalledWith("EXACT_OUTPUT", true, expect.any(BigInt));
     expect(client.quoteOtf).toHaveBeenCalledWith("EXACT_INPUT", true, expect.any(BigInt));
   });
@@ -195,7 +194,7 @@ describe("Uniswap V3 testnet quote planner", () => {
     if (execution?.kind !== "basket-router") throw new Error("Missing basket execution");
     if (execution.call.method !== "redeemToToken") throw new Error("Missing redeem execution");
     const legs = execution.call.args[2];
-    const index = legs.findIndex((leg) => sameAddress(leg.adapter, TEST_DEPLOYMENT.uniswapV4Adapter));
+    const index = legs.findIndex((leg) => decodeUniversalRouteData(leg.data).version === 4);
     expect(index).toBeGreaterThanOrEqual(0);
     expect(legs[index + 1]!.amountIn).toBe(legs[index]!.minAmountOut);
     expect(legs[index + 1]!.amountIn).not.toBe(maxUint256);
@@ -222,11 +221,11 @@ describe("Uniswap V3 testnet quote planner", () => {
     const result = await quoteTestnetSwap(request, dependencies());
     expect(result.status).toBe(200);
     const execution = (result.body as Record<string, unknown>).execution as Record<string, unknown>;
-    expect(execution).toMatchObject({ kind: "direct-v3", swapRouter02: testnetVenue.swapRouter02 });
+    expect(execution).toMatchObject({ kind: "direct-v3", universalRouter: robinhoodTestnetV4.universalRouter! });
     expect(execution.path).toBe(encodeV3Path([usdg.address, OTF_A], [500]));
     const transaction = execution.transaction as { to: Address; data: Hex };
-    expect(transaction.to).toBe(testnetVenue.swapRouter02);
-    expect(decodeFunctionData({ abi: uniswapV3SwapRouterAbi, data: transaction.data })).toMatchObject({ functionName: "exactInput" });
+    expect(transaction.to).toBe(robinhoodTestnetV4.universalRouter!);
+    expect(decodeFunctionData({ abi: UNIVERSAL_ROUTER_EXECUTE_ABI, data: transaction.data })).toMatchObject({ functionName: "execute" });
     const parsed = parseResponse(result.body, request);
     expect(parsed.expiresAt).toBe(NOW + 45_000);
     expect(execution.expiresAtMs).toBe(NOW + 45_000);
@@ -241,7 +240,7 @@ describe("Uniswap V3 testnet quote planner", () => {
     const execution = body.execution as Record<string, unknown>;
     expect(() => parseResponse({
       ...body,
-      execution: { ...execution, swapRouter02: OTF_POOL },
+      execution: { ...execution, universalRouter: OTF_POOL },
     }, request)).toThrow(/router/);
   });
 
@@ -388,7 +387,7 @@ describe("Uniswap V3 testnet quote planner", () => {
     for (const [index, token] of constituents.entries()) {
       expect(legs[index]).toMatchObject({
         tokenIn: token, tokenOut: usdg.address, amountIn: maxUint256,
-        minAmountOut: 1_990_000n, data: encodeV3Path([token, usdg.address], [3000]),
+        minAmountOut: 1_990_000n, data: universalRouteData(3, encodeV3Path([token, usdg.address], [3000])),
       });
     }
     expect(client.quoteExactInput).toHaveBeenCalledTimes(legs.length * 2);
@@ -396,7 +395,7 @@ describe("Uniswap V3 testnet quote planner", () => {
       expect(client.quoteExactInput).toHaveBeenCalledWith(settlementPath, 10_000_000n);
       expect(legs[5]).toMatchObject({
         tokenIn: usdg.address, tokenOut: weth.address, amountIn: maxUint256,
-        minAmountOut: minimumOutput, data: settlementPath,
+        minAmountOut: minimumOutput, data: universalRouteData(3, settlementPath),
       });
     }
   });

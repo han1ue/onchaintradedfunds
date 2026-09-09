@@ -1,3 +1,4 @@
+import { v3PoolInitCodeHash } from "./lib/universal-router.mjs";
 import { readDeploymentAssetCatalog, registerProtocolDeployment } from "./lib/registry.mjs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -124,10 +125,6 @@ const uniswapV3Factory = address(
   "externalContracts.uniswapV3Factory",
   external.uniswapV3Factory,
 );
-const uniswapV3SwapRouter02 = address(
-  "externalContracts.uniswapV3SwapRouter02",
-  external.uniswapV3SwapRouter02,
-);
 const uniswapV4PoolManager = address(
   "externalContracts.uniswapV4PoolManager",
   external.uniswapV4PoolManager,
@@ -149,10 +146,7 @@ const uniswapV4PositionManager = address(
   "externalContracts.uniswapV4PositionManager",
   external.uniswapV4PositionManager,
 );
-const uniswapV4NativeWrapper = address(
-  "universalRouterSource.nativeWrapper",
-  routingPin.universalRouterSource.nativeWrapper,
-);
+const uniswapV4NativeWrapper = weth;
 const requestedV4PositionManager = address(
   "UNISWAP_V4_POSITION_MANAGER",
   env("UNISWAP_V4_POSITION_MANAGER"),
@@ -167,7 +161,6 @@ const expectedCodehashes = {
   uniswapV4StateView: pinnedCodehash(pinnedCodehashes, "uniswapV4StateView", "UNISWAP_V4_STATE_VIEW_CODEHASH"),
   uniswapV4PositionManager: pinnedCodehash(pinnedCodehashes, "uniswapV4PositionManager", "UNISWAP_V4_POSITION_MANAGER_CODEHASH"),
   uniswapV4Quoter: pinnedCodehash(pinnedCodehashes, "uniswapV4Quoter", "UNISWAP_V4_QUOTER_CODEHASH"),
-  uniswapUniversalRouter: pinnedCodehash(pinnedCodehashes, "uniswapUniversalRouter", "UNISWAP_UNIVERSAL_ROUTER_CODEHASH"),
   permit2: pinnedCodehash(pinnedCodehashes, "permit2", "PERMIT2_CODEHASH"),
 };
 
@@ -229,7 +222,7 @@ await verifyCodehash("Uniswap V4 PoolManager", uniswapV4PoolManager, expectedCod
 await verifyCodehash("Uniswap V4 StateView", uniswapV4StateView, expectedCodehashes.uniswapV4StateView);
 const positionManagerCode = await verifyCodehash("Uniswap V4 PositionManager", uniswapV4PositionManager, expectedCodehashes.uniswapV4PositionManager);
 await verifyCodehash("Uniswap V4 Quoter", uniswapV4Quoter, expectedCodehashes.uniswapV4Quoter);
-const universalRouterCode = await verifyCodehash("Uniswap Universal Router", uniswapUniversalRouter, expectedCodehashes.uniswapUniversalRouter);
+const universalRouterCode = await publicClient.getCode({ address: uniswapUniversalRouter });
 await verifyCodehash("Permit2", permit2, expectedCodehashes.permit2);
 await Promise.all([
   verifyAddressBinding("StateView PoolManager", uniswapV4StateView, "poolManager", uniswapV4PoolManager),
@@ -541,18 +534,7 @@ const factory = await deploy("OTFFactory", [
   otfToken.address,
 ]);
 const entryRouter = await deploy("OTFEntryExitRouter", [factory.address, protocolMultisig, weth]);
-const uniswapV3Adapter = await deploy("UniswapV3Adapter", [
-  entryRouter.address,
-  uniswapV3Factory,
-  uniswapV3SwapRouter02,
-]);
-const uniswapV4Adapter = await deploy("UniswapV4Adapter", [
-  entryRouter.address,
-  uniswapV4PoolManager,
-  uniswapV4StateView,
-  uniswapUniversalRouter,
-  permit2,
-]);
+const uniswapUniversalRouterAdapter = await deploy("UniswapUniversalRouterAdapter", [entryRouter.address, uniswapV3Factory, v3PoolInitCodeHash, uniswapV4PoolManager, uniswapV4StateView, uniswapUniversalRouter, permit2]);
 const teamVesting = await deploy("TeamMarketCapVesting", [
   launchManager.address,
   fakeEthUsdOracle.address,
@@ -581,16 +563,7 @@ setupTransactions.factoryRouter = await transact(
   "configureEntryExitRouter",
   [entryRouter.address],
 );
-setupTransactions.v3AdapterApproval = await transact(
-  { ...entryRouter, name: "OTFEntryExitRouter" },
-  "setAdapterApproved",
-  [uniswapV3Adapter.address, true],
-);
-setupTransactions.v4AdapterApproval = await transact(
-  { ...entryRouter, name: "OTFEntryExitRouter" },
-  "setAdapterApproved",
-  [uniswapV4Adapter.address, true],
-);
+setupTransactions.adapterApproval = await transact({ ...entryRouter, name: "OTFEntryExitRouter" }, "setAdapterApproved", [uniswapUniversalRouterAdapter.address, true]);
 
 const sampleOtfs = [];
 if (!seedMarketSnapshot.otfToken) {
@@ -759,14 +732,14 @@ if (launchOtfAllowance !== 0n || launchWethAllowance !== 0n) throw new Error("La
 if (launchOtfPermit2Allowance[0] !== 0n || launchWethPermit2Allowance[0] !== 0n) throw new Error("Launch manager retained a Permit2 allowance");
 
 await Promise.all([
-  verifyAddressBinding("Adapter entry router", uniswapV3Adapter.address, "entryExitRouter", entryRouter.address),
-  verifyAddressBinding("Adapter factory", uniswapV3Adapter.address, "uniswapV3Factory", uniswapV3Factory),
-  verifyAddressBinding("Adapter SwapRouter02", uniswapV3Adapter.address, "uniswapV3Router", uniswapV3SwapRouter02),
+  verifyAddressBinding("Adapter entry router", uniswapUniversalRouterAdapter.address, "entryExitRouter", entryRouter.address),
+  verifyAddressBinding("Adapter factory", uniswapUniversalRouterAdapter.address, "uniswapV3Factory", uniswapV3Factory),
+  verifyAddressBinding("Adapter Universal Router", uniswapUniversalRouterAdapter.address, "uniswapUniversalRouter", uniswapUniversalRouter),
   verifyAddressBinding("Router WETH", entryRouter.address, "weth", weth),
   verifyAddressBinding("Router factory", entryRouter.address, "factory", factory.address),
   verifyAddressBinding("Collector factory", buybackCollector.address, "factory", factory.address),
 ]);
-for (const adapter of [uniswapV3Adapter.address, uniswapV4Adapter.address]) {
+for (const adapter of [uniswapUniversalRouterAdapter.address]) {
   if (!await publicClient.readContract({ address: entryRouter.address, abi: artifact("OTFEntryExitRouter").abi, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Adapter is not approved");
 }
 const deployment = {
@@ -788,14 +761,12 @@ const deployment = {
     vaultImplementation,
     factory,
     entryRouter,
-    uniswapV3Adapter,
-    uniswapV4Adapter,
+    uniswapUniversalRouterAdapter,
   },
   deploymentTools: { launchManagerDeployer },
   externalContracts: {
     ...external,
     uniswapV3Factory,
-    uniswapV3SwapRouter02,
     uniswapV4PoolManager,
     uniswapV4StateView,
     uniswapV4PositionManager,
@@ -839,12 +810,11 @@ const deployment = {
   routing: {
     status: "ready",
     integration: "approved-trade-adapters",
-    approvedAdapters: [uniswapV3Adapter.address, uniswapV4Adapter.address],
-    uniswapV3Adapter: uniswapV3Adapter.address,
-    uniswapV4Adapter: uniswapV4Adapter.address,
+    approvedAdapters: [uniswapUniversalRouterAdapter.address],
+    uniswapUniversalRouterAdapter: uniswapUniversalRouterAdapter.address,
     launchRouter: launchRouter.address,
     nativeEntryExitEnabled: true,
-    v4RouteData: "abi.encode((address,uint24,int24,address,bytes)[])",
+    v4RouteData: "0x04 || abi.encode(address currencyIn, PathKey[] path)",
     maxV4HopsPerLeg: 3,
     maxLegs: 40,
   },

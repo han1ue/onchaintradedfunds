@@ -7,6 +7,7 @@ import { ConnectButton, useConnectModal } from "@rainbow-me/rainbowkit";
 import { OtfCoinIcon, OtfTokenIcon } from "@onchaintradedfunds/brand";
 import {
   ArrowDown,
+  CircleAlert,
   ArrowLeft,
   ArrowUpRight,
   ArrowRight,
@@ -50,7 +51,6 @@ import { fundAssetsVerified, type AssetRegistry } from "@/lib/asset-catalog";
 import { useAssetRegistry } from "@/lib/use-asset-registry";
 import { chartHistory, type FundHistoryResponse } from "@/lib/fund-history";
 import { usePageVisible } from "@/lib/use-page-visible";
-import { testnetVenue } from "@/lib/venue-config";
 import { accountedRewardWeightOtf, estimatedRewardsApy } from "@/lib/incentive-apy";
 import { swapErrorMessage } from "@/lib/swap-error";
 import { FundRewardsDialog } from "./FundRewardsDialog";
@@ -429,7 +429,7 @@ function QuoteReview({
   const executionTarget = activeQuote?.execution?.kind === "direct-api"
     ? activeQuote.execution.universalRouter
     : activeQuote?.execution?.kind === "direct-v3"
-      ? activeQuote.execution.swapRouter02
+      ? activeQuote.execution.universalRouter
       : activeQuote?.execution?.router;
   return (
     <details className="swapReview">
@@ -694,7 +694,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const executionConfigured = executionPlan?.kind === "direct-api"
     ? chainId === robinhoodChain.id && robinhoodMainnetUniswap.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase()
     : executionPlan?.kind === "direct-v3"
-      ? chainId === robinhoodChainTestnet.id && executionPlan.swapRouter02.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
+      ? chainId === robinhoodChainTestnet.id && executionPlan.universalRouter.toLowerCase() === protocolDeploymentForChain(chainId)?.v4.universalRouter!.toLowerCase()
       : executionPlan?.kind === "basket-router" && (chainId === robinhoodChain.id ? Boolean(robinhoodMainnetBasketDeployment) : chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady);
   const quoteNetworkConfigured = nativeWrapPair ? Boolean(configuredWeth) : chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
   const routingLabel = nativeWrapPair
@@ -704,7 +704,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       : canonicalOtfPair
         ? canonicalPhase === 1 ? "Testnet · Launch boundary router" : "Testnet · Canonical V4"
         : chainId === robinhoodChainTestnet.id
-          ? "Testnet · Uniswap V3"
+          ? "Testnet · Uniswap"
           : "Unsupported network";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
@@ -1165,7 +1165,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
         await publicClient.call({ account: address, to: target, data, value });
         await publicClient.estimateGas({ account: address, to: target, data, value });
       } else if (executionPlan.kind === "direct-v3") {
-        if (executionPlan.swapRouter02.toLowerCase() !== testnetVenue.swapRouter02.toLowerCase()) throw new Error("The direct plan has an unsupported Uniswap V3 router target.");
+        if (executionPlan.universalRouter.toLowerCase() !== protocolDeploymentForChain(chainId)?.v4.universalRouter!.toLowerCase()) throw new Error("The direct plan has an unsupported Uniswap V3 router target.");
         const allowance = await publicClient.readContract({
           address: executionPlan.approval.token,
           abi: ERC20_APPROVE_ABI,
@@ -1183,6 +1183,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
           const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
           if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Uniswap V3 approval reset reverted." : "The exact Uniswap V3 approval reverted.");
         });
+        const permit2 = executionPlan.approval.spender;
+        const deadline = Math.floor(executionPlan.expiresAt / 1000);
+        const authorization = await walletClient.writeContract({ account: address, address: permit2, abi: PERMIT2_APPROVE_ABI, functionName: "approve", args: [executionPlan.inputToken, executionPlan.universalRouter, executionPlan.amountIn, deadline] });
+        if ((await publicClient.waitForTransactionReceipt({hash: authorization})).status !== "success") throw new Error("The router authorization reverted.");
         target = executionPlan.transaction.to;
         data = executionPlan.transaction.data;
         value = executionPlan.transaction.value;
@@ -1192,8 +1196,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       } else {
         const basketDeployment = chainId === robinhoodChain.id ? robinhoodMainnetBasketDeployment : chainId === robinhoodChainTestnet.id ? protocolDeploymentForChain(chainId)?.addresses : undefined;
         if (basketDeployment?.entryRouter?.toLowerCase() !== executionPlan.router.toLowerCase()
-          || basketDeployment?.uniswapV3Adapter?.toLowerCase() !== executionPlan.adapter.toLowerCase()
-          || (executionPlan.v4Adapter && basketDeployment?.uniswapV4Adapter?.toLowerCase() !== executionPlan.v4Adapter.toLowerCase())) throw new Error("The basket plan has an unsupported router or adapter target.");
+          || basketDeployment?.uniswapUniversalRouterAdapter?.toLowerCase() !== executionPlan.adapter.toLowerCase()) throw new Error("The basket plan has an unsupported router or adapter target.");
         if (executionPlan.approval) {
           const allowance = await publicClient.readContract({
             address: executionPlan.approval.token,
@@ -1622,7 +1625,7 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
   const collector = protocolDeploymentForChain(chainId)?.addresses.buybackCollector;
   const canonicalWeth = protocolDeploymentForChain(chainId)?.addresses.weth;
   const launchManager = protocolDeploymentForChain(chainId)?.addresses.launchManager;
-  const settlementAdapter = protocolDeploymentForChain(chainId)?.addresses.uniswapV3Adapter;
+  const settlementAdapter = protocolDeploymentForChain(chainId)?.addresses.uniswapUniversalRouterAdapter;
   const configured = Boolean(protocolDeploymentForChain(chainId)?.routingReady
     && collector && canonicalWeth && launchManager && settlementAdapter);
   const [slippageBps, setSlippageBps] = useState(50);
@@ -1723,14 +1726,15 @@ function FeeClaimPanel({ vault, beneficiary, explorer }: { vault: Address; benef
       const redemption = redemptionQuote && quoteIsFresh(redemptionQuote, now)
         ? redemptionFeeSettlementRouteFromQuote(redemptionQuote, vault, canonicalWeth, collector)
         : undefined;
-      const shareSale = shareSaleQuote && quoteIsFresh(shareSaleQuote, now)
+      const settlementUniversalRouter = protocolDeploymentForChain(chainId)?.v4.universalRouter;
+      const shareSale = settlementUniversalRouter && shareSaleQuote && quoteIsFresh(shareSaleQuote, now)
         ? shareSaleFeeSettlementRouteFromQuote(
             shareSaleQuote,
             vault,
             canonicalWeth,
             collector,
             settlementAdapter,
-            testnetVenue.swapRouter02,
+            settlementUniversalRouter,
           )
         : undefined;
       const routes: FeeSettlementRoutes = {
@@ -1926,6 +1930,7 @@ function formatWethAmount(value: bigint): string {
 type FundValuationSnapshot = { at: number; navUsd: number; aumUsd: number };
 
 type FundValuation = {
+  error?: string;
   fundAddress?: Address;
   allocationWeights?: FundAllocationWeights;
   assetPrices?: CreationAssetData[];
@@ -1936,6 +1941,8 @@ type FundValuation = {
 };
 
 type DirectoryAum = {
+  error?: string;
+  errorsByFund?: Map<string, string>;
   state: "loading" | "ready" | "unavailable";
   value?: number;
   byFund?: Map<string, number>;
@@ -1980,11 +1987,14 @@ function useFundValuation(fund?: FactoryVaultSummary): FundValuation {
         const amounts = payload.holdings.map(holding => BigInt(latest?.status === "bootstrap" ? holding.bootstrap_amount ?? "0" : holding.amount));
         if (controller.signal.aborted) return;
         setValuation({ state: usable ? "ready" : "unavailable", fundAddress: fund.address, history,
+          error: usable ? undefined : !latest ? "No valuation snapshot is available for this fund."
+            : latest.status === "unpriced" ? "One or more constituent prices are missing or stale."
+            : "The fund valuation snapshot is out of date.",
           current: usable ? { at: Date.parse(latest.block_at), aumUsd: Number(latest.total_nav_usd), navUsd: Number(latest.status === "bootstrap" ? latest.bootstrap_nav_usd : latest.nav_per_share_usd) } : undefined,
           usesBootstrapNav: latest?.status === "bootstrap", assetPrices: prices,
           allocationWeights: prices.length === amounts.length ? fundAllocationWeights(prices, amounts) : undefined,
         });
-      } catch { if (!controller.signal.aborted) setValuation(current => ({ ...current, state: "unavailable", current: undefined })); }
+      } catch { if (!controller.signal.aborted) setValuation(current => ({ ...current, state: "unavailable", current: undefined, error: "Could not load this fund's valuation." })); }
       if (!controller.signal.aborted) timer = window.setTimeout(load, 60_000);
     };
     void load();
@@ -2007,11 +2017,13 @@ function useDirectoryAum(vaults: FactoryVaultSummary[], directoryState: FactoryV
         if(!response.ok)throw new Error("VALUATIONS_UNAVAILABLE");
         const payload=await response.json() as {funds:{address:string;status:string;total_nav_usd:string|null;otf_balance:string|null}[]};
         const byFund=new Map<string,number>(),rewardWeights=new Map<string,number>();
+        const errorsByFund = new Map<string, string>();
         let total=0,totalRewardWeightOtf=0,complete=true;
         const otfToken=protocolDeploymentForChain(chainId)?.addresses.otfToken;
         for(const fund of vaults) {
           const row=payload.funds.find(row=>row.address.toLowerCase()===fund.address.toLowerCase());
-          if(!row) {complete=false;continue;}
+          if(!row) {complete=false;errorsByFund.set(fund.address.toLowerCase(), "No valuation snapshot is available for this fund.");continue;}
+          if (row.status === "unpriced" || row.total_nav_usd === null) errorsByFund.set(fund.address.toLowerCase(), "One or more constituent prices are missing or stale.");
           if(otfToken) {
             const weight=accountedRewardWeightOtf([otfToken],[BigInt(row.otf_balance??"0")],otfToken)!;
             rewardWeights.set(fund.address.toLowerCase(),weight);totalRewardWeightOtf+=weight;
@@ -2020,8 +2032,8 @@ function useDirectoryAum(vaults: FactoryVaultSummary[], directoryState: FactoryV
             const nav=Number(row.total_nav_usd);byFund.set(fund.address.toLowerCase(),nav);total+=nav;
           } else if(includeNav)complete=false;
         }
-        if(!controller.signal.aborted)setValue({state:complete?"ready":"unavailable",value:includeNav&&complete?total:undefined,byFund,rewardWeights,totalRewardWeightOtf});
-      } catch {if(!controller.signal.aborted)setValue({state:"unavailable"});}
+        if(!controller.signal.aborted)setValue({state:complete?"ready":"unavailable",value:includeNav&&complete?total:undefined,byFund,rewardWeights,totalRewardWeightOtf,errorsByFund,error:complete?undefined:"The fund directory has incomplete valuation or reward-balance data."});
+      } catch {if(!controller.signal.aborted)setValue({state:"unavailable",error:"Could not load fund valuations and reward balances."});}
       if(!controller.signal.aborted)timer=window.setTimeout(load,60_000);
     };
     void load();return()=>{controller.abort();window.clearTimeout(timer);};
@@ -2114,9 +2126,10 @@ function FundFees({ fund }: { fund: FactoryVaultSummary }) {
   return <span className="fundFeesInline" title="Annual NAV fee / mint fee / redeem fee">{formatAnnualExpenseRatioPercentage(fund.annualCreatorExpenseRatioBps)}/<wbr />{formatAnnualExpenseRatioPercentage(fund.mintFeeBps)}/<wbr />{formatAnnualExpenseRatioPercentage(fund.redeemFeeBps)}</span>;
 }
 
-function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
+function FundRewardsApy({ pricing, valuationState, valuationError, aumUsd, fund, directory }: {
   pricing: IncentivePricing;
   valuationState: FundValuation["state"];
+  valuationError?: string;
   aumUsd?: number;
   fund?: FactoryVaultSummary;
   directory: DirectoryAum;
@@ -2130,18 +2143,30 @@ function FundRewardsApy({ pricing, valuationState, aumUsd, fund, directory }: {
   const loading = !zeroApy && !unavailable && (pricing.state === "loading" || valuationState === "loading" || directory.state === "loading");
   const percent = zeroApy ? 0 : !loading && !unavailable ? fundApyPercent(fund, aumUsd, pricing, directory) : undefined;
   const estimate = percent === undefined ? undefined : { percent };
-  const text = loading ? "…" : formatApy(estimate?.percent);
+  const error = !loading && (percent === undefined || !Number.isFinite(percent))
+    ? valuationError
+      ?? (fund ? directory.errorsByFund?.get(fund.address.toLowerCase()) : undefined)
+      ?? directory.error
+      ?? (!otfToken ? "The protocol $OTF token is not configured for this network."
+        : pricing.state === "unavailable" ? "Could not load the rewards schedule or pricing data."
+        : pricing.otfPriceUsd === undefined ? "The $OTF price is missing or stale."
+        : aumUsd === undefined ? "The fund valuation is unavailable."
+        : fundRewardWeightOtf === undefined || directory.totalRewardWeightOtf === undefined ? "Reward balances are unavailable."
+        : "The available data could not produce a valid rewards APY.")
+    : undefined;
+  const text = loading ? "…" : error ? "0%" : formatApy(estimate?.percent);
   const label = estimate
     ? `Estimated depositor rewards APY ${text}, paid in $OTF${pricing.week ? `, emission week ${pricing.week}` : ""}`
     : `Estimated depositor rewards APY ${loading ? "loading" : "unavailable"}`;
   return (
-    <span className="fundRewardsValue">
-      <span aria-label={label} title={label}>{text}</span>
-      <button className="rewardsInfoButton" type="button" aria-label={`Explain rewards APY for ${fund?.name ?? "this fund"}`} aria-haspopup="dialog" disabled={!fund} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setExplanationOpen(true); }} onKeyDown={(event) => event.stopPropagation()}><Info size={14} aria-hidden="true" /></button>
+    <span className="fundRewardsValue" data-error={error ? "true" : undefined}>
+      <span aria-label={error ? `Rewards APY error: ${error}` : label} title={error ?? label}>{text}</span>
+      <button className="rewardsInfoButton" type="button" title={error} aria-label={error ? `Rewards APY error: ${error} Open explanation for ${fund?.name ?? "this fund"}.` : `Explain rewards APY for ${fund?.name ?? "this fund"}`} aria-haspopup="dialog" disabled={!fund} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setExplanationOpen(true); }} onKeyDown={(event) => event.stopPropagation()}>{error ? <CircleAlert size={14} aria-hidden="true" /> : <Info size={14} aria-hidden="true" />}</button>
       {explanationOpen && fund ? <FundRewardsDialog
         fundName={fund.name}
         symbol={fund.symbol}
-        apyText={loading ? text : formatApy(estimate?.percent, false)}
+        apyText={loading || error ? text : formatApy(estimate?.percent, false)}
+        error={error}
         hasOtf={hasOtf}
         zeroNav={fund.totalSupply === 0n || aumUsd === 0}
         loading={loading}
@@ -2415,7 +2440,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <div className="fundDetailMetrics" aria-label="Fund metrics">
                 <div><span>NAV/Share</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.navUsd, 4) : "—"}</strong></div>
                 <div><span>NAV</span><strong>{valuation.state === "ready" ? formatUsd(valuation.current?.aumUsd) : "—"}</strong></div>
-                <div><span>Rewards APY</span><strong className="fundRewardsMetric"><FundRewardsApy pricing={rewardsApy} valuationState={valuation.state} aumUsd={fundAumUsd} fund={vaultDetails} directory={directoryAum} /></strong></div>
+                <div><span>Rewards APY</span><strong className="fundRewardsMetric"><FundRewardsApy pricing={rewardsApy} valuationState={valuation.state} valuationError={valuation.error} aumUsd={fundAumUsd} fund={vaultDetails} directory={directoryAum} /></strong></div>
                 <div><span>Creator</span><strong>{vaultDetails ? <a className="metricExternalLink fundMetricAddressLink" href={`${explorerUrl}/address/${vaultDetails.creator}`} target="_blank" rel="noreferrer"><code>{shortAddress(vaultDetails.creator)}</code><ExternalLink size={11} /></a> : "—"}</strong></div>
               </div>
             </div>

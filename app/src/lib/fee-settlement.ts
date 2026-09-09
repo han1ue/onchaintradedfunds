@@ -1,3 +1,4 @@
+import { universalRouteData } from "./universal-route";
 import type { Address } from "viem";
 import type { AdapterSwapLeg, SwapQuote } from "./swap-model";
 
@@ -136,7 +137,7 @@ export function shareSaleFeeSettlementRouteFromQuote(
     || quote.execution.caller.toLowerCase() !== collector.toLowerCase()
     || quote.execution.inputToken.toLowerCase() !== vault.toLowerCase()
     || quote.execution.outputToken.toLowerCase() !== weth.toLowerCase()
-    || quote.execution.swapRouter02.toLowerCase() !== swapRouter.toLowerCase()
+    || quote.execution.universalRouter.toLowerCase() !== swapRouter.toLowerCase()
     || quote.execution.amountIn === 0n
     || quote.execution.minAmountOut !== quote.minimumReceivedRaw
   ) return undefined;
@@ -153,7 +154,7 @@ export function shareSaleFeeSettlementRouteFromQuote(
       tokenOut: weth,
       amountIn: quote.execution.amountIn,
       minAmountOut: quote.minimumReceivedRaw,
-      data: quote.execution.path,
+      data: universalRouteData(3,quote.execution.path),
       hops: quote.hops ?? [],
     }],
   };

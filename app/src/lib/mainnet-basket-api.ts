@@ -43,8 +43,7 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
     } };
     stage = "routing";
     const fallback = uniswapBasketRoutes({
-      chainId: request.chainId, router: deployment.entryRouter, adapter: deployment.uniswapV3Adapter,
-      v4Adapter: deployment.uniswapV4Adapter,
+      chainId: request.chainId, router: deployment.entryRouter, adapter: deployment.uniswapUniversalRouterAdapter,
       weth: deployment.weth,
       reservedTokens: [...vaultAssets.values()].flat(),
       slippageBps: request.slippageBps,
@@ -54,25 +53,23 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
     const registry = dependencies.registry ?? await readRegistry(request.chainId);
     registryForFallback=registry;
     const routes = registry.pools.length ? registeredBasketRoutes({
-      pools: registry.pools, chainId: request.chainId, weth: deployment.weth, adapter: deployment.uniswapV3Adapter,
-      v4Adapter: deployment.uniswapV4Adapter, slippageBps: request.slippageBps,
+      pools: registry.pools, chainId: request.chainId, weth: deployment.weth, adapter: deployment.uniswapUniversalRouterAdapter,
+      slippageBps: request.slippageBps,
       reservedTokens: [...vaultAssets.values()].flat(),
       forbiddenTokens: [request.input,request.output].filter(asset=>asset.kind==="otf").map(asset=>asset.address),
       ...(dependencies.registeredClient ?? registeredRouteClient(request.chainId)), fallback,
     }) : fallback;
-    const trackedRoutes={quote:async(...args:Parameters<typeof routes.quote>)=>{
+    const trackedRoutes={optimizeMint: routes.optimizeMint, quote:async(...args:Parameters<typeof routes.quote>)=>{
       const quoted=await routes.quote(...args);
       // API fallback is still independently authenticated; a second plan is bounded to one retry.
       if(registry.pools.length)registeredPoolsUsed=true;
       return quoted;
     }};
-    const result = await basketQuote(request, basketClient, now, deployment.entryRouter, deployment.uniswapV3Adapter, trackedRoutes, { address: deployment.weth, decimals: 18 });
-    result.body.execution.v4Adapter = deployment.uniswapV4Adapter;
+    const result = await basketQuote(request, basketClient, now, deployment.entryRouter, deployment.uniswapUniversalRouterAdapter, trackedRoutes, { address: deployment.weth, decimals: 18 });
     stage = "plan-validation";
     const quote = parseTypedQuoteResponse(result.body, {
       route: "basket", chainId: request.chainId, now,
-      entryRouter: deployment.entryRouter, adapter: deployment.uniswapV3Adapter,
-      v4Adapter: deployment.uniswapV4Adapter,
+      entryRouter: deployment.entryRouter, adapter: deployment.uniswapUniversalRouterAdapter,
       weth: deployment.weth,
       request: {
         ...request, requestedAt: request.requestedAtMs, inputAmount: formatUnits(request.inputAmountRaw, request.input.decimals),

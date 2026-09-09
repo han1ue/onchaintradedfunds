@@ -69,7 +69,7 @@ function shareSaleQuote(): SwapQuote {
       caller: collector,
       inputToken: vault,
       outputToken: weth,
-      swapRouter02: venue,
+      universalRouter: venue,
       amountIn: 100n,
       minAmountOut: 91n,
       expiresAt: 200,
@@ -148,7 +148,7 @@ describe("fee settlement model", () => {
     const sale = shareSaleFeeSettlementRouteFromQuote(shareSaleQuote(), vault, weth, collector, adapter, venue);
     expect(redemption).toMatchObject({ mode: "redemption", shares: 100n, expectedWethOut: 90n, minWethOut: 85n });
     expect(sale).toMatchObject({ mode: "share-sale", shares: 100n, expectedWethOut: 95n, minWethOut: 91n });
-    expect(sale?.legs[0]).toMatchObject({ adapter, tokenIn: vault, tokenOut: weth, data: path });
+    expect(sale?.legs[0]).toMatchObject({ adapter, tokenIn: vault, tokenOut: weth, data: `0x03${path.slice(2)}` });
     expect(sale?.legs[0].hops).toHaveLength(2);
   });
 

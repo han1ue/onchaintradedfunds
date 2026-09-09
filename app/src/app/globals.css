@@ -1634,6 +1634,9 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .rewardsInfoButton svg { display: block; }
 .rewardsInfoButton:hover { background: var(--card-raised); color: var(--accent-text); }
 .rewardsInfoButton:disabled { opacity: 0.4; }
+.fundRewardsValue[data-error] > span,
+.fundDetailMetrics .fundRewardsValue[data-error] > span,
+.fundRewardsValue[data-error] .rewardsInfoButton { color: var(--gold); }
 .rewardsDialog { width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--card); color: var(--text); padding: 0; text-align: left; font-size: 0.8rem; font-weight: 400; line-height: 1.55; white-space: normal; }
 .rewardsDialog::backdrop { background: rgb(0 0 0 / 72%); }
 .rewardsDialogHeader { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding: 18px 20px; }

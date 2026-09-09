@@ -1,5 +1,6 @@
+import { universalV3Execution } from "./universal-v3-execution";
+import { decodeUniversalRouteData } from "./universal-route";
 import {
-  decodeFunctionData,
   getAddress,
   isAddress,
   maxUint256,
@@ -12,10 +13,10 @@ import {
   robinhoodMainnetLiquidity,
   robinhoodMainnetUniswap,
   robinhoodTestnetAddresses,
+  robinhoodTestnetV4,
   robinhoodTestnetLiquidity,
 } from "./deployment";
 import { testnetSwapPairAllowed } from "./asset-catalog";
-import { testnetVenue } from "./venue-config";
 import { parseV4Path, v4BoundaryToken } from "./v4-route";
 import { quoteFailureReasons, type QuoteFailureCode } from "./quote-errors";
 
@@ -126,7 +127,7 @@ export type DirectV3Execution = {
   caller: Address;
   inputToken: Address;
   outputToken: Address;
-  swapRouter02: Address;
+  universalRouter: Address;
   amountIn: bigint;
   minAmountOut: bigint;
   expiresAt: number;
@@ -143,7 +144,6 @@ export type BasketRouterExecution = {
   adapter: Address;
   approval?: { token: Address; spender: Address; amount: bigint };
   nativeValue: bigint;
-  v4Adapter?: Address;
   funding: readonly { token: Address; amount: bigint }[];
   call: TypedRouterCall;
 };
@@ -225,22 +225,7 @@ export const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
-const UNISWAP_V3_SWAP_ROUTER_ABI = [{
-  type: "function",
-  name: "exactInput",
-  stateMutability: "payable",
-  inputs: [{
-    type: "tuple",
-    name: "params",
-    components: [
-      { type: "bytes", name: "path" },
-      { type: "address", name: "recipient" },
-      { type: "uint256", name: "amountIn" },
-      { type: "uint256", name: "amountOutMinimum" },
-    ],
-  }],
-  outputs: [{ type: "uint256", name: "amountOut" }],
-}] as const;
+
 
 export function executionStages(input: {
   walletConnected: boolean;
@@ -471,11 +456,9 @@ type TypedQuoteParseContext = {
   request: SwapQuoteRequest;
   entryRouter?: Address;
   adapter?: Address;
-  v4Adapter?: Address;
   weth?: Address;
   permit2?: Address;
   universalRouter?: Address;
-  swapRouter02?: Address;
   chainId: number;
   now: number;
 };
@@ -592,7 +575,7 @@ function parsePermitData(value: unknown, binding: { chainId: number; permit2: Ad
 }
 
 function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, expected?: DirectApiExecution): DirectApiExecution {
-  if (!context.permit2 || !context.universalRouter || !context.request.caller) throw new Error("Direct execution targets are not configured.");
+  if (!context.permit2 || !context.universalRouter || !context.permit2 || !context.request.caller) throw new Error("Direct execution targets are not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
     "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "registered",
@@ -659,11 +642,11 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
 }
 
 function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext): DirectV3Execution {
-  if (!context.swapRouter02 || !context.request.caller) throw new Error("Uniswap V3 direct execution is not configured.");
+  if (!context.universalRouter || !context.permit2 || !context.request.caller) throw new Error("Uniswap V3 direct execution is not configured.");
   if (context.request.input.kind === "native" || context.request.output.kind === "native") throw new Error("An atomic native Uniswap V3 route has not been verified.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "inputToken", "outputToken", "swapRouter02", "amountIn", "minAmountOut",
+    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
     "expiresAtMs", "approval", "path", "transaction",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "direct-v3") throw new Error("Uniswap V3 quote has the wrong execution kind.");
@@ -673,7 +656,7 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
     caller: address(execution.caller, "execution.caller"),
     inputToken: address(execution.inputToken, "execution.inputToken"),
     outputToken: address(execution.outputToken, "execution.outputToken"),
-    swapRouter02: address(execution.swapRouter02, "execution.swapRouter02"),
+    universalRouter: address(execution.universalRouter, "execution.universalRouter"),
     amountIn: uint(execution.amountIn, "execution.amountIn", false),
     minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
     expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
@@ -684,7 +667,7 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
     || !sameAddress(plan.caller, context.request.caller)
     || !sameAddress(plan.inputToken, context.request.input.address)
     || !sameAddress(plan.outputToken, context.request.output.address)
-    || !sameAddress(plan.swapRouter02, context.swapRouter02)
+    || !sameAddress(plan.universalRouter, context.universalRouter)
   ) throw new Error("Uniswap V3 execution does not match the selected chain, caller, pair, or router.");
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
   if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Uniswap V3 execution has the wrong exact input amount.");
@@ -699,42 +682,31 @@ function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext)
     spender: address(approvalValue.spender, "execution.approval.spender"),
     amount: uint(approvalValue.amount, "execution.approval.amount", false),
   };
-  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, plan.swapRouter02) || approval.amount !== plan.amountIn) throw new Error("Uniswap V3 approval does not match the exact route input.");
+  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, context.permit2) || approval.amount !== plan.amountIn) throw new Error("Uniswap V3 approval does not match the exact route input.");
   const transaction = parseTransaction(execution.transaction, "execution.transaction", {
     chainId: context.chainId,
     caller: plan.caller,
-    target: plan.swapRouter02,
+    target: plan.universalRouter,
   });
-  let decoded: ReturnType<typeof decodeFunctionData<typeof UNISWAP_V3_SWAP_ROUTER_ABI>>;
-  try {
-    decoded = decodeFunctionData({ abi: UNISWAP_V3_SWAP_ROUTER_ABI, data: transaction.data });
-  } catch {
-    throw new Error("Uniswap V3 transaction is not an exact-input swap.");
-  }
-  if (decoded.functionName !== "exactInput") throw new Error("Uniswap V3 transaction is not an exact-input swap.");
-  const [params] = decoded.args;
-  if (
-    params.path.toLowerCase() !== plan.path.toLowerCase()
-    || !sameAddress(getAddress(params.recipient), plan.caller)
-    || params.amountIn !== plan.amountIn
-    || params.amountOutMinimum !== plan.minAmountOut
-  ) throw new Error("Uniswap V3 calldata does not match the quoted path, recipient, or amounts.");
+  if (transaction.data.toLowerCase() !== universalV3Execution(plan.path,plan.caller,plan.amountIn,plan.minAmountOut,BigInt(Math.floor(plan.expiresAt/1000))).toLowerCase()) throw new Error("Universal Router calldata does not match the quote.");
   return { ...plan, approval, transaction };
 }
 
-function parseLeg(value: unknown, index: number, adapter: Address, v4Adapter?: Address, weth?: Address): AdapterSwapLeg {
+function parseLeg(value: unknown, index: number, adapter: Address, weth?: Address): AdapterSwapLeg {
   const leg = object(value, `legs[${index}]`);
   exactKeys(leg, ["adapter", "tokenIn", "tokenOut", "amountIn", "minAmountOut", "data"], `legs[${index}]`);
   const parsedAdapter = address(leg.adapter, `legs[${index}].adapter`);
-  const isV4 = v4Adapter !== undefined && sameAddress(parsedAdapter, v4Adapter);
-  if (!isV4 && !sameAddress(parsedAdapter, adapter)) throw new Error("Route uses an unknown adapter.");
+  const encoded = hex(leg.data, `legs[${index}].data`);
+  const decoded = decodeUniversalRouteData(encoded);
+  const isV4 = decoded.version === 4;
+  if (!sameAddress(parsedAdapter, adapter)) throw new Error("Route uses an unknown adapter.");
   const tokenIn = address(leg.tokenIn, `legs[${index}].tokenIn`);
   const tokenOut = address(leg.tokenOut, `legs[${index}].tokenOut`);
   const amountIn = uint(leg.amountIn, `legs[${index}].amountIn`, false);
   const minAmountOut = uint(leg.minAmountOut, `legs[${index}].minAmountOut`, false);
   const data = hex(leg.data, `legs[${index}].data`);
-  if (isV4 && ((amountIn !== maxUint256 && amountIn > (1n << 128n) - 1n) || minAmountOut > (1n << 128n) - 1n)) throw new Error("V4 amount exceeds adapter limits.");
-  const hops = isV4 ? parseV4Path(data) : parseV3Path(data);
+  if ((amountIn !== maxUint256 && amountIn > (1n << 128n) - 1n) || minAmountOut > (1n << 128n) - 1n) throw new Error("Amount exceeds adapter limits.");
+  const hops = isV4 ? parseV4Path(decoded.path) : parseV3Path(decoded.path);
   const boundary = (currency: Address) => {
     if (!isV4 || currency !== zeroAddress) return currency;
     if (!weth || weth === zeroAddress) throw new Error("Native V4 routing requires canonical WETH.");
@@ -778,13 +750,12 @@ function parseBasketCall(
   context: TypedQuoteParseContext,
   adapter: Address,
   deadline: bigint,
-  v4Adapter?: Address,
 ): { call: TypedRouterCall; funding: readonly { token: Address; amount: bigint }[] } {
   const method = string(execution.method, "execution.method");
   const request = object(execution.request, "execution.request");
   const legsValue = array(execution.legs, "execution.legs");
   if (legsValue.length > MAX_SWAP_LEGS) throw new Error("Route exceeds the leg limit.");
-  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, v4Adapter, context.weth));
+  const legs = legsValue.map((leg, index) => parseLeg(leg, index, adapter, context.weth));
   const funding = parseFunding(execution.funding);
   assertLegFunding(legs, funding);
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -842,7 +813,7 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   if (!context.entryRouter || !context.adapter || !context.request.caller) throw new Error("Basket execution is not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "router", "adapter", "v4Adapter", "approval", "nativeValue", "funding",
+    "kind", "chainId", "caller", "router", "adapter", "approval", "nativeValue", "funding",
     "method", "request", "legs", "minBasketAmounts",
   ], "execution");
   if (string(execution.kind, "execution.kind") !== "basket-router") throw new Error("Basket quote has the wrong execution kind.");
@@ -850,8 +821,6 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
   const caller = address(execution.caller, "execution.caller");
   const router = address(execution.router, "execution.router");
   const adapter = address(execution.adapter, "execution.adapter");
-  const v4Adapter = execution.v4Adapter === undefined ? undefined : address(execution.v4Adapter, "execution.v4Adapter");
-  if (v4Adapter && (!context.v4Adapter || !sameAddress(v4Adapter, context.v4Adapter) || sameAddress(v4Adapter, adapter))) throw new Error("Unknown V4 adapter.");
   if (chainId !== context.chainId || !sameAddress(caller, context.request.caller)) throw new Error("Basket execution has the wrong chain or caller.");
   if (!sameAddress(router, context.entryRouter) || !sameAddress(adapter, context.adapter)) throw new Error("Basket execution has a deployment mismatch.");
   const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
@@ -879,8 +848,8 @@ function parseBasketExecution(value: unknown, context: TypedQuoteParseContext, e
     || deadline > nowSeconds + BigInt(QUOTE_MAX_FUTURE_DEADLINE_SECONDS)
     || BigInt(Math.ceil(expiresAt / 1_000)) > deadline
   ) throw new Error("Basket execution deadline is invalid.");
-  const { call, funding } = parseBasketCall(execution, context, adapter, deadline, v4Adapter);
-  return { kind: "basket-router", chainId, caller, router, adapter, v4Adapter, approval, nativeValue, funding, call };
+  const { call, funding } = parseBasketCall(execution, context, adapter, deadline);
+  return { kind: "basket-router", chainId, caller, router, adapter, approval, nativeValue, funding, call };
 }
 
 function callDeadline(requestValue: unknown): bigint {
@@ -1044,11 +1013,9 @@ export type TypedQuoteServiceConfig = {
   chainId: number;
   entryRouter?: Address;
   adapter?: Address;
-  v4Adapter?: Address;
   weth?: Address;
   permit2?: Address;
   universalRouter?: Address;
-  swapRouter02?: Address;
   now?: () => number;
 };
 
@@ -1059,11 +1026,9 @@ export function typedQuoteService(config: TypedQuoteServiceConfig): SwapQuoteSer
     request,
     entryRouter: config.entryRouter,
     adapter: config.adapter,
-    v4Adapter: config.v4Adapter,
     weth: config.weth,
     permit2: config.permit2,
     universalRouter: config.universalRouter,
-    swapRouter02: config.swapRouter02,
     chainId: config.chainId,
     now: now(),
   });
@@ -1175,8 +1140,7 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       permit2: robinhoodMainnetUniswap.permit2,
       universalRouter: robinhoodMainnetUniswap.universalRouter,
       entryRouter: robinhoodMainnetAddresses.entryRouter,
-      adapter: robinhoodMainnetAddresses.uniswapV3Adapter,
-      v4Adapter: robinhoodMainnetAddresses.uniswapV4Adapter,
+      adapter: robinhoodMainnetAddresses.uniswapUniversalRouterAdapter,
       weth: robinhoodMainnetAddresses.weth,
     });
   }
@@ -1185,9 +1149,9 @@ export function quoteServiceForChain(chainId: number): SwapQuoteService {
       endpoint: "/api/swap-quotes",
       chainId,
       entryRouter: robinhoodTestnetAddresses.entryRouter,
-      adapter: robinhoodTestnetAddresses.uniswapV3Adapter,
-      swapRouter02: testnetVenue.swapRouter02,
-      v4Adapter: robinhoodTestnetAddresses.uniswapV4Adapter,
+      adapter: robinhoodTestnetAddresses.uniswapUniversalRouterAdapter,
+      universalRouter: robinhoodTestnetV4.universalRouter,
+      permit2: robinhoodTestnetV4.permit2,
       weth: robinhoodTestnetAddresses.weth,
     });
   }

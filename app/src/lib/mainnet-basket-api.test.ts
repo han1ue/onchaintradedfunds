@@ -1,3 +1,4 @@
+import { decodeUniversalRouteData, universalRouteData } from "./universal-route";
 import { emptyRegistry } from "./asset-catalog";
 import { decodeFunctionData, maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
@@ -14,8 +15,8 @@ const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const INPUT = addr(1), A = addr(2), B = addr(3), VAULT = addr(4), CALLER = addr(5);
 const NOW = 1_750_000_000_000;
 const DEPLOYMENT: MainnetBasketDeployment = {
-  factory: addr(10), entryRouter: addr(11), uniswapV3Adapter: addr(12), weth: addr(13), uniswapV3Factory: addr(14), uniswapV3Router: addr(15),
-  uniswapV4Adapter: addr(30), uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34),
+  factory: addr(10), entryRouter: addr(11), uniswapUniversalRouterAdapter: addr(12), weth: addr(13), uniswapV3Factory: addr(14),
+  uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34),
 };
 const token = (address: Address, kind: "erc20" | "native" | "otf" = "erc20") => ({ address, kind, decimals: 18, isFactoryVault: kind === "otf" });
 function request(burn = false): BasketPlannerRequest {
@@ -62,7 +63,7 @@ function deps(routingClient = client(), quoteProvider = provider()) {
 }
 function parse(body: unknown, req: BasketPlannerRequest) {
   return parseTypedQuoteResponse(body, {
-    route: "basket", chainId: 4663, now: NOW, weth: DEPLOYMENT.weth, entryRouter: DEPLOYMENT.entryRouter, adapter: DEPLOYMENT.uniswapV3Adapter, v4Adapter: DEPLOYMENT.uniswapV4Adapter,
+    route: "basket", chainId: 4663, now: NOW, weth: DEPLOYMENT.weth, entryRouter: DEPLOYMENT.entryRouter, adapter: DEPLOYMENT.uniswapUniversalRouterAdapter,
     request: { ...req, inputAmount: "1", requestedAt: req.requestedAtMs,
       input: { ...req.input, name: "IN", symbol: "IN", metadataResolved: true }, output: { ...req.output, name: "OUT", symbol: "OUT", metadataResolved: true } },
   });
@@ -112,13 +113,13 @@ describe("mainnet basket planner", () => {
     const legs = execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2];
     for (const index of [1, 3]) {
       const leg = legs![index]!;
-      expect(leg.data).toBe(encodeV4Path(leg.tokenIn, [{ intermediateCurrency: leg.tokenOut, fee: 3000, tickSpacing: 60, hooks: addr(40), hookData: "0x1234" }]));
+      expect(leg.data).toBe(universalRouteData(4, encodeV4Path(leg.tokenIn, [{ intermediateCurrency: leg.tokenOut, fee: 3000, tickSpacing: 60, hooks: addr(40), hookData: "0x1234" }])));
       if (burn) expect(leg.amountIn).toBe(maxUint256);
     }
     expect(dependencies.client.simulate).toHaveBeenCalledWith(execution);
   });
 
-  it.each([false, true])("executes API V4 routes through the V4 adapter (burn=%s)", async (burn) => {
+  it.each([false, true])("executes API V4 routes through the unified adapter (burn=%s)", async (burn) => {
     const base = provider();
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
       const response = await base(body);
@@ -132,17 +133,17 @@ describe("mainnet basket planner", () => {
     const quote = parse(result.body, req);
     expect(quote.hops?.map((hop) => hop.venue)).toEqual(["Uniswap V4", "Uniswap V4"]);
     const execution = quote.execution as BasketRouterExecution;
-    expect(execution.v4Adapter).toBe(DEPLOYMENT.uniswapV4Adapter);
+    expect(execution.adapter.toLowerCase()).toBe(DEPLOYMENT.uniswapUniversalRouterAdapter.toLowerCase());
     const legs = execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2];
     for (const leg of legs!) {
-      expect(leg.adapter.toLowerCase()).toBe(DEPLOYMENT.uniswapV4Adapter.toLowerCase());
-      expect(parseV4Path(leg.data)).toEqual(leg.hops);
+      expect(leg.adapter.toLowerCase()).toBe(DEPLOYMENT.uniswapUniversalRouterAdapter.toLowerCase());
+      expect(parseV4Path(decodeUniversalRouteData(leg.data).path)).toEqual(leg.hops);
     }
     expect(dependencies.client.authenticateV4Pool).toHaveBeenCalled();
     expect(dependencies.client.authenticatePool).not.toHaveBeenCalled();
     expect(dependencies.client.simulate).toHaveBeenCalledWith(execution);
-    const altered = { ...result.body, execution: { ...(result.body as { execution: object }).execution, v4Adapter: addr(99) } };
-    expect(() => parse(altered, req)).toThrow(/adapter/i);
+    const altered = { ...result.body, execution: { ...(result.body as { execution: object }).execution, adapter: addr(99) } };
+    expect(() => parse(altered, req)).toThrow(/deployment mismatch/i);
   });
 
   it.each([false, true])("connects mixed V3/V4 paths without spending intermediate tokens twice (burn=%s)", async (burn) => {

@@ -11,7 +11,7 @@ coverage/
 lcov.info
 *.log
 *.tsbuildinfo
-/test-results/mainnet/
+/test-results/
 
 # Local marketing work
 /marketing/

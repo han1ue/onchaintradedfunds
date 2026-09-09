@@ -67,8 +67,7 @@ export const robinhoodTestnetAddresses = Object.freeze({
   vaultImplementation: deployedTestnetContract("vaultImplementation"),
   factory: deployedTestnetContract("factory"),
   entryRouter: deployedTestnetContract("entryRouter"),
-  uniswapV3Adapter: deployedTestnetContract("uniswapV3Adapter"),
-  uniswapV4Adapter: deployedTestnetContract("uniswapV4Adapter"),
+  uniswapUniversalRouterAdapter: deployedTestnetContract("uniswapUniversalRouterAdapter"),
   usdg: address(testnetExternalContracts.usdg),
   weth: address(testnetExternalContracts.weth),
 });
@@ -88,7 +87,6 @@ export const robinhoodTestnetLiquidity = Object.freeze({
 
 export const robinhoodTestnetV3 = Object.freeze({
   factory: testnetVenue.factory,
-  swapRouter02: testnetVenue.swapRouter02,
   quoter: testnetVenue.quoter,
   positionManager: testnetVenue.positionManager,
 });
@@ -102,18 +100,18 @@ export const robinhoodTestnetV4 = Object.freeze({
   permit2: address(testnetExternalContracts.permit2),
 });
 
-export const robinhoodTestnetV4AdapterReady = testnet.status === "deployed"
+export const robinhoodTestnetUniversalAdapterReady = testnet.status === "deployed"
   && testnetRouting.status === "ready"
   && Boolean(
     robinhoodTestnetAddresses.entryRouter
-    && robinhoodTestnetAddresses.uniswapV4Adapter
+    && robinhoodTestnetAddresses.uniswapUniversalRouterAdapter
     && robinhoodTestnetV4.poolManager
     && robinhoodTestnetV4.stateView
     && robinhoodTestnetV4.universalRouter
     && robinhoodTestnetV4.permit2
     && Array.isArray(testnetRouting.approvedAdapters)
     && testnetRouting.approvedAdapters.some((candidate) => (
-      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapV4Adapter?.toLowerCase()
+      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapUniversalRouterAdapter?.toLowerCase()
     )),
   );
 
@@ -137,12 +135,11 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
     && robinhoodTestnetAddresses.teamVesting
     && robinhoodTestnetAddresses.merkleRewardsDistributor
     && robinhoodTestnetAddresses.ethUsdOracle
-    && robinhoodTestnetAddresses.uniswapV3Adapter
+    && robinhoodTestnetAddresses.uniswapUniversalRouterAdapter
     && address(testnetExternalContracts.uniswapV3Factory)?.toLowerCase() === testnetVenue.factory.toLowerCase()
-    && address(testnetExternalContracts.uniswapV3SwapRouter02)?.toLowerCase() === testnetVenue.swapRouter02.toLowerCase()
     && Array.isArray(testnetRouting.approvedAdapters)
     && testnetRouting.approvedAdapters.some((candidate) => (
-      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapV3Adapter?.toLowerCase()
+      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapUniversalRouterAdapter?.toLowerCase()
     )),
   );
 
@@ -174,8 +171,7 @@ export const robinhoodMainnetAddresses = Object.freeze({
   vaultImplementation: deployedMainnetContract("vaultImplementation"),
   factory: deployedMainnetContract("factory"),
   entryRouter: deployedMainnetContract("entryRouter"),
-  uniswapV3Adapter: deployedMainnetContract("uniswapV3Adapter"),
-  uniswapV4Adapter: deployedMainnetContract("uniswapV4Adapter"),
+  uniswapUniversalRouterAdapter: deployedMainnetContract("uniswapUniversalRouterAdapter"),
   otfToken: deployedMainnetContract("otfToken"),
   usdg: address(mainnetExternalContracts.usdg),
   weth: address(mainnetExternalContracts.weth),
@@ -183,16 +179,15 @@ export const robinhoodMainnetAddresses = Object.freeze({
 });
 
 export const robinhoodMainnetBasketDeployment = (() => {
-  const { factory, entryRouter, uniswapV3Adapter, uniswapV4Adapter, weth } = robinhoodMainnetAddresses;
+  const { factory, entryRouter, uniswapUniversalRouterAdapter, weth } = robinhoodMainnetAddresses;
   const uniswapV3Factory = address(mainnetExternalContracts.uniswapV3Factory);
-  const uniswapV3Router = address(mainnetExternalContracts.uniswapV3SwapRouter02);
   const uniswapV4PoolManager = address(mainnetExternalContracts.uniswapV4PoolManager);
   const uniswapV4StateView = address(mainnetExternalContracts.uniswapV4StateView);
   const universalRouter = address(mainnetTradingApi.universalRouter);
   const permit2 = address(mainnetTradingApi.permit2);
-  if (!factory || !entryRouter || !uniswapV3Adapter || !uniswapV4Adapter || !weth || !uniswapV3Factory || !uniswapV3Router
+  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth || !uniswapV3Factory
     || !uniswapV4PoolManager || !uniswapV4StateView || !universalRouter || !permit2) return undefined;
-  return { factory, entryRouter, uniswapV3Adapter, uniswapV4Adapter, weth, uniswapV3Factory, uniswapV3Router, uniswapV4PoolManager, uniswapV4StateView, universalRouter, permit2 };
+  return { factory, entryRouter, uniswapUniversalRouterAdapter, weth, uniswapV3Factory,  uniswapV4PoolManager, uniswapV4StateView, universalRouter, permit2 };
 })();
 
 export const robinhoodMainnetLiquidity = Object.freeze({
@@ -223,7 +218,7 @@ export const robinhoodMainnetV4 = Object.freeze({
   permit2: robinhoodMainnetUniswap.permit2,
 });
 const mainnetRoutingReady = mainnetDeployed && mainnetRouting.status === "ready" && Boolean(robinhoodMainnetBasketDeployment)
-  && [robinhoodMainnetAddresses.uniswapV3Adapter, robinhoodMainnetAddresses.uniswapV4Adapter].every((adapter) =>
+  && [robinhoodMainnetAddresses.uniswapUniversalRouterAdapter].every((adapter) =>
     adapter && Array.isArray(mainnetRouting.approvedAdapters) && mainnetRouting.approvedAdapters.some((value) => address(value)?.toLowerCase() === adapter.toLowerCase()));
 
 export function protocolDeploymentForChain(chainId: number) {

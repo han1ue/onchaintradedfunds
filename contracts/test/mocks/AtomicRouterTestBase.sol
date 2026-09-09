@@ -8,13 +8,10 @@ import {
     OTFEntryExitRouter,
     SwapLeg
 } from "../../src/OTFEntryExitRouter.sol";
-import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
 import { MockStockToken } from "./MockStockToken.sol";
 import { MockOTFSettlementFactory, MockOTFSettlementVault } from "./MockOTFSettlement.sol";
 import { MockTradeAdapter } from "./MockTradeAdapter.sol";
 import { MockWETH } from "./MockWETH.sol";
-import { MockUniswapV3Factory } from "./MockUniswapV3Factory.sol";
-import { MockUniswapV3Router } from "./MockUniswapV3Router.sol";
 import { TestBase } from "../TestBase.sol";
 
 abstract contract AtomicRouterTestBase is TestBase {
@@ -35,9 +32,6 @@ abstract contract AtomicRouterTestBase is TestBase {
     OTFEntryExitRouter internal router;
     MockTradeAdapter internal adapterA;
     MockTradeAdapter internal adapterB;
-    MockUniswapV3Factory internal v3Factory;
-    MockUniswapV3Router internal venue;
-    UniswapV3Adapter internal v3Adapter;
 
     function _setUpAtomicRouter() internal {
         vm.warp(1_000_000);
@@ -70,12 +64,6 @@ abstract contract AtomicRouterTestBase is TestBase {
         router.setAdapterApproved(address(adapterA), true);
         router.setAdapterApproved(address(adapterB), true);
 
-        v3Factory = new MockUniswapV3Factory();
-        venue = new MockUniswapV3Router();
-        venue.setFactory(address(v3Factory));
-        v3Adapter = new UniswapV3Adapter(address(router), address(v3Factory), address(venue));
-        router.setAdapterApproved(address(v3Adapter), true);
-
         input.mint(ALICE, 100_000 * ONE);
         sourceVault.seedShares(ALICE, 10_000 * ONE);
         assetA.mint(address(sourceVault), 100_000 * ONE);
@@ -83,22 +71,10 @@ abstract contract AtomicRouterTestBase is TestBase {
 
         _fundAdapter(adapterA);
         _fundAdapter(adapterB);
-        input.mint(address(venue), 1_000_000 * ONE);
-        assetA.mint(address(venue), 1_000_000 * ONE);
-        assetB.mint(address(venue), 1_000_000 * ONE);
-        assetC.mint(address(venue), 1_000_000 * ONE);
-        assetD.mint(address(venue), 1_000_000 * ONE);
-        weth.mint(address(venue), 1_000_000 * ONE);
         vm.deal(address(weth), 10_000_000 * ONE);
 
         _setRates(adapterA);
         _setRates(adapterB);
-        _createPool(address(input), address(assetC));
-        _createPool(address(input), address(assetD));
-        _createPool(address(assetA), address(input));
-        _createPool(address(assetB), address(input));
-        _createPool(address(assetA), address(assetC));
-        _createPool(address(assetB), address(assetD));
 
         vm.startPrank(ALICE);
         input.approve(address(router), type(uint256).max);
@@ -133,14 +109,6 @@ abstract contract AtomicRouterTestBase is TestBase {
         adapter.setRate(address(assetB), address(weth), 1, 1);
     }
 
-    function _createPool(address tokenA, address tokenB) internal returns (address) {
-        return v3Factory.createPool(tokenA, tokenB, FEE);
-    }
-
-    function _path(address tokenIn, address tokenOut) internal pure returns (bytes memory) {
-        return abi.encodePacked(tokenIn, bytes3(FEE), tokenOut);
-    }
-
     function _leg(
         MockTradeAdapter adapter,
         address tokenIn,
@@ -155,21 +123,6 @@ abstract contract AtomicRouterTestBase is TestBase {
             amountIn: amountIn,
             minAmountOut: minimum,
             data: ""
-        });
-    }
-
-    function _v3Leg(address tokenIn, address tokenOut, uint256 amountIn, uint256 minimum)
-        internal
-        view
-        returns (SwapLeg memory)
-    {
-        return SwapLeg({
-            adapter: address(v3Adapter),
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            amountIn: amountIn,
-            minAmountOut: minimum,
-            data: _path(tokenIn, tokenOut)
         });
     }
 

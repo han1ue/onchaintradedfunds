@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import config from "../config/robinhood-mainnet.json";
 
 const contracts = Object.fromEntries([
-  "factory", "entryRouter", "uniswapV3Adapter", "uniswapV4Adapter", "otfToken", "launchManager",
+  "factory", "entryRouter", "uniswapUniversalRouterAdapter", "otfToken", "launchManager",
   "launchRouter", "teamVesting", "buybackCollector", "merkleRewardsDistributor", "vaultImplementation",
 ].map((name, index) => [name, { address: `0x${(index + 1).toString(16).padStart(40, "0")}` }]));
 
@@ -10,7 +10,7 @@ async function deployment(overrides: Record<string, unknown> = {}) {
   vi.resetModules();
   vi.doMock("../config/robinhood-mainnet.json", () => ({ default: {
     ...config, protocolStatus: "deployed", protocolContracts: contracts,
-    routing: { status: "ready", approvedAdapters: [contracts.uniswapV3Adapter.address, contracts.uniswapV4Adapter.address] },
+    routing: { status: "ready", approvedAdapters: [contracts.uniswapUniversalRouterAdapter.address] },
     ...overrides,
   } }));
   return (await import("./deployment")).protocolDeploymentForChain(4663)!;
@@ -18,18 +18,18 @@ async function deployment(overrides: Record<string, unknown> = {}) {
 afterEach(() => { vi.doUnmock("../config/robinhood-mainnet.json"); vi.resetModules(); });
 
 describe("mainnet activation manifest", () => {
-  it("selects deployed mainnet contracts and both approved adapters", async () => {
+  it("selects deployed mainnet contracts and the approved adapter", async () => {
     const selected = await deployment();
     expect(selected.creationReady).toBe(true);
     expect(selected.routingReady).toBe(true);
     expect(selected.addresses.factory).toBe(contracts.factory.address);
     expect(selected.addresses.launchRouter).toBe(contracts.launchRouter.address);
   });
-  it("withholds contract addresses before deployment and actions before V4 approval", async () => {
+  it("withholds contract addresses before deployment and actions before adapter approval", async () => {
     const pending = await deployment({ protocolStatus: "not-deployed" });
     expect(pending.addresses.factory).toBeUndefined();
     expect(pending.routingReady).toBe(false);
-    const partial = await deployment({ routing: { status: "ready", approvedAdapters: [contracts.uniswapV3Adapter.address] } });
+    const partial = await deployment({ routing: { status: "ready", approvedAdapters: [] } });
     expect(partial.creationReady).toBe(false);
     expect(partial.routingReady).toBe(false);
   });

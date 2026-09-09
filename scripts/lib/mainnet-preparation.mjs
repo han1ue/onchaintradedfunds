@@ -19,7 +19,7 @@ export function mainnetPreparation(config, pin, deployerAddress) {
     chainId: 4663, broadcastEnabled: false,
     roles: { deployer: deployer ?? null, protocolAdministrator: deployer ?? "deployer", teamBeneficiary: deployer ?? "deployer" },
     oracleMaxAgeSeconds: config.oracleValidation.maxAgeSeconds,
-    deploymentOrder: ["otfToken", "launchManagerDeployer", "launchManager", "launchRouter", "buybackCollector", "vaultImplementation", "factory", "entryRouter", "uniswapV3Adapter", "uniswapV4Adapter", "teamVesting", "merkleRewardsDistributor"],
+    deploymentOrder: ["otfToken", "launchManagerDeployer", "launchManager", "launchRouter", "buybackCollector", "vaultImplementation", "factory", "entryRouter", "uniswapUniversalRouterAdapter", "teamVesting", "merkleRewardsDistributor"],
     pending: [
       ...(!deployer ? ["Set DEPLOYER_ADDRESS to resolve initial roles to a concrete public address."] : []),
       "Deploy protocol contracts only after a separate deployment instruction.",

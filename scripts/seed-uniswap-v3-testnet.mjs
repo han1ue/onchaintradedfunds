@@ -5,7 +5,7 @@ import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
 
 const require = createRequire(new URL("../app/package.json", import.meta.url));
 const { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData, concatHex,
-  numberToHex, zeroAddress, getAddress, parseEventLogs } = require("viem");
+  numberToHex, encodeAbiParameters, parseAbiParameters, zeroAddress, getAddress, parseEventLogs } = require("viem");
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const config = read("app/src/config/robinhood-testnet.json");
@@ -48,10 +48,11 @@ const poolAbi = parseAbi(["function factory() view returns (address)", "function
 const npm = plan.dependencies.uniswapV3PositionManager.address;
 const factory = plan.dependencies.uniswapV3Factory.address;
 const quoter = plan.dependencies.uniswapV3QuoterV2.address;
-const router = plan.dependencies.uniswapV3SwapRouter02.address;
+const router = config.externalContracts.uniswapUniversalRouter;
 const npmAbi = read("node_modules/@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json").abi;
 const quoterAbi = read("node_modules/@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json").abi;
-const routerAbi = read("node_modules/@uniswap/swap-router-contracts/artifacts/contracts/SwapRouter02.sol/SwapRouter02.json").abi;
+const routerAbi = parseAbi(["function execute(bytes,bytes[],uint256) payable"]);
+const permitAbi = parseAbi(["function approve(address,address,uint160,uint48)"]);
 const transactions = [];
 let gasSpend = 0n;
 const results = [];
@@ -132,9 +133,12 @@ try {
           const available = await client.readContract({ address: tokenIn, abi: erc20, functionName: "balanceOf", args: [recipient] });
           if (available < amountIn) await send(tokenIn, erc20, "deposit", [], amountIn - available);
         }
-        await approve(tokenIn, router, amountIn);
-        await send(router, routerAbi, "exactInput", [{ path, recipient, amountIn, amountOutMinimum: quoteResult[0] * 99n / 100n }]);
-        await approve(tokenIn, router, 0n);
+        const expiry = (await client.getBlock()).timestamp + 120n;
+        await approve(tokenIn, config.externalContracts.permit2, amountIn);
+        await send(config.externalContracts.permit2, permitAbi, "approve", [tokenIn,router,amountIn,Number(expiry)]);
+        await send(router, routerAbi, "execute", ["0x00",[encodeAbiParameters(parseAbiParameters("address,uint256,uint256,bytes,bool,uint256[]"),[recipient,amountIn,quoteResult[0]*99n/100n,path,true,[]])],expiry]);
+        await send(config.externalContracts.permit2, permitAbi, "approve", [tokenIn,router,0n,0]);
+        await approve(tokenIn, config.externalContracts.permit2, 0n);
       }
       quotes.push({ tokenIn, tokenOut, amountIn, amountOut: quoteResult[0], swapExecutedLocally: mode === "simulate" });
     }

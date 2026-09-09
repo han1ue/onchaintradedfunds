@@ -69,7 +69,7 @@ const ADAPTER = "0x00000000000000000000000000000000000000a1" as const;
 const PERMIT2 = "0x00000000000000000000000000000000000000b1" as const;
 const UNIVERSAL_ROUTER = "0x00000000000000000000000000000000000000b2" as const;
 const NOW = 1_750_000_000_000;
-const PATH = `0x${USDG.address.slice(2)}000bb8${BACKING.slice(2)}` as const;
+const PATH = `0x03${USDG.address.slice(2)}000bb8${BACKING.slice(2)}` as const;
 
 function request(input = USDG, output = FUND_A, chainId = 46630): SwapQuoteRequest {
   return { chainId, input, output, inputAmount: "10", slippageBps: 50, requestedAt: NOW - 1_000, caller: CALLER };
@@ -361,7 +361,7 @@ describe("swap state model", () => {
     const legs = baseExecution.legs as Record<string, unknown>[];
     const mutate = (replacement: Record<string, unknown>[]) => ({ ...base, execution: { ...baseExecution, legs: replacement } });
     expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], adapter: ROUTER }, legs[1]]), basketContext())).toThrow(/unknown adapter/);
-    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], data: "0x1234" }, legs[1]]), basketContext())).toThrow(/packed length/);
+    expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], data: "0x031234" }, legs[1]]), basketContext())).toThrow(/packed length/);
     expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], tokenIn: TOKEN.address }, legs[1]]), basketContext())).toThrow(/endpoints/);
     expect(() => parseTypedQuoteResponse(mutate([{ ...legs[0], amountIn: "10000000000000000001" }, legs[1]]), basketContext())).toThrow(/overspends/);
   });

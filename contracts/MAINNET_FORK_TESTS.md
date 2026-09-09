@@ -2,7 +2,7 @@
 
 Run `corepack pnpm contracts:validate:mainnet-routing` from the repository root.
 The runner forks Robinhood mainnet (chain 4663), selecting one block 64 blocks
-behind the current tip. It checks 23 dependency runtime hashes at that block
+behind the current tip. It checks the pinned dependency runtime hashes at that block
 before running Foundry against the same state.
 Tests execute locally and do not broadcast transactions.
 
@@ -17,10 +17,8 @@ Set `RH_MAINNET_RPC_URL` to use another RPC with historical state. Set
 `MAINNET_FORK_BLOCK` to replay a specific block with the same dependency hashes.
 The fixture records reference block 55357373 and its hash; replaying that block
 also checks its identity. The public RPC stopped serving that state during validation,
-so historical replay requires an archive RPC. A successful run writes
-`contracts/out/mainnet-routing-validation.json`; starting another run removes the
-previous report so a failed run cannot leave a stale success result. The report
-records the selected block number and hash for later replay.
+so historical replay requires an archive RPC. The runner prints the selected
+block and test results without writing a report.
 
 ## Coverage
 
@@ -30,14 +28,13 @@ The eight tests in `test/fork/MainnetRouting.t.sol` cover:
 | --- | --- |
 | V3 and V4 basket entry, partial exit, and fee redemption | Share backing, WETH payouts, OTF buyback burn, cleared fee accounts |
 | V3 and V4 native ETH entry and exit | Wrapping, unwrapping, and the caller's received ETH |
-| Mixed V3/V4 basket | Both adapters in one mint and redemption |
+| Mixed V3/V4 basket | Both versions through one adapter in a mint and redemption |
 | V4 fee-share sale | Sale proceeds, creator payout, and canonical-pool buyback burn |
 | V3 and V4 minimum-output failure | Restored input balance, no minted shares, and cleared transient balances and approvals |
 
 Each setup deploys the protocol, initializes its launch, and buys through
 graduation using the deployed mainnet PoolManager, PositionManager, and WETH.
-The tests also use the deployed StateView, Universal Router, Permit2, V3 factory,
-and V3 router. They create mock constituent tokens and seed new pools locally.
+The tests also use the deployed StateView, Universal Router, Permit2, and V3 factory. They create mock constituent tokens and seed new pools locally.
 The separate market suite below uses existing stock-token markets and liquidity.
 
 `MainnetDeployment.t.sol` adds three deployment rehearsal tests. They deploy the
@@ -57,7 +54,7 @@ liquidity. No stock balances or pool liquidity are created with cheatcodes.
 Market entries spend 0.001 or 0.01 WETH per stock through WETH–USDG–stock paths;
 exits reverse those paths. Each leg requires at least 99% of its live QuoterV2
 quote. The suite also covers native ETH entry/exit, direct in-kind redemption
-after both adapters are revoked, and fee redemption through all five markets
+after the adapter is revoked, and fee redemption through all five markets
 followed by an OTF buyback and burn. Transfers exercise the tokens' current
 mainnet rules; the tests do not impersonate issuers to change those rules.
 
@@ -74,15 +71,14 @@ deploy Uniswap locally; they are not fork tests.
 
 ## Router compatibility
 
-The mainnet Universal Router requires five fields in `ExactInputParams`, including
-a per-hop array between the path and input amount.
-The V4 adapter and buyback collector now encode that array as empty and retain
-the caller's aggregate minimum output. All eight fork tests pass with this encoding.
+The verifier compares the configured mainnet Universal Router with pinned release
+2.1.1, including its required immutable dependencies. V3 exact-input commands
+include six fields; V4 exact-input parameters include five. Both include the
+per-hop price array, encoded as empty while retaining aggregate minimum outputs.
 
-The current testnet deployment uses the same-address V4 stack and five-field
-encoding. The deployment script pins the chain-46630 runtime hashes and validates
-PoolManager bindings before sending transactions. Testnet receipts are not mainnet
-deployment evidence.
+The same adapter and command encoding apply on testnet, with dependencies read
+from the chain-46630 configuration. The testnet Universal Router uses protocol
+WETH and the configured V3 factory.
 
 ## Oracle age and rehearsal limits
 
@@ -94,7 +90,6 @@ checks that the live answer satisfies it before testing the expiry boundary.
 
 The deployment rehearsal uses local accounts as authorized for testing. It does
 not validate final production addresses, multisig signatures, transaction fee
-budgets, or a broadcast deployment script. A successful report explicitly records
-`productionRolesValidated: false`. Token proxy hashes alone do not authenticate
+budgets, or a broadcast deployment script. Token proxy hashes alone do not authenticate
 future implementation upgrades. Existing market liquidity, issuer restrictions,
 and oracle availability can change; rerun the suite before deployment.

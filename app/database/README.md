@@ -1,6 +1,6 @@
 # Asset registry, pricing and NAV
 
-Postgres is the operational registry. The initial seed contains 15 assets, six verified identities, 16 price-source policies and six approved V3 pools. The import report in `test-results/registry/import.json` records the original file hashes and field comparisons. Deployment manifests remain in `app/src/config`.
+Postgres is the operational registry. The initial seed contains 15 assets, six verified identities, 16 price-source policies and six approved V3 pools. Deployment manifests remain in `app/src/config`.
 
 ## Setup and environments
 
@@ -36,7 +36,7 @@ The on-chain quote policy limits a comparison to 16 candidates. It compares the 
 
 V3 uses packed multi-hop paths and reverses them for exact output. V4 uses its Quoter's multi-hop structure and exact-output currency ordering. Mixed routes quote segments in the required direction, convert native ETH/WETH at version boundaries, and use the actual intermediate balances during execution. Basket routes exclude intermediates that could consume another constituent's reserved balance.
 
-On mainnet, missing, failed or out-of-policy candidates use the Trading API. A failed registered basket simulation gets one API-only plan attempt. Robinhood testnet has no Trading API fallback. Its deployed SwapRouter02 cannot atomically convert the protocol's different WETH, so native fund trades use basket entry/exit. Missing Quoter or adapter bindings make that path unavailable. No mainnet V4 Quoter address has been invented.
+On mainnet, missing, failed or out-of-policy candidates use the Trading API. A failed registered basket simulation gets one API-only plan attempt. Robinhood testnet has no Trading API fallback. Its Universal Router uses protocol WETH; native fund trades use basket entry/exit. Missing Quoter or adapter bindings make that path unavailable. No mainnet V4 Quoter address has been invented.
 
 Candidate comparison can subtract gas costs when every candidate has a reliable conversion into the comparison token. The current RPC integration leaves this conversion unset because Quoter execution gas alone omits L2 data fees. It compares token amounts and reports available simulation gas estimates. Direct fund-share and basket results still compete by usable output; the UI claims only the best result among compared routes.
 

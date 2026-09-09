@@ -5,11 +5,12 @@ import { robinhoodChain } from "./chains";
 import { routerArgsForExecution, type BasketRouterExecution } from "./swap-model";
 import { v4PoolId, type V4PathKey } from "./v4-route";
 import { QuoteFailure } from "./quote-errors";
+import { V3_POOL_INIT_CODE_HASH } from "./universal-route";
 
 export type MainnetBasketDeployment = {
-  factory: Address; entryRouter: Address; uniswapV3Adapter: Address;
-  weth: Address; uniswapV3Factory: Address; uniswapV3Router: Address;
-  uniswapV4Adapter: Address; uniswapV4PoolManager: Address; uniswapV4StateView: Address; universalRouter: Address; permit2: Address;
+  factory: Address; entryRouter: Address; uniswapUniversalRouterAdapter: Address;
+  weth: Address; uniswapV3Factory: Address;
+  uniswapV4PoolManager: Address; uniswapV4StateView: Address; universalRouter: Address; permit2: Address;
 };
 export type BasketSimulation = { amountOut: bigint; refunds: readonly { token: Address; amount: bigint }[]; gasUsed: bigint };
 export type MainnetBasketClient = BasketClient & {
@@ -25,7 +26,7 @@ const bindings = parseAbi([
   "function factory() view returns (address)",
   "function entryExitRouter() view returns (address)",
   "function uniswapV3Factory() view returns (address)",
-  "function uniswapV3Router() view returns (address)",
+  "function v3PoolInitCodeHash() view returns (bytes32)",
   "function uniswapV4PoolManager() view returns (address)",
   "function uniswapV4StateView() view returns (address)",
   "function uniswapUniversalRouter() view returns (address)",
@@ -58,7 +59,7 @@ export function basketSimulationCalls(execution: BasketRouterExecution) {
 export function mainnetBasketClient(deployment: MainnetBasketDeployment): MainnetBasketClient {
   const rpc = process.env.RH_MAINNET_RPC_URL?.trim() || robinhoodChain.rpcUrls.default.http[0];
   const client = createPublicClient({ chain: robinhoodChain, transport: http(rpc, { timeout: 12_000, retryCount: 0 }) });
-  const binding = async (address: Address, functionName: "factory" | "entryExitRouter" | "uniswapV3Factory" | "uniswapV3Router" | "weth" | "uniswapV4PoolManager" | "uniswapV4StateView" | "uniswapUniversalRouter" | "permit2" | "poolManager", expected: Address) => {
+  const binding = async (address: Address, functionName: "factory" | "entryExitRouter" | "uniswapV3Factory" | "weth" | "uniswapV4PoolManager" | "uniswapV4StateView" | "uniswapUniversalRouter" | "permit2" | "poolManager", expected: Address) => {
     const actual = await client.readContract({ address, abi: bindings, functionName });
     if (!sameAddress(actual, expected)) throw new Error("Mainnet basket deployment binding mismatch.");
   };
@@ -73,20 +74,18 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
         binding(deployment.entryRouter, "factory", deployment.factory),
         binding(deployment.entryRouter, "weth", deployment.weth),
         binding(deployment.factory, "entryExitRouter", deployment.entryRouter),
-        binding(deployment.uniswapV3Adapter, "entryExitRouter", deployment.entryRouter),
-        binding(deployment.uniswapV3Adapter, "uniswapV3Factory", deployment.uniswapV3Factory),
-        binding(deployment.uniswapV3Adapter, "uniswapV3Router", deployment.uniswapV3Router),
-        binding(deployment.uniswapV3Router, "factory", deployment.uniswapV3Factory),
-        binding(deployment.uniswapV4Adapter, "entryExitRouter", deployment.entryRouter),
-        binding(deployment.uniswapV4Adapter, "weth", deployment.weth),
-        binding(deployment.uniswapV4Adapter, "uniswapV4PoolManager", deployment.uniswapV4PoolManager),
-        binding(deployment.uniswapV4Adapter, "uniswapV4StateView", deployment.uniswapV4StateView),
-        binding(deployment.uniswapV4Adapter, "uniswapUniversalRouter", deployment.universalRouter),
-        binding(deployment.uniswapV4Adapter, "permit2", deployment.permit2),
+        binding(deployment.uniswapUniversalRouterAdapter, "uniswapV3Factory", deployment.uniswapV3Factory),
+        binding(deployment.uniswapUniversalRouterAdapter, "entryExitRouter", deployment.entryRouter),
+        binding(deployment.uniswapUniversalRouterAdapter, "weth", deployment.weth),
+        binding(deployment.uniswapUniversalRouterAdapter, "uniswapV4PoolManager", deployment.uniswapV4PoolManager),
+        binding(deployment.uniswapUniversalRouterAdapter, "uniswapV4StateView", deployment.uniswapV4StateView),
+        binding(deployment.uniswapUniversalRouterAdapter, "uniswapUniversalRouter", deployment.universalRouter),
+        binding(deployment.uniswapUniversalRouterAdapter, "permit2", deployment.permit2),
         binding(deployment.uniswapV4StateView, "poolManager", deployment.uniswapV4PoolManager),
         binding(deployment.universalRouter, "poolManager", deployment.uniswapV4PoolManager),
       ]);
-      for (const adapter of [deployment.uniswapV3Adapter, deployment.uniswapV4Adapter]) {
+      for (const adapter of [deployment.uniswapUniversalRouterAdapter]) {
+        if (await client.readContract({ address: adapter, abi: bindings, functionName: "v3PoolInitCodeHash" }) !== V3_POOL_INIT_CODE_HASH) throw new Error("Mainnet V3 pool init-code hash mismatch.");
         if (!await client.readContract({ address: deployment.entryRouter, abi: bindings, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Mainnet swap adapter is not approved.");
       }
     },

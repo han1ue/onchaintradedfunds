@@ -1,3 +1,4 @@
+import { decodeUniversalRouteData, universalRouteData } from "./universal-route";
 import { getAddress, maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { uniswapBasketRoutes } from "./uniswap-basket-routes";
@@ -28,13 +29,13 @@ describe("Uniswap basket route translation", () => {
     first.tokenOut.address = v4First ? zeroAddress : C;
     last.tokenIn.address = v4First ? C : zeroAddress;
     Object.assign(v4First ? first : last, { type: "v4-pool", tickSpacing: 60, hooks: zeroAddress });
-    const dependencies = { ...options(response), weth: C, v4Adapter: addr(6), authenticateV4Pool: vi.fn(async () => {}) };
+    const dependencies = { ...options(response), weth: C, authenticateV4Pool: vi.fn(async () => {}) };
     const quote = await uniswapBasketRoutes(dependencies).quote("EXACT_INPUT", A, B, 10000n);
     expect(quote.legs).toHaveLength(2);
     expect(quote.legs[0]!.tokenOut).toBe(C);
     expect(quote.legs[1]).toMatchObject({ tokenIn: C, amountIn: maxUint256 });
     const v4Leg = quote.legs[v4First ? 0 : 1]!;
-    expect(v4First ? parseV4Path(v4Leg.data)[0]!.tokenOut : parseV4Path(v4Leg.data)[0]!.tokenIn).toBe(zeroAddress);
+    expect(v4First ? parseV4Path(decodeUniversalRouteData(v4Leg.data).path)[0]!.tokenOut : parseV4Path(decodeUniversalRouteData(v4Leg.data).path)[0]!.tokenIn).toBe(zeroAddress);
     await expect(uniswapBasketRoutes({ ...dependencies, reservedTokens: [C] }).quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
   });
 
@@ -53,7 +54,7 @@ describe("Uniswap basket route translation", () => {
           fee: "3000", tickSpacing: 60, hooks: zeroAddress }]],
       } };
     });
-    const quote = await uniswapBasketRoutes({ ...options(), weth: A, v4Adapter: addr(6), authenticateV4Pool: async () => {}, requestQuote }).quote(type, A, B, 10000n);
+    const quote = await uniswapBasketRoutes({ ...options(), weth: A, authenticateV4Pool: async () => {}, requestQuote }).quote(type, A, B, 10000n);
     expect(requestQuote).toHaveBeenCalledTimes(fallback ? 2 : 1);
     expect(requestQuote.mock.calls[0]![0].tokenIn).toBe(A);
     expect(quote.legs[0]!.tokenIn).toBe(A);
@@ -63,7 +64,7 @@ describe("Uniswap basket route translation", () => {
 
   it.each(["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "POOL_VALIDATION_FAILED"] as const)("does not issue an ETH request after %s", async (code) => {
     const requestQuote = vi.fn(async () => { throw new QuoteFailure(code); });
-    const routes = uniswapBasketRoutes({ ...options(), weth: A, v4Adapter: addr(6), requestQuote });
+    const routes = uniswapBasketRoutes({ ...options(), weth: A, requestQuote });
     await expect(routes.quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
     expect(requestQuote).toHaveBeenCalledTimes(1);
   });
@@ -71,7 +72,7 @@ describe("Uniswap basket route translation", () => {
   it("accepts a native V4 pool returned for a WETH endpoint without a second request", async () => {
     const response = fixture();
     Object.assign(response.quote.route[0]![0]!, { type: "v4-pool", tokenIn: { address: zeroAddress, chainId: 4663 }, tickSpacing: 60, hooks: zeroAddress });
-    const deps = { ...options(response), weth: A, v4Adapter: addr(6), authenticateV4Pool: async () => {} };
+    const deps = { ...options(response), weth: A, authenticateV4Pool: async () => {} };
     const quote = await uniswapBasketRoutes(deps).quote("EXACT_INPUT", A, B, 10000n);
     expect(deps.requestQuote).toHaveBeenCalledTimes(1);
     expect(quote.legs[0]!.tokenIn).toBe(A);
@@ -113,7 +114,7 @@ describe("Uniswap basket route translation", () => {
   it("preserves a multi-hop path and authenticates every pool", async () => {
     const deps = options();
     const quote = await uniswapBasketRoutes(deps).quote("EXACT_INPUT", A, B, 10000n);
-    expect(quote.legs).toMatchObject([{ data: encodeV3Path([A, C, B], [3000, 500]), amountIn: maxUint256, minAmountOut: 19900n }]);
+    expect(quote.legs).toMatchObject([{ data: universalRouteData(3, encodeV3Path([A, C, B], [3000, 500])), amountIn: maxUint256, minAmountOut: 19900n }]);
     expect(deps.authenticatePool.mock.calls).toEqual([[A, C, 3000, addr(10)], [C, B, 500, addr(11)]]);
   });
 

@@ -58,3 +58,45 @@ describe("registered multi-pool routing",()=>{
     expect(tx.value).toBe(0n);
   });
 });
+
+describe("shared mint prefixes", () => {
+  const make = (reason?: string, version: 3 | 4 = 3) => {
+    const shared = { ...pool(1,1,2,version), address: addr(101) };
+    const leaves = [3,4,5,6,7].map(i => ({ ...pool(i,2,i,version), address:addr(100+i) }));
+    if (reason === "hook") shared.hooks = addr(77);
+    const quoteSegment = vi.fn(async (segment:RouteSegment, type:"EXACT_INPUT"|"EXACT_OUTPUT", amount:bigint) => {
+      if (segment.hops.length === 1 && segment.hops[0].pool.id === "1" && amount > 40_000n) {
+        if (reason === "failed") throw new Error("quote unavailable");
+        if (reason === "worse") return { amount:amount/2n };
+      }
+      return { amount };
+    });
+    return { routes:registeredBasketRoutes({pools:[shared,...leaves],chainId:4663,weth:addr(9),adapter:addr(90),slippageBps:50,
+      authenticate:async()=>{},withinTradeSize:async()=>reason!=="size",quoteSegment}),quoteSegment };
+  };
+  it.each([3,4] as const)("combines five V%s two-hop routes into six swaps with bounded allocations", async version => {
+    const {routes,quoteSegment}=make(undefined,version);
+    const original=(await Promise.all([3,4,5,6,7].map(i=>routes.quote("EXACT_OUTPUT",addr(1),addr(i),10_001n)))).flatMap(q=>q.legs);
+    const merged=await routes.optimizeMint!(original);
+    expect(merged).toHaveLength(6);
+    expect(merged.reduce((count,leg)=>count+leg.hops.length,0)).toBe(6);
+    expect(merged[0].amountIn).toBe(original.reduce((sum,leg)=>sum+leg.amountIn,0n));
+    expect(merged.slice(1).reduce((sum,leg)=>sum+leg.amountIn,0n)).toBe(merged[0].minAmountOut);
+    expect(merged.slice(1).map(leg=>leg.minAmountOut)).toEqual(original.map(leg=>leg.minAmountOut));
+    expect(merged.slice(1).every(leg=>leg.amountIn>=leg.minAmountOut)).toBe(true);
+    expect(quoteSegment.mock.calls.some(([s,t,a])=>s.hops.length===1 && t==="EXACT_INPUT" && a===merged[0].amountIn)).toBe(true);
+  });
+  it.each(["hook","failed","worse"])("retains the complete original plan for %s combined routes", async reason => {
+    const {routes}=make(reason,reason==="hook"?4:3);
+    const original=(await Promise.all([3,4,5,6,7].map(i=>routes.quote("EXACT_OUTPUT",addr(1),addr(i),10_001n)))).flatMap(q=>q.legs);
+    expect(await routes.optimizeMint!(original)).toBe(original);
+  });
+  it("does not merge repeated downstream pools or unrelated legs", async()=>{
+    const {routes}=make();
+    const first=await routes.quote("EXACT_OUTPUT",addr(1),addr(3),10_001n);
+    const repeated=[first.legs[0],first.legs[0]];
+    expect(await routes.optimizeMint!(repeated)).toBe(repeated);
+    const copied=first.legs.map(leg=>({...leg}));
+    expect(await routes.optimizeMint!(copied)).toBe(copied);
+  });
+});

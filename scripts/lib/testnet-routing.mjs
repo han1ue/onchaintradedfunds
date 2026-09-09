@@ -1,13 +1,12 @@
 import { createRequire } from "node:module";
+import { compileUniversalRouter, verifyUniversalRouter } from "./universal-router.mjs";
 
 const appRequire = createRequire(new URL("../../app/package.json", import.meta.url));
 const { keccak256 } = appRequire("viem");
 
 export function assertTestnetDeploymentEncoding(pin) {
-  const fields = ["Currency currencyIn;", "PathKey[] path;", "uint256[] minHopPriceX36;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
-  if (JSON.stringify(pin.universalRouterSource?.exactInputParams) !== JSON.stringify(fields)) {
-    throw new Error("Testnet Universal Router must use the canonical five-field exact-input tuple");
-  }
+  if (pin.chainId !== 46630) throw new Error("Wrong testnet chain");
+  compileUniversalRouter();
 }
 
 export function assertTestnetRoutingConfiguration(config, pin) {
@@ -22,10 +21,6 @@ export function assertTestnetRoutingConfiguration(config, pin) {
       throw new Error(`${name} differs from the validated testnet code hash`);
     }
   }
-  const expectedFields = ["Currency currencyIn;", "PathKey[] path;", "uint256[] minHopPriceX36;", "uint128 amountIn;", "uint128 amountOutMinimum;"];
-  if (JSON.stringify(pin.universalRouterSource.exactInputParams) !== JSON.stringify(expectedFields)) {
-    throw new Error("Testnet Universal Router must use the canonical five-field exact-input tuple");
-  }
 }
 
 export async function verifyTestnetRoutingRuntime(client, config, pin, blockNumber) {
@@ -35,10 +30,11 @@ export async function verifyTestnetRoutingRuntime(client, config, pin, blockNumb
     const code = await retryStateRead(() => client.getCode({
       address: expected.address, ...(blockNumber === undefined ? {} : { blockNumber }),
     }));
-    if (!code || code === "0x" || keccak256(code) !== expected.codehash) {
+    if (!code || code === "0x" || (expected.codehash && keccak256(code) !== expected.codehash)) {
       throw new Error(`${name} runtime differs from the validated testnet bytecode`);
     }
   }));
+  await verifyUniversalRouter(client, config);
 }
 
 async function retryStateRead(read) {

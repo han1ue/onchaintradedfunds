@@ -1,6 +1,6 @@
 # Solidity properties and campaign replay
 
-These tests follow `docs/content/protocol-security-spec.mdx`. Production contracts are unchanged.
+These tests follow `docs/content/protocol-security-spec.mdx`.
 
 | Property | Test or harness |
 | --- | --- |
@@ -13,7 +13,7 @@ These tests follow `docs/content/protocol-security-spec.mdx`. Production contrac
 | Stored fee accounts, both settlement methods, repeated settlement, shutdown settlement, payout/burn deltas, unsolicited shares, preserved balances and cleared allowances | `ComposedProtocolHandler.settle`, `rejectRepeatedSettlement`, `rejectSettlement`, `assertModel` |
 | Max-mint affordability/maximality, execution agreement, clone runtime/configuration and rejected creation rollback | `ArithmeticAndFactoryProperties.t.sol` |
 | Independent fee growth and identical economic schedules with different checkpoint cadence | `testFuzzFeeGrowthIndependentReference`, `testFeeGrowthTimeAndRateEdges`, `testFuzzCheckpointCadenceIdenticalEconomicSchedule` |
-| Generated one/two/three-hop V3/V4 paths, intermediate-asset permutations, exact/all-balance leg modes, input boundaries and second-leg rollback | `TypedUniswapV3Venue.t.sol`, `UniswapV4Adapter.t.sol` generated route properties |
+| V3/V4 batches, shared intermediates, independent pairs, repeated tokens, native boundaries, invalid amounts and atomic rollback | `UniswapUniversalRouterAdapter.t.sol`; real pools in `test/fork/MainnetMarkets.t.sol` and `MainnetRouting.t.sol` |
 | Real V4, both currency orders, several payers/recipients, native-output sells and router balance baselines | `OTFLaunchV4Invariant.t.sol` |
 | Reachable bootstrap, ready and graduated phases; locked permanent position; external LP authorization | Launch phase fixtures, setup reachability assertions and `testBootstrapActionsAreReachable` |
 | Generated 4/8/16-leaf trees, skipped publications, cumulative claims, recipients, chain/distributor domains and funding rollback | `MerkleRewardsDistributor.t.sol` generated properties |
@@ -38,27 +38,8 @@ Each campaign writes a manifest and full Forge log under `test-results/campaign/
 
 The PR workflow retains its fixed seed and removes redundant large fixed-seed sweeps. The changing-seed workflow runs twice weekly or on demand. Campaign sizes should be adjusted using measured execution cost and action reachability.
 
-The final replay used seed `0x84c148f2f5c58c812b23255eee6e842609cd0b8f1a404b8078209e57aa591762`. Its [manifest](../test-results/campaign/2026-09-06T22-48-00-441Z-84c148f2/manifest.json) records the final source fingerprint and complete command arguments. Set `CAMPAIGN_SEED` to this value and run `node scripts/run-solidity-campaign.mjs` to replay both profiles.
-
-| Command/check | Observed result |
-| --- | --- |
-| `node scripts/run-solidity-campaign.mjs`, default | 194 passed; 21 fuzz properties at 1,000 runs; six invariants at 128 runs, 8,192 calls, depth 64 and zero unexpected reverts each. 348.83 seconds, including 320.06 seconds compiling. |
-| Same command, integration | 46 passed; two fuzz properties at 64 runs; 15 invariants at 128 runs, 8,192 calls, depth 64 and zero unexpected reverts each. 219.18 seconds, including 193.66 seconds compiling. |
-| `node scripts/check-invariant-sensitivity.mjs` | Both handler assertion and unexpected-revert sentinels made Forge exit 1 in both profiles: four confirmed failures. |
-| `node scripts/check-contract-security.mjs` | Passed solhint, compilation, static checks and size checks. The local Foundry build used `FOUNDRY_TEST=src`; tests ran separately above. |
-| `node scripts/generate-contract-abis.mjs`; generated-package typecheck | Twelve ABI exports generated; `corepack pnpm --filter @onchaintradedfunds/generated typecheck` passed. |
-| `node --test scripts/lib/testnet-routing.test.mjs scripts/lib/mainnet-routing.test.mjs` | 21 passed. |
-| `node scripts/verify-mainnet-routing.mjs` | 23 runtime checks and 18 fork tests passed at block 56,320,801. [Pinned block and dependency report](../test-results/mainnet-validation.json). |
-| `forge fmt --root contracts --check`; Node syntax and workflow YAML checks | Passed. |
-
-For example, the final composed campaign attempted each of its nine selectors 874–931 times. Its final 64-call sequence recorded 25 successful operations, six expected rejections and 33 no-ops. The deterministic lifecycle separately required four repeated-settlement rejections, covering both vaults before and after shutdown. These observations support retaining the measured 128 × 64 size; they also show why increasing attempts alone would overstate useful state transitions.
-
 Coverage is advisory. `check-contract-coverage.mjs` writes LCOV for locating unvisited production lines and a summary using `--ir-minimum`; those source mappings are approximate. Test failures now fail the coverage command. Inspect missed functions and branches against the property map rather than treating a percentage as a correctness claim. Its fixed-seed defaults are 64 fuzz cases and 8 invariant runs at depth 32. `COVERAGE_SEED`, `FOUNDRY_FUZZ_RUNS`, `FOUNDRY_INVARIANT_RUNS` and `FOUNDRY_INVARIANT_DEPTH` override these settings. Default coverage omits real V4 tests, matching the default Foundry profile. Use `COVERAGE_PROFILE=integration` with `COVERAGE_MATCH_PATH=contracts/test/OTFLaunchV4*.t.sol` for a separate real V4 pass; `COVERAGE_REPORT_FILE` preserves a separate report.
 
-The final default coverage pass executed 194 tests successfully in 189.70 seconds, including 180.13 seconds of compilation. Its [LCOV report](../test-results/solidity-coverage.lcov) identifies unvisited metadata entry points (`tokenURI`, `otfTokenURI`) and `TeamMarketCapVesting.nextMilestone`. Flagged guard branches include malformed dependency responses, reentrancy guards, unusual approval/transfer behavior and some router settlement-delta mismatches. These combinations remain gaps in the generated properties.
-
-The separate [real V4 coverage report](../test-results/solidity-v4-coverage.lcov) executed 46 tests successfully in 380.05 seconds, including 320.75 seconds compiling. It records calls to all launch router and deployer functions. Launch manager reporting helpers `currentOtfPriceWethWad`, `currentLaunchReferenceFdvWeth` and `bootstrapProgress` remain unvisited. Read the two reports together: each selects different tests. Some individual IR lines, including the bootstrap-position burn call, show zero hits despite successful graduation assertions; their source mappings cannot establish an omission by themselves.
-
-Remaining limits: venue mocks authenticate route structure and model endpoint settlement at a fixed rate; they do not model real multi-hop market pricing. The launch suite supplies the real V4 coverage, while existing V3 integration and mainnet fork suites cover separate venue assumptions. Generated V3 amounts stop at uint128-max; wider uint256 inputs remain outside this campaign. The stateful vault clock stops at ten years. Arithmetic reference checks extend to 100 years; zero-rate checks span uint64 timestamps, and positive rates reject an unrepresentable uint64-max horizon. Representable nonzero-rate horizons beyond 100 years remain outside the reference campaign.
+Remaining limits: The adapter suite uses the pinned Universal Router with deterministic V3 pools and real V4 pools. Mainnet fork tests retain deployed venue code and real stock liquidity. Finite adapter amounts are bounded to uint128; the uint256 maximum is reserved for the current operation's entire token balance. The stateful vault clock stops at ten years. Arithmetic reference checks extend to 100 years; zero-rate checks span uint64 timestamps, and positive rates reject an unrepresentable uint64-max horizon. Representable nonzero-rate horizons beyond 100 years remain outside the reference campaign.
 
 Rewards tests cover onchain cumulative claims; the publisher's emissions schedule, eligibility and allocation policy remain offchain. Vesting properties follow spot-price semantics. The composed fee ledger uses the vault's annual-fee preview, which the separate vault and arithmetic suites check against the independent reference.

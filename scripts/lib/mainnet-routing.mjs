@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 
 const { keccak256 } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
 const requiredDependencies = [
-  "weth", "uniswapV3Factory", "uniswapV3SwapRouter02", "uniswapV4PoolManager",
+  "weth", "uniswapV3Factory", "uniswapV4PoolManager",
   "uniswapV4StateView", "uniswapV4PositionManager", "uniswapUniversalRouter", "permit2",
 ];
 

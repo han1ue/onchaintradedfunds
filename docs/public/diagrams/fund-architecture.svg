@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="1100" viewBox="0 0 960 1100" role="img" aria-labelledby="title description">
   <title id="title">Onchain Traded Funds: fund architecture</title>
-  <desc id="description">The application converts offchain prices and creator weights into raw basket units. The creator calls OTFFactory, which deploys and registers a ManagedOTFVault clone. Holders mint or redeem through OTFEntryExitRouter, which settles the basket with the vault and calls approved Uniswap V3 or V4 trade adapters. Those adapters execute swaps through SwapRouter02 or Universal Router. Holders can also call the vault directly to redeem in kind. The vault holds the ERC-20 basket, accounts for balances, issues fund shares, and stores fixed fees and the fund thesis. Arrows show calls, not the direction of token transfers.</desc>
+  <desc id="description">The application converts offchain prices and creator weights into raw basket units. The creator calls OTFFactory, which deploys and registers a ManagedOTFVault clone. Holders mint or redeem through OTFEntryExitRouter, which settles the basket with the vault and submits ordered batches to UniswapUniversalRouterAdapter. It validates V3 and V4 paths and executes them through Universal Router. Holders can also call the vault directly to redeem in kind. The vault holds the ERC-20 basket, accounts for balances, issues fund shares, and stores fixed fees and the fund thesis. Arrows show calls, not the direction of token transfers.</desc>
   <style>
     :root {
       --background: #0e1218;
@@ -89,19 +89,13 @@
   <text x="488" y="570" class="label accent">Settle basket</text>
 
   <!-- Only approved ITradeAdapter implementations execute swap legs. -->
-  <path d="M224 656V782" class="call settlement"/>
-  <path d="M224 720H736V782" class="call settlement"/>
-  <circle cx="224" cy="720" r="4" fill="var(--accent)"/>
-  <text x="480" y="701" class="label accent">Approved swap adapters</text>
+  <path d="M224 656V720H480V782" class="call settlement"/>
+  <text x="480" y="701" class="label accent">Approved batch adapter</text>
   <text x="480" y="750" class="label">ITradeAdapter</text>
 
-  <rect x="48" y="784" width="352" height="96" rx="8" class="node"/>
-  <text x="72" y="824" class="name">UniswapV3Adapter</text>
-  <text x="72" y="857" class="note">Validates V3 swap paths</text>
-
-  <rect x="560" y="784" width="352" height="96" rx="8" class="node"/>
-  <text x="584" y="824" class="name">UniswapV4Adapter</text>
-  <text x="584" y="857" class="note">Validates V4 pool-key paths</text>
+  <rect x="48" y="784" width="864" height="96" rx="8" class="node"/>
+  <text x="480" y="824" class="name" text-anchor="middle">UniswapUniversalRouterAdapter</text>
+  <text x="480" y="857" class="note" text-anchor="middle">Validates V3 paths and V4 pool keys; preserves ordered dependencies</text>
 
   <path d="M224 880V950" class="call"/>
   <path d="M736 880V950" class="call"/>
@@ -109,7 +103,7 @@
   <path d="M48 915H178M270 915H365M595 915H690M782 915H912" class="rule" stroke-dasharray="4 6"/>
 
   <text x="224" y="985" class="name" text-anchor="middle">Uniswap V3</text>
-  <text x="224" y="1016" class="note" text-anchor="middle">SwapRouter02</text>
+  <text x="224" y="1016" class="note" text-anchor="middle">Universal Router</text>
   <text x="736" y="985" class="name" text-anchor="middle">Uniswap V4</text>
   <text x="736" y="1016" class="note" text-anchor="middle">Universal Router</text>
 

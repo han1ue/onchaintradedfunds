@@ -97,18 +97,21 @@ The router lets you mint from one input asset or redeem into one output asset by
 
 The router owner approves and revokes adapters. Each approved adapter must be bound to that router, and revocation takes effect immediately. Users rely on the owner to approve safe adapter code.
 
-The current adapters support Uniswap V3 and V4:
+The router groups consecutive trades for one adapter into a batch. It preserves their order, including dependencies between different adapters. The generic interface accepts multiple input and output tokens; the entry router reconciles returned amounts against its actual balances.
 
-- `UniswapV3Adapter` accepts packed paths of at most three hops and authenticates each pool against its immutable factory.
-- `UniswapV4Adapter` accepts typed pool-key paths of at most three hops and checks initialized pools through its immutable StateView.
+`UniswapUniversalRouterAdapter` builds one command sequence per batch using Universal Router 2.1.1. Route data starts with `0x03` for a packed V3 path or `0x04` for an encoded V4 currency and pool-key path. Each trade permits at most three hops; a batch permits 40 trades. V3 validation checks factory membership, pool properties, and the CREATE2 address derived from the configured pool init-code hash. V4 validation checks initialized pool keys through StateView and bounds hook data.
 
-Both adapters restrict recipients, clear temporary allowances, and preserve pre-existing balances. Each adapter validates its venue's path format.
+The adapter fixes recipients, enforces minimum outputs, clears temporary allowances, and preserves earlier contract balances. It prefunds the Universal Router with this operation's tokens. Intermediate outputs can fund later commands; unused tokens return through the entry router.
+
+For supported two-hop mint routes, the planner can combine a shared first pool and keep each downstream pool distinct. It quotes the total first-swap input and each downstream requirement. Half the quoted intermediate surplus strengthens the first-swap price tolerance; the other half increases downstream budgets. Those budgets follow quoted downstream costs, with the final trade receiving integer rounding residue. Original constituent minimums remain mandatory. Failed quotes, excessive price impact, repeated downstream pools, or V4 hooks retain the original route.
+
+A combined route can change minted shares and the composition of refunds. The application simulates the complete plan before offering execution.
 
 ### Native ETH boundary
 
 For basket entry and exit, `mintFromNative` wraps the exact ETH input to canonical WETH and refunds WETH change as ETH. `redeemToNative` sells constituents for WETH, checks the minimum output, and unwraps it to ETH for the caller. A failed payout reverts the transaction.
 
-Vaults, adapter legs, pools, and buybacks use ERC-20 tokens. The router preserves pre-existing ETH and WETH and accepts callback ETH only from canonical WETH.
+Vaults and adapter trade boundaries use ERC-20 tokens. V4 pools may use native ETH; the adapter wraps or unwraps it within the command sequence. The router preserves pre-existing ETH and WETH and accepts callback ETH only from canonical WETH.
 
 ## Application execution
 

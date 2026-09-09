@@ -10,8 +10,7 @@ import { OTFFactory } from "../../src/OTFFactory.sol";
 import { ManagedOTFVault } from "../../src/ManagedOTFVault.sol";
 import { BuybackCollector } from "../../src/BuybackCollector.sol";
 import { OTFEntryExitRouter } from "../../src/OTFEntryExitRouter.sol";
-import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
-import { UniswapV4Adapter } from "../../src/UniswapV4Adapter.sol";
+import { UniswapUniversalRouterAdapter } from "../../src/UniswapUniversalRouterAdapter.sol";
 import { TeamMarketCapVesting } from "../../src/TeamMarketCapVesting.sol";
 import { MerkleRewardsDistributor } from "../../src/MerkleRewardsDistributor.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -38,7 +37,6 @@ abstract contract MainnetRehearsalBase is Test {
     address internal universalRouter;
     address internal permit2;
     address internal v3Factory;
-    address internal v3Router;
     RehearsalWeth internal weth;
     RehearsalOracle internal oracle;
     uint256 internal oracleMaxAge;
@@ -51,8 +49,7 @@ abstract contract MainnetRehearsalBase is Test {
     OTFFactory internal factory;
     ManagedOTFVault internal implementation;
     OTFEntryExitRouter internal router;
-    UniswapV3Adapter internal v3Adapter;
-    UniswapV4Adapter internal v4Adapter;
+    UniswapUniversalRouterAdapter internal universalAdapter;
     TeamMarketCapVesting internal vesting;
     MerkleRewardsDistributor internal rewards;
     bytes32 internal launchSalt;
@@ -70,7 +67,6 @@ abstract contract MainnetRehearsalBase is Test {
         universalRouter = _pinned(routing, ".dependencies.uniswapUniversalRouter");
         permit2 = _pinned(routing, ".dependencies.permit2");
         v3Factory = _pinned(routing, ".dependencies.uniswapV3Factory");
-        v3Router = _pinned(routing, ".dependencies.uniswapV3SwapRouter02");
         weth = RehearsalWeth(_pinned(routing, ".dependencies.weth"));
         oracle = RehearsalOracle(_pinned(rehearsal, ".oracle"));
         assertEq(oracle.aggregator(), _pinned(rehearsal, ".oracle.aggregator"));
@@ -154,18 +150,7 @@ abstract contract MainnetRehearsalBase is Test {
                     abi.encode(address(factory), administrator, address(weth))
                 ))
         );
-        v3Adapter = UniswapV3Adapter(
-            deployCode(
-                "UniswapV3Adapter.sol:UniswapV3Adapter",
-                abi.encode(address(router), v3Factory, v3Router)
-            )
-        );
-        v4Adapter = UniswapV4Adapter(
-            payable(deployCode(
-                    "UniswapV4Adapter.sol:UniswapV4Adapter",
-                    abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
-                ))
-        );
+        universalAdapter = UniswapUniversalRouterAdapter(deployCode("UniswapUniversalRouterAdapter.sol:UniswapUniversalRouterAdapter", abi.encode(address(router), v3Factory, bytes32(0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54), poolManager, stateView, universalRouter, permit2)));
         vesting = TeamMarketCapVesting(
             deployCode(
                 "TeamMarketCapVesting.sol:TeamMarketCapVesting",
@@ -187,8 +172,7 @@ abstract contract MainnetRehearsalBase is Test {
 
         // The administrator is deliberately different from the deployer.
         vm.startPrank(administrator);
-        router.setAdapterApproved(address(v3Adapter), true);
-        router.setAdapterApproved(address(v4Adapter), true);
+        router.setAdapterApproved(address(universalAdapter), true);
         vm.stopPrank();
     }
 

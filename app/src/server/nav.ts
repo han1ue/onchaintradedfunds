@@ -15,12 +15,14 @@ const LOG_RANGE = 10_000n;
 const MAX_LOG_RANGES = 20;
 
 export async function collectFundSnapshots(chainId: number) {
-  return withCollectorLease(`funds:${chainId}`, async (leaseToken) => {
+  const factory = protocolDeploymentForChain(chainId)?.addresses.factory;
+  if (!factory) return { discovered: 0, snapshots: 0, unavailable: "FACTORY_NOT_DEPLOYED" };
+  // A replacement factory starts discovery from its own creation block.
+  const job = `funds:${chainId}:${factory.toLowerCase()}`;
+  return withCollectorLease(job, async (leaseToken) => {
     const { sql, schema } = database();
     const started=Date.now();
-    const fence=()=>sql.query(`SELECT ${schema}.require_collector_lease($1,$2)`,[`funds:${chainId}`,leaseToken]);
-    const factory = protocolDeploymentForChain(chainId)?.addresses.factory;
-    if (!factory) return { discovered: 0, snapshots: 0, unavailable: "FACTORY_NOT_DEPLOYED" };
+    const fence=()=>sql.query(`SELECT ${schema}.require_collector_lease($1,$2)`,[job,leaseToken]);
     const client = chainClient(chainId);
     if (await client.getChainId() !== chainId) throw new Error("WRONG_CHAIN");
     const latest = await client.getBlockNumber();
@@ -42,10 +44,10 @@ export async function collectFundSnapshots(chainId: number) {
         sql.query(`UPDATE ${schema}.collector_blocks SET canonical=false WHERE chain_id=$1 AND block_number>$2`,[chainId,ancestor.toString()]),
         sql.query(`UPDATE ${schema}.funds SET canonical=false WHERE chain_id=$1 AND creation_block>$2`,[chainId,ancestor.toString()]),
         sql.query(`UPDATE ${schema}.asset_prices p SET quality='invalid' FROM ${schema}.asset_price_sources s WHERE p.source_id=s.id AND s.chain_id=$1 AND p.block_number>$2`,[chainId,ancestor.toString()]),
-        sql.query(`UPDATE ${schema}.collector_progress SET block_number=least(block_number,$2::numeric) WHERE job=$1`,[`funds:${chainId}`,ancestor.toString()]),
+        sql.query(`UPDATE ${schema}.collector_progress SET block_number=least(block_number,$2::numeric) WHERE job=$1`,[job,ancestor.toString()]),
       ]);
     }
-    const [progress] = await sql.query(`SELECT block_number::text FROM ${schema}.collector_progress WHERE job=$1`,[`funds:${chainId}`]);
+    const [progress] = await sql.query(`SELECT block_number::text FROM ${schema}.collector_progress WHERE job=$1`,[job]);
     const manifest = chainId === 46630 ? testnetDeployment : mainnetDeployment;
     const contracts = ("contracts" in manifest ? manifest.contracts : manifest.protocolContracts) as Record<string,{blockNumber?: string}>;
     const deploymentBlock = contracts.factory?.blockNumber;
@@ -65,7 +67,7 @@ export async function collectFundSnapshots(chainId: number) {
         discovered++;
       }
       const endBlock = await client.getBlock({blockNumber:to});
-      writes.push(sql.query(`UPDATE ${schema}.collector_progress SET block_number=$2,block_hash=$3 WHERE job=$1 AND lease_token=$4 AND lease_until>clock_timestamp()`,[`funds:${chainId}`,to.toString(),endBlock.hash,leaseToken]));
+      writes.push(sql.query(`UPDATE ${schema}.collector_progress SET block_number=$2,block_hash=$3 WHERE job=$1 AND lease_token=$4 AND lease_until>clock_timestamp()`,[job,to.toString(),endBlock.hash,leaseToken]));
       writes.push(sql.query(`INSERT INTO ${schema}.collector_blocks(chain_id,block_number,block_hash) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,[chainId,to.toString(),endBlock.hash]));
       await sql.transaction(writes);
       from=to+1n;
@@ -100,7 +102,7 @@ export async function collectFundSnapshots(chainId: number) {
           INSERT INTO ${schema}.snapshot_holdings(snapshot_id,asset_address,accounted_amount,bootstrap_amount,decimals,price_id)
           SELECT i.id,h.address,h.amount::numeric,h.bootstrap::numeric,h.decimals,h."priceId"::bigint FROM inserted i,
           jsonb_to_recordset($12::jsonb) AS h(address text,amount text,bootstrap text,decimals smallint,"priceId" text)`,
-        [chainId,address.toLowerCase(),slot,block.number.toString(),block.hash,blockAt,supply.toString(),values?.totalNavUsd??null,values?.navPerShareUsd??null,values?.bootstrapNavUsd??null,complete?supply===0n?"bootstrap":"ready":"unpriced",JSON.stringify(holdingsJson),`funds:${chainId}`,leaseToken]),
+        [chainId,address.toLowerCase(),slot,block.number.toString(),block.hash,blockAt,supply.toString(),values?.totalNavUsd??null,values?.navPerShareUsd??null,values?.bootstrapNavUsd??null,complete?supply===0n?"bootstrap":"ready":"unpriced",JSON.stringify(holdingsJson),job,leaseToken]),
         sql.query(`INSERT INTO ${schema}.collector_blocks(chain_id,block_number,block_hash) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,[chainId,block.number.toString(),block.hash]),
       ]);
       snapshots++; if (!complete) unpriced++;

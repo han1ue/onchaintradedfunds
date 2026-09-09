@@ -24,13 +24,13 @@ describe("canonical testnet OTF basket quotes", () => {
   it.each(["EXACT_INPUT", "EXACT_OUTPUT"] as const)("quotes %s against the authenticated canonical pool", async (type) => {
     const rpc = reader();
     const client = testnetOtfRouting(rpc as unknown as PublicClient);
-    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapV4Adapter!);
+    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapUniversalRouterAdapter!);
     expect(await client.quoteOtf(type, true, 100n)).toBe(123n);
     const { args, functionName } = decodeFunctionData({ abi: otfQuoterAbi, data: rpc.call.mock.calls[0]![0].data });
     expect(functionName).toBe(type === "EXACT_INPUT" ? "quoteExactInputSingle" : "quoteExactOutputSingle");
     expect(args[0]).toMatchObject({ exactAmount: 100n, hookData: "0x", zeroForOne: BigInt(addresses.weth!) < BigInt(addresses.otfToken!), poolKey: { hooks: addresses.launchManager, fee: 0, tickSpacing: 1 } });
     rpc.readContract.mockClear();
-    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapV4Adapter!);
+    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapUniversalRouterAdapter!);
     expect(rpc.readContract).not.toHaveBeenCalled();
   });
 
@@ -40,7 +40,7 @@ describe("canonical testnet OTF basket quotes", () => {
   ])("rejects stale or unapproved dependencies before quoting: %j", async (overrides) => {
     const rpc = reader(overrides);
     const client = testnetOtfRouting(rpc as unknown as PublicClient);
-    await expect(client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapV4Adapter!)).rejects.toThrow();
+    await expect(client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapUniversalRouterAdapter!)).rejects.toThrow();
     await expect(client.quoteOtf("EXACT_INPUT", true, 100n)).rejects.toThrow();
     expect(rpc.call).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe("canonical testnet OTF basket quotes", () => {
     const rpc = reader();
     const client = testnetOtfRouting(rpc as unknown as PublicClient);
     await expect(client.quoteOtf("EXACT_INPUT", true, 100n)).rejects.toThrow("bindings");
-    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapV4Adapter!);
+    await client.verifyOtfBindings(addresses.entryRouter!, addresses.uniswapUniversalRouterAdapter!);
     for (const amount of [0n, -1n, 1n << 128n]) await expect(client.quoteOtf("EXACT_OUTPUT", true, amount)).rejects.toThrow("limits");
     expect(rpc.call).not.toHaveBeenCalled();
   });

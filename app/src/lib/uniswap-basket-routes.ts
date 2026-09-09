@@ -4,6 +4,7 @@ import { MAX_SWAP_LEGS, type AdapterSwapLeg } from "./swap-model";
 import { routeFrom } from "./v3-route";
 import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4-route";
 import { quoteFailureCode, quoteStep } from "./quote-errors";
+import { universalRouteData } from "./universal-route";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -26,7 +27,6 @@ export function uniswapBasketRoutes(options: {
   chainId: number;
   router: Address;
   adapter: Address;
-  v4Adapter?: Address;
   weth: Address;
   reservedTokens?: readonly Address[];
   slippageBps: number;
@@ -42,7 +42,7 @@ export function uniswapBasketRoutes(options: {
       tokenInChainId: options.chainId, tokenOutChainId: options.chainId,
       swapper: options.router, recipient: options.router,
       slippageTolerance: options.slippageBps / 100,
-      protocols: options.v4Adapter ? ["V3", "V4"] : ["V3"], routingPreference: "BEST_PRICE",
+      protocols: ["V3", "V4"], routingPreference: "BEST_PRICE",
     })));
     if (response.routing !== "CLASSIC") throw new Error("Basket routing requires CLASSIC pool routes.");
     const quote = record(response.quote);
@@ -94,7 +94,7 @@ export function uniswapBasketRoutes(options: {
           if (!Number.isInteger(fee) || fee <= 0 || fee >= 1_000_000) throw new Error("Invalid V3 fee.");
           await quoteStep("POOL_VALIDATION_FAILED", () => options.authenticatePool(current, next, fee, address(pool.address)));
         } else {
-          if (!options.v4Adapter || !options.authenticateV4Pool) throw new Error("V4 routing is not configured.");
+          if (!options.authenticateV4Pool) throw new Error("V4 routing is not configured.");
           const hookData = pool.hookData ?? "0x";
           if (typeof hookData !== "string" || !/^0x(?:[a-fA-F0-9]{2})*$/.test(hookData) || hookData.length > 2050) throw new Error("Invalid V4 hook data.");
           const hop: V4PathKey = { intermediateCurrency: next, fee, tickSpacing: Number(pool.tickSpacing), hooks: address(pool.hooks, true), hookData: hookData as Hex };
@@ -126,9 +126,9 @@ export function uniswapBasketRoutes(options: {
         if (v4 && ((first && budget > (1n << 128n) - 1n) || minimum > (1n << 128n) - 1n)) throw new Error("V4 amount exceeds adapter limits.");
         const data = v4 ? encodeV4Path(input, segment.path) : routeFrom(segment.tokens, segment.fees).path;
         return {
-          adapter: v4 ? options.v4Adapter! : options.adapter, tokenIn: boundary(input), tokenOut: boundary(output),
+          adapter: options.adapter, tokenIn: boundary(input), tokenOut: boundary(output),
           amountIn: !first || (type === "EXACT_INPUT" && index === splits.length - 1) ? maxUint256 : budget,
-          minAmountOut: minimum, data,
+          minAmountOut: minimum, data: universalRouteData(v4 ? 4 : 3, data),
           hops: v4 ? parseV4Path(data) : routeFrom(segment.tokens, segment.fees).hops,
         };
       });
@@ -147,7 +147,7 @@ export function uniswapBasketRoutes(options: {
     } catch (cause) {
       // Ask for the basket's WETH endpoints first. Only a missing route warrants
       // another API call using ETH; provider and validation errors stay distinct.
-      if (quoteFailureCode(cause) === "NO_ROUTE" && options.v4Adapter
+      if (quoteFailureCode(cause) === "NO_ROUTE"
         && (sameAddress(tokenIn, options.weth) || sameAddress(tokenOut, options.weth))) {
         return quoteCandidate(type,
           sameAddress(tokenIn, options.weth) ? zeroAddress : tokenIn,

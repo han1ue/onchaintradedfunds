@@ -1,15 +1,19 @@
 import { database, assertDatabaseWrites } from '../../app/src/server/database.ts';
+import { readFileSync } from 'node:fs';
 
 export async function readDeploymentAssetCatalog(chainId) {
   const {sql,schema}=database();
-  const [assets,pools,settings]=await sql.transaction([
+  if (chainId !== 46630) throw new Error('This deployment catalog requires Robinhood testnet');
+  const config = JSON.parse(readFileSync(new URL('../../app/src/config/robinhood-testnet.json', import.meta.url), 'utf8'));
+  const [assets,pools]=await sql.transaction([
     sql.query(`SELECT * FROM ${schema}.assets WHERE chain_id=$1 AND enabled ORDER BY slug`,[chainId]),
     sql.query(`SELECT * FROM ${schema}.pools WHERE chain_id=$1 AND approved AND enabled AND protocol_version=3 ORDER BY id`,[chainId]),
-    sql.query(`SELECT value FROM ${schema}.registry_settings WHERE key='testnet:venue'`),
   ],{isolationLevel:'RepeatableRead',readOnly:true});
   const rows=assets.map(row=>({id:row.slug,symbol:row.symbol,name:row.name,address:row.address,decimals:row.decimals,verified:row.verified,role:row.role,assetType:row.asset_type,...(row.metadata.original?.primary===undefined?{}:{primary:row.metadata.original.primary})}));
   const assetId=address=>rows.find(row=>row.address===address)?.id;
-  return {chainId,venue:settings[0]?.value,quoteAssets:rows.filter(row=>row.role==='quote'),fundAssets:rows.filter(row=>row.role==='fund'&&row.assetType!=='protocol_token'),
+  const c = config.externalContracts;
+  const venue = { id:'uniswap-v3', name:'Uniswap V3', baseUrl:config.externalLiquidity.baseUrl, factory:c.uniswapV3Factory, quoter:c.uniswapV3QuoterV2, positionManager:c.uniswapV3PositionManager, weth9:c.uniswapV3Weth9 };
+  return {chainId,venue,quoteAssets:rows.filter(row=>row.role==='quote'),fundAssets:rows.filter(row=>row.role==='fund'&&row.assetType!=='protocol_token'),
     pools:pools.map(row=>({...row.validation_metadata,id:row.id.replace(`${chainId}:`,''),assetA:assetId(row.token0),assetB:assetId(row.token1),address:row.pool_address,fee:row.fee})),
   };
 }

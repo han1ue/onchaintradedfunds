@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { type PublicClient, type Hex } from "viem";
+import deployment from "../config/robinhood-testnet.json";
 import manifest from "../../../scripts/fixtures/robinhood-testnet-v3.json";
 import { testnetAssetById } from "../test/registry-fixture";
 import { testnetVenue } from "./venue-config";
+import { V3_POOL_INIT_CODE_HASH } from "./universal-route";
 import { verifyTestnetV3Adapter, verifyTestnetV3Venue } from "./testnet-v3-bindings";
 
 const factory = "0x0000000000000000000000000000000000000011" as const;
@@ -30,10 +32,11 @@ function reader(changed?: string): Reader {
       if (functionName === "isAdapterApproved") return changed !== "approval";
       if (functionName === "entryExitRouter") return router;
       if (functionName === "uniswapV3Factory") return testnetVenue.factory;
-      if (functionName === "uniswapV3Router") return testnetVenue.swapRouter02;
+      if (functionName === "uniswapUniversalRouter") return deployment.externalContracts.uniswapUniversalRouter;
+      if (["uniswapV4PoolManager", "uniswapV4StateView", "permit2"].includes(functionName)) return deployment.externalContracts[functionName as "permit2"];
+      if (functionName === "v3PoolInitCodeHash") return V3_POOL_INIT_CODE_HASH;
       if (functionName === "weth") return testnetAssetById("weth")!.address;
       if (functionName === "WETH9") return testnetVenue.weth9;
-      if (functionName === "positionManager") return testnetVenue.positionManager;
       if (functionName === "factory") return address.toLowerCase() === router.toLowerCase() ? factory : testnetVenue.factory;
       throw new Error(`Unexpected read ${functionName}`);
     },
@@ -45,7 +48,7 @@ describe("testnet V3 runtime and immutable bindings", () => {
     expect(testnetVenue.weth9).not.toBe(testnetAssetById("weth")!.address);
     await expect(verifyTestnetV3Adapter(reader(), factory, router, adapter)).resolves.toBeUndefined();
   });
-  it.each(["chain", "runtime", "approval", `${adapter}:entryExitRouter`, `${adapter}:uniswapV3Factory`, `${adapter}:uniswapV3Router`, `${testnetVenue.swapRouter02.toLowerCase()}:factory`, `${testnetVenue.quoter.toLowerCase()}:WETH9`])("rejects a changed %s binding", async (changed) => {
+  it.each(["chain", "runtime", "approval", `${adapter}:entryExitRouter`, `${adapter}:uniswapV3Factory`, `${adapter}:uniswapUniversalRouter`, `${testnetVenue.quoter.toLowerCase()}:factory`, `${testnetVenue.quoter.toLowerCase()}:WETH9`])("rejects a changed %s binding", async (changed) => {
     await expect(verifyTestnetV3Adapter(reader(changed), factory, router, adapter)).rejects.toThrow();
   });
 });

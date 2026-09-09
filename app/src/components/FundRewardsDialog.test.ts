@@ -52,4 +52,18 @@ describe("fund rewards explanation", () => {
     expect(html).not.toContain("No eligible OTF means");
     expect(html).not.toMatch(/NaN|Infinity/);
   });
+
+  it("keeps the error explanation when unavailable APY is displayed as zero", () => {
+    const html = render({ apyText: "0%", error: "One or more constituent prices are missing or stale." });
+    expect(html).toContain("One or more constituent prices are missing or stale.");
+    expect(html).toContain(">0%</strong>");
+    expect(html).not.toContain("This fund receives 40% of the depositor pool.");
+  });
+
+  it("keeps a known zero return for a fund without OTF despite unavailable price data", () => {
+    const html = render({ hasOtf: false, apyText: "0%", otfPriceUsd: undefined, navUsd: undefined });
+    expect(html).toContain(">0%</strong>");
+    expect(html).toContain("does not include the OTF token");
+    expect(html).not.toContain(">Error</strong>");
+  });
 });

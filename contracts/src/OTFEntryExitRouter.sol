@@ -64,8 +64,8 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
     uint256 public constant MIN_CONSTITUENTS = ProtocolConstants.MIN_CONSTITUENTS;
     uint256 public constant MAX_CONSTITUENTS = ProtocolConstants.MAX_CONSTITUENTS;
     uint256 public constant MAX_LEGS = 40;
-    /// @dev Two share tokens, two baskets, and two explicit endpoint tokens per leg.
-    uint256 public constant MAX_TRACKED_TOKENS = 2 + 2 * MAX_CONSTITUENTS + 2 * MAX_LEGS;
+    /// @dev Two share tokens, two baskets, and up to four path tokens per leg.
+    uint256 public constant MAX_TRACKED_TOKENS = 2 + 2 * MAX_CONSTITUENTS + 4 * MAX_LEGS;
 
     error ZeroAddress();
     error InvalidDependency(address dependency);
@@ -149,6 +149,7 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
         uint256[] callerDebits;
         uint256[] callerCredits;
         uint256 count;
+        address[][] batchTokens;
     }
 
     struct RouteContext {
@@ -369,6 +370,7 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
         _addUnskippedAssets(context.sheet, context.assets, request.skipMask);
         _rejectSkippedLegs(legs, context.assets, request.skipMask);
         _prepareLegs(context.sheet, legs, request.vault, address(0));
+        _rejectSkippedTokens(context.sheet, context.assets, request.skipMask);
         IOTFSettlementVault(request.vault).checkpointFees();
         _snapshot(context.sheet);
     }
@@ -427,6 +429,7 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
         _addAssets(sheet, targetAssets);
         _rejectSkippedLegs(legs, sourceAssets, request.sourceSkipMask);
         _prepareLegs(sheet, legs, request.sourceVault, request.targetVault);
+        _rejectSkippedTokens(sheet, sourceAssets, request.sourceSkipMask);
         IOTFSettlementVault(request.sourceVault).checkpointFees();
         IOTFSettlementVault(request.targetVault).checkpointFees();
         _snapshot(sheet);
@@ -583,6 +586,12 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
         return false;
     }
 
+    function _rejectSkippedTokens(BalanceSheet memory sheet, address[] memory assets, uint256 skipMask) private pure {
+        for (uint256 i; i < sheet.count; ++i) {
+            if (_isSkippedAsset(sheet.tokens[i], assets, skipMask)) revert ForbiddenRouteToken(sheet.tokens[i]);
+        }
+    }
+
     function _isSkipped(uint256 skipMask, uint256 index) private pure returns (bool) {
         return ((skipMask >> index) & 1) != 0;
     }
@@ -628,6 +637,20 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
             _addToken(sheet, leg.tokenIn);
             _addToken(sheet, leg.tokenOut);
         }
+        sheet.batchTokens = new address[][](legs.length);
+        uint256 start;
+        while (start < legs.length) {
+            uint256 end = _batchEnd(legs, start);
+            address[] memory tokens = ITradeAdapter(legs[start].adapter).routeTokens(_trades(legs, start, end));
+            if (tokens.length == 0 || tokens.length > MAX_TRACKED_TOKENS) revert InvalidArrayLength();
+            for (uint256 i; i < tokens.length; ++i) {
+                if (tokens[i] == forbiddenToken0 || tokens[i] == forbiddenToken1) revert ForbiddenRouteToken(tokens[i]);
+                for (uint256 j; j < i; ++j) if (tokens[i] == tokens[j]) revert DuplicateAsset(tokens[i]);
+                _addToken(sheet, tokens[i]);
+            }
+            sheet.batchTokens[start] = tokens;
+            start = end;
+        }
     }
 
     function _snapshot(BalanceSheet memory sheet) private view {
@@ -638,31 +661,63 @@ contract OTFEntryExitRouter is Ownable2Step, ReentrancyGuard {
     }
 
     function _executeLegs(BalanceSheet memory sheet, SwapLeg[] calldata legs) private {
-        for (uint256 i = 0; i < legs.length; i++) {
-            SwapLeg calldata leg = legs[i];
-            uint256 available = _transientBalance(sheet, leg.tokenIn);
-            uint256 amountIn = leg.amountIn == type(uint256).max ? available : leg.amountIn;
-            if (amountIn == 0 || amountIn > available) {
-                revert InsufficientRouteBalance(leg.tokenIn, available, amountIn);
+        uint256 start;
+        while (start < legs.length) {
+            uint256 end = _batchEnd(legs, start);
+            address adapter = legs[start].adapter;
+            address[] memory tokens = sheet.batchTokens[start];
+            uint256[] memory funding = new uint256[](tokens.length);
+            uint256[] memory balances = new uint256[](tokens.length);
+            uint256[] memory minimum = new uint256[](tokens.length);
+            for (uint256 i; i < tokens.length; ++i) {
+                balances[i] = IERC20(tokens[i]).balanceOf(address(this));
+                for (uint256 j = start; j < end; ++j) {
+                    if (tokens[i] == legs[j].tokenIn) {
+                        funding[i] = _transientBalance(sheet, tokens[i]);
+                        break;
+                    }
+                }
+                minimum[i] = funding[i];
             }
-
-            uint256 inputBefore = IERC20(leg.tokenIn).balanceOf(address(this));
-            _pushExact(leg.tokenIn, leg.adapter, amountIn);
-            uint256 outputBefore = IERC20(leg.tokenOut).balanceOf(address(this));
-            uint256 reported = ITradeAdapter(leg.adapter)
-                .executeSwap(leg.tokenIn, leg.tokenOut, amountIn, leg.minAmountOut, leg.data);
-            if (!isAdapterApproved[leg.adapter]) revert UnapprovedAdapter(leg.adapter);
-
-            uint256 inputAfter = IERC20(leg.tokenIn).balanceOf(address(this));
-            uint256 outputAfter = IERC20(leg.tokenOut).balanceOf(address(this));
-            uint256 observedInput = inputBefore >= inputAfter ? inputBefore - inputAfter : 0;
-            uint256 observedOutput = outputAfter >= outputBefore ? outputAfter - outputBefore : 0;
-            if (observedInput != amountIn) revert SwapInputMismatch(i, amountIn, observedInput);
-            if (reported != observedOutput) revert SwapOutputMismatch(i, reported, observedOutput);
-            if (observedOutput < leg.minAmountOut) {
-                revert MinimumOutputNotMet(leg.minAmountOut, observedOutput);
+            // Reconcile guaranteed net balances independently of adapter-reported outputs.
+            for (uint256 i = start; i < end; ++i) {
+                uint256 input = _batchTokenIndex(tokens, legs[i].tokenIn);
+                uint256 output = _batchTokenIndex(tokens, legs[i].tokenOut);
+                if (legs[i].amountIn == type(uint256).max) minimum[input] = 0;
+                else {
+                    if (legs[i].amountIn > minimum[input]) revert InsufficientRouteBalance(legs[i].tokenIn, minimum[input], legs[i].amountIn);
+                    minimum[input] -= legs[i].amountIn;
+                }
+                minimum[output] += legs[i].minAmountOut;
             }
+            for (uint256 i; i < tokens.length; ++i) if (funding[i] != 0) _pushExact(tokens[i], adapter, funding[i]);
+            uint256[] memory returned = ITradeAdapter(adapter).executeBatch(_trades(legs, start, end), tokens, funding, block.timestamp);
+            if (!isAdapterApproved[adapter]) revert UnapprovedAdapter(adapter);
+            if (returned.length != tokens.length) revert InvalidArrayLength();
+            for (uint256 i; i < tokens.length; ++i) {
+                uint256 afterBalance = IERC20(tokens[i]).balanceOf(address(this));
+                uint256 base = balances[i] - funding[i];
+                uint256 observed = afterBalance >= base ? afterBalance - base : 0;
+                if (afterBalance < base || returned[i] != observed) revert SwapOutputMismatch(start, returned[i], observed);
+                if (observed < minimum[i]) revert MinimumOutputNotMet(minimum[i], observed);
+            }
+            start = end;
         }
+    }
+
+    function _batchEnd(SwapLeg[] calldata legs, uint256 start) private pure returns (uint256 end) {
+        end = start + 1;
+        while (end < legs.length && legs[end].adapter == legs[start].adapter) ++end;
+    }
+
+    function _trades(SwapLeg[] calldata legs, uint256 start, uint256 end) private pure returns (ITradeAdapter.Trade[] memory trades) {
+        trades = new ITradeAdapter.Trade[](end - start);
+        for (uint256 i = start; i < end; ++i) trades[i - start] = ITradeAdapter.Trade(legs[i].tokenIn, legs[i].tokenOut, legs[i].amountIn, legs[i].minAmountOut, legs[i].data);
+    }
+
+    function _batchTokenIndex(address[] memory tokens, address token) private pure returns (uint256) {
+        for (uint256 i; i < tokens.length; ++i) if (tokens[i] == token) return i;
+        revert ForbiddenRouteToken(token);
     }
 
     function _mintMaximum(

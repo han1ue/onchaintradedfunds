@@ -5,66 +5,56 @@ description: Current protocol deployments and external dependencies.
 
 # Deployment addresses
 
-The application uses the current Robinhood Chain Testnet deployment. The repository records no protocol deployment on Mainnet.
+The application uses the configured Robinhood Chain Testnet contracts. The repository records no protocol deployment on mainnet.
 
 ## Robinhood Chain Testnet
 
-Chain ID: 46630. Deployment completed at 2026-09-07T04:22:30.549Z.
+Chain ID: 46630.
 
-| Contract | Address | Transaction |
-| --- | --- | --- |
-| OTF token | `0x5CbBb475721aD3C4aB61bD241818E6774782DF88` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x6a2dddc450d9b904764ada366d8d7925aa914322ef16f05de2b84ba18fa5899a) |
-| Launch manager | `0xA5435c7c0e0C105b3687D72307F313EF1F7f2840` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x0bd3283768b82371ca4e595af8b27256d88cc652b56145ec03cfcc0a35d66308) |
-| Launch router | `0xFFF782973e7AF25a88a482F1F81911eDB378c8e9` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xcddc84a16f91bc4e30eb666ae39e12353cfed4a099e972d42c07706fafc46f23) |
-| Team vesting | `0xB79aB3c64C8072Dd2768C6bF40F8DEdEFd002268` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x547d19cff04c6a33de7c3f265d60e6425699638590de582fee6a2ac31c0c9d05) |
-| Buyback collector | `0x86E4B9e08646F576E7Bb364789B708515DD8d69d` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xeeba4f70437ba5b9be9fa2bb1691422fc08a5ea11064d841a09c82f82db2748f) |
-| Merkle rewards distributor | `0xAe7c1020152E850A94c02e939336C245573467bd` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x887935edba45a2526439f390e23ae4ffecb850d253b7c8d9add5fbd6b3e8b387) |
-| Testnet ETH/USD oracle | `0xBCD4443af58C13797c9a67993AD24E29B925386a` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x0bbd6a21c21794ee428f8c06e1d2e41d3686d089d665fde6b4d1426167212aa0) |
-| Vault implementation | `0xC6C816FB6a72751B33F71439ef44d471f06DC0EB` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x6c556d6069831472ba607ca06f6446aa2982218e7607bd763d4b02e61e55a57c) |
-| Factory | `0xb4776316FABbC70Aa72976e6E1AB0b4f5e05dAc1` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xbdf1f2701d96b5839bccb51b475263023f36cf1eb511e5bb7dfca02adb253022) |
-| Entry/exit router | `0x347B75576a2D105bE4a13390b5888C339e3D9623` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x55c003336d4c4ccd5ef463dca1bf12d418e4dafa7e47155b44e0214b5c860b1e) |
-| Uniswap V3 adapter | `0xa82dBD04dE8d266375aB92442279f33A5e327841` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0xf37dd36b47f3bd8eec9398a5006d4034824a634add506f8edabbcbc698386ec9) |
-| Uniswap V4 adapter | `0x502C85F4652B37c7cde44730283072Cd3b8A582a` | [Deployment](https://explorer.testnet.chain.robinhood.com/tx/0x37d88d1baef6c524a334d49dde5a54fc2d846c7e2ea3684f10c57934a5bba43e) |
+| Contract | Address |
+| --- | --- |
+| OTF token | `0x5CbBb475721aD3C4aB61bD241818E6774782DF88` |
+| Launch manager | `0xA5435c7c0e0C105b3687D72307F313EF1F7f2840` |
+| Launch router | `0xFFF782973e7AF25a88a482F1F81911eDB378c8e9` |
+| Team vesting | `0xB79aB3c64C8072Dd2768C6bF40F8DEdEFd002268` |
+| Buyback collector | `0x78578ed613C9cAE76E25C462a0CcBaF7608628aF` |
+| Merkle rewards distributor | `0xAe7c1020152E850A94c02e939336C245573467bd` |
+| Testnet ETH/USD oracle | `0xBCD4443af58C13797c9a67993AD24E29B925386a` |
+| Vault implementation | `0xAFb9C22D9FF92141442f605cE28761222D3a72E3` |
+| Factory | `0xa94A38c060dE04a9EB7344b63B75255D33A72269` |
+| Entry/exit router | `0x2ef616Fe76F08c669826F3f139B3b3eD04E3d9a7` |
+| Uniswap Universal Router adapter | `0x527b46dfe0e956749448AfB898263b17F9a8d02b` |
 
-The launch manager uses hook mask `0x2840`. The V4 adapter and collector use the canonical five-field exact-input tuple and clear ERC-20 and Permit2 allowances after execution.
+The factory, vaults, entry router, adapter, and collector share the configured settlement bindings. The entry router approves one Uniswap adapter for V3 and V4 batches. The launch manager uses hook mask `0x2840`.
 
-The launch router includes `sellOtfForEth`, which unwraps the current sale's WETH output and pays native ETH to the specified recipient.
+The launch router's `sellOtfForEth` function unwraps the current sale's WETH output and pays ETH to the specified recipient.
 
-The deployment manifest, `app/src/config/robinhood-testnet.json`, records contract addresses, code hashes, receipts, launch parameters, and configuration transactions. It marks routing as ready for these deployed contracts. The protocol administrator and team beneficiary are both `0xc340D7085E321B82CF550904310EE44bae9e4CD2`.
-
-## V3 dependencies and liquidity
+## External dependencies
 
 | Dependency | Address |
 | --- | --- |
-| UniswapV3Factory | 0x09b6D850382787115969A2699f107f5A974c781b |
-| NonfungiblePositionManager | 0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B |
-| QuoterV2 | 0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a |
-| SwapRouter02 | 0xf4edb91d541DD1BDE41CeBbE72bF2d44492AdcA4 |
-| Periphery WETH9 | 0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e |
-
-The four V3 contracts match the published Uniswap artifacts. The repository's `scripts/fixtures/robinhood-testnet-v3.json` records package versions, code hashes, and constructor bindings. The position manager has no NFT descriptor: ownership and liquidity work, but NFT `tokenURI` rendering is unavailable.
-
-The seeded USDG pairs with TSLA, AMZN, PLTR, NFLX, and AMD charge 0.3%. WETH/USDG uses 0.05%; the factory does not enable 0.01%. The application's `/liquidity` page manages liquidity additions.
-
-Protocol WETH is `0x33e4191705c386532ba27cBF171Db86919200B94`. The entry/exit router wraps and unwraps ETH through this address. V3, V4, the launch router, and buybacks also use this token. The separate periphery WETH9 address in the table does not replace it.
-
-Live deployment and seed receipts are in `deployments/`. The protocol uses the six configured RWA pools. Testnet V4 uses the same contract addresses as Robinhood mainnet, with code hashes pinned separately for chain 46630.
-
-## V4 dependencies
-
-| Dependency | Address |
-| --- | --- |
-| PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` |
-| StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` |
-| PositionManager | `0x58daec3116aae6D93017bAAea7749052E8a04fA7` |
-| Quoter | `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94` |
-| Universal Router | `0x8876789976dEcBfCbBbe364623C63652db8C0904` |
+| V3 factory | `0x09b6D850382787115969A2699f107f5A974c781b` |
+| V3 position manager | `0x15E98Cf94A32C7Fd23a36fABb4Fee612277Da47B` |
+| V3 QuoterV2 | `0x3E3d78F0e8D0B0b227C2261F407B7CDA97126B9a` |
+| V3 periphery WETH9 | `0x0Dd1Df4fdd55808c9D530C9599BEA5107F6b9b4e` |
+| Protocol WETH | `0x33e4191705c386532ba27cBF171Db86919200B94` |
+| V4 PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` |
+| V4 StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` |
+| V4 position manager | `0x58daec3116aae6D93017bAAea7749052E8a04fA7` |
+| V4 Quoter | `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94` |
+| Universal Router | `0xAb6CDcd3A4e313923A035644cF64Ce567FB15fAa` |
 | Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+
+Protocol WETH is used for fund settlement, swaps, the launch router, and buybacks. The separate V3 periphery WETH9 binding does not replace it. The V3 position manager has no NFT descriptor: ownership and liquidity operations work, but NFT `tokenURI` rendering is unavailable.
+
+The existing USDG pairs with TSLA, AMZN, PLTR, NFLX, and AMD charge 0.3%. WETH/USDG uses 0.05%. The application's `/liquidity` page manages liquidity additions. Asset and pool records are scoped to chain 46630 in the database registry.
+
+The configuration is in `app/src/config/robinhood-testnet.json`. Run `corepack pnpm contracts:verify:testnet-routing` to check current dependencies, adapter approval, vault bindings, and registered pools.
 
 ## Robinhood Chain Mainnet
 
-Chain ID: 4663. Status: configuration required.
+Chain ID: 4663. Protocol status: not deployed.
 
 The configured external ETH/USD oracle is `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`.
 
-Production deployment requires WETH, V3 and V4 venue addresses, Permit2, oracle maximum age, a protocol multisig, and a team beneficiary. Validate these dependencies on a mainnet fork; testnet results do not establish production readiness.
+Mainnet execution requires the protocol contracts and their bindings. The maintained fork suite verifies the configured external venues and rehearses protocol operations locally. Testnet results do not establish production readiness.

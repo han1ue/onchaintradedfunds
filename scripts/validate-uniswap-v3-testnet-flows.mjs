@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 // Testnet flow inspection helper. Maintained mainnet fork tests run through verify-mainnet-routing.mjs.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { verifyTestnetRoutingRuntime } from "./lib/testnet-routing.mjs";
@@ -9,32 +9,30 @@ const require = createRequire(new URL("../app/package.json", import.meta.url));
 const { createPublicClient, createWalletClient, http, parseAbi, concatHex, numberToHex, maxUint256 } = require("viem");
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
-const deploymentFile = process.env.FLOW_DEPLOYMENT_FILE || "test-results/v3-auth/protocol-simulation.json";
-const config = read(deploymentFile);
+export async function validateTestnetFlows(config, routingPin, rpc = "http://127.0.0.1:8555") {
 const markets = read("scripts/fixtures/robinhood-testnet-v3.json");
-const rpc = process.env.TESTNET_RPC_URL || "http://127.0.0.1:8547";
+const artifacts = Object.fromEntries(["BuybackCollector", "OTFEntryExitRouter", "OTFFactory"].map(name => [name, read(`contracts/out/${name}.sol/${name}.json`).abi]));
+const abi = name => artifacts[name];
 const chain = { id: 46630, name: "Local Robinhood fork", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [rpc] } } };
 const client = createPublicClient({ chain, transport: http(rpc) });
 assert(["127.0.0.1", "localhost"].includes(new URL(rpc).hostname));
 assert.equal(await client.getChainId(), 46630);
 assert((await client.request({ method: "web3_clientVersion" })).toLowerCase().includes("anvil"));
-await verifyTestnetRoutingRuntime(client, config, read("scripts/fixtures/robinhood-testnet-routing.json"));
-const account = config.deployer;
+await verifyTestnetRoutingRuntime(client, config, routingPin);
+const account = config.trustedRoles.protocolMultisig;
 await client.request({ method: "anvil_impersonateAccount", params: [account] });
 const wallet = createWalletClient({ chain, account, transport: http(rpc) });
 const snapshot = await client.request({ method: "evm_snapshot" });
-const abi = (name) => read(`contracts/out/${name}.sol/${name}.json`).abi;
 const erc20 = parseAbi(["function approve(address,uint256) returns (bool)", "function balanceOf(address) view returns (uint256)", "function allowance(address,address) view returns (uint256)", "function totalSupply() view returns (uint256)"]);
 const permit2Abi = parseAbi(["function allowance(address,address,address) view returns (uint160,uint48,uint48)"]);
 const factory = config.contracts.factory.address;
 const router = config.contracts.entryRouter.address;
-const adapter = config.contracts.uniswapV3Adapter.address;
+const adapter = config.contracts.uniswapUniversalRouterAdapter.address;
 const collector = config.contracts.buybackCollector.address;
 const otf = config.contracts.otfToken.address;
 const weth = config.externalContracts.weth;
 const usdg = markets.markets[0].quoteAddress;
 const constituents = markets.markets.filter((market) => market.asset !== "WETH");
-const receipts = [];
 const tests = [];
 const readToken = (address, functionName, args = []) => client.readContract({ address, abi: erc20, functionName, args });
 const deadline = async () => (await client.getBlock()).timestamp + 600n;
@@ -45,27 +43,27 @@ async function send(address, contractAbi, functionName, args = [], value = 0n) {
   const hash = await wallet.writeContract({ ...preview.request, gas, gasPrice: BigInt(markets.gasPriceWei) });
   const receipt = await client.waitForTransactionReceipt({ hash });
   assert.equal(receipt.status, "success", functionName);
-  receipts.push({ functionName, transactionHash: hash, gasUsed: receipt.gasUsed });
   return preview.result;
 }
 async function cleared() {
   for (const token of [weth, usdg, ...constituents.map((market) => market.assetAddress)]) {
     assert.equal(await readToken(token, "balanceOf", [router]), 0n, "router transient balance");
     assert.equal(await readToken(token, "balanceOf", [adapter]), 0n, "adapter transient balance");
-    assert.equal(await readToken(token, "allowance", [adapter, config.externalContracts.uniswapV3SwapRouter02]), 0n, "adapter approval");
+    assert.equal(await readToken(token, "allowance", [adapter, config.externalContracts.permit2]), 0n, "adapter approval");
   }
 }
 const legsIn = (native) => constituents.map((market) => ({ adapter, tokenIn: native ? weth : usdg, tokenOut: market.assetAddress,
   amountIn: native ? 200_000_000_000_000n : 200_000n, minAmountOut: 1n,
-  data: native ? path([weth, usdg, market.assetAddress], [markets.markets[0].fee, market.fee]) : path([usdg, market.assetAddress], [market.fee]) }));
+  data: concatHex(["0x03", native ? path([weth, usdg, market.assetAddress], [markets.markets[0].fee, market.fee]) : path([usdg, market.assetAddress], [market.fee])]) }));
 const legsOut = (native) => constituents.map((market) => ({ adapter, tokenIn: market.assetAddress, tokenOut: native ? weth : usdg,
   amountIn: maxUint256, minAmountOut: 1n,
-  data: native ? path([market.assetAddress, usdg, weth], [market.fee, markets.markets[0].fee]) : path([market.assetAddress, usdg], [market.fee]) }));
+  data: concatHex(["0x03", native ? path([market.assetAddress, usdg, weth], [market.fee, markets.markets[0].fee]) : path([market.assetAddress, usdg], [market.fee])]) }));
 try {
-  const vault = await send(factory, abi("OTFFactory"), "createVault", [{ name: "Five-market V3 validation", symbol: "V3TEST",
+  const createValidationVault = () => send(factory, abi("OTFFactory"), "createVault", [{ name: "Five-market routing validation OTF", symbol: "V3TEST",
     fundThesis: "Local testnet validation of the five configured constituent markets.", expenseBeneficiary: account,
     annualCreatorExpenseRatioBps: 0, mintFeeBps: 200, redeemFeeBps: 0,
     constituents: constituents.map((market) => market.assetAddress), bootstrapBasketUnitsPerOTF: constituents.map(() => 10n ** 17n) }]);
+  let vault = await createValidationVault();
   await send(usdg, erc20, "approve", [router, 1_000_000n]);
   await send(router, abi("OTFEntryExitRouter"), "mintFromToken", [{ inputToken: usdg, vault, amountIn: 1_000_000n, minShares: 1n, deadline: await deadline() }, legsIn(false)]);
   const shares = await readToken(vault, "balanceOf", [account]);
@@ -78,6 +76,7 @@ try {
   assert(await readToken(usdg, "balanceOf", [account]) > beforeExit);
   await cleared();
   tests.push("Five real constituent pools: USDG basket exit");
+  vault = await createValidationVault();
   await send(router, abi("OTFEntryExitRouter"), "mintFromNative", [{ inputToken: weth, vault, amountIn: 1_000_000_000_000_000n, minShares: 1n, deadline: await deadline() }, legsIn(true)], 1_000_000_000_000_000n);
   const nativeShares = await readToken(vault, "balanceOf", [account]);
   assert(nativeShares > 0n);
@@ -109,9 +108,12 @@ try {
   await send(usdg, erc20, "approve", [router, 0n]);
   await cleared();
   tests.push("Minimum-output rejection preserves balances and clears wallet approval");
-  const output = deploymentFile.startsWith("app/") ? "live-deployment-fork-flows" : "real-basket-flows";
-  writeFileSync(resolve(root, `test-results/v3-auth/${output}.json`), JSON.stringify({ chainId: 46630, simulation: true, deploymentFile, result: "passed", vault, tests, receipts }, (_key, value) => typeof value === "bigint" ? value.toString() : value, 2) + "\n");
   console.log(tests.join("\n"));
 } finally {
   await client.request({ method: "evm_revert", params: [snapshot] });
+}
+
+}
+if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
+  await validateTestnetFlows(read("app/src/config/robinhood-testnet.json"),read("scripts/fixtures/robinhood-testnet-routing.json"),process.env.TESTNET_RPC_URL || "http://127.0.0.1:8555");
 }

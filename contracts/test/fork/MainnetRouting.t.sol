@@ -17,8 +17,7 @@ import {
     BasketRedeemRequest,
     SwapLeg
 } from "../../src/OTFEntryExitRouter.sol";
-import { UniswapV4Adapter } from "../../src/UniswapV4Adapter.sol";
-import { UniswapV3Adapter } from "../../src/UniswapV3Adapter.sol";
+import { UniswapUniversalRouterAdapter } from "../../src/UniswapUniversalRouterAdapter.sol";
 import { IPermit2AllowanceTransfer } from "../../src/interfaces/IUniswapV4.sol";
 import { PathKey } from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
 import { MockStockToken } from "../mocks/MockStockToken.sol";
@@ -55,15 +54,13 @@ contract MainnetRoutingTest is Test {
     address private universalRouter;
     address private permit2;
     address private v3Factory;
-    address private v3Router;
     address private mintingV3Pool;
     ForkWeth private weth;
     OTFToken private otf;
     OTFLaunchManager private launch;
     BuybackCollector private collector;
     OTFEntryExitRouter private router;
-    UniswapV4Adapter private v4Adapter;
-    UniswapV3Adapter private v3Adapter;
+    UniswapUniversalRouterAdapter private universalAdapter;
     ManagedOTFVault private vault;
     MockStockToken private assetA;
     MockStockToken private assetB;
@@ -79,7 +76,6 @@ contract MainnetRoutingTest is Test {
         universalRouter = _dependency(fixture, "uniswapUniversalRouter");
         permit2 = _dependency(fixture, "permit2");
         v3Factory = _dependency(fixture, "uniswapV3Factory");
-        v3Router = _dependency(fixture, "uniswapV3SwapRouter02");
         weth = ForkWeth(_dependency(fixture, "weth"));
         vm.deal(address(this), 20_000 ether);
         weth.deposit{ value: 10_000 ether }();
@@ -316,20 +312,8 @@ contract MainnetRoutingTest is Test {
                 ))
         );
         factory.configureEntryExitRouter(address(router));
-        v4Adapter = UniswapV4Adapter(
-            payable(deployCode(
-                    "UniswapV4Adapter.sol:UniswapV4Adapter",
-                    abi.encode(address(router), poolManager, stateView, universalRouter, permit2)
-                ))
-        );
-        v3Adapter = UniswapV3Adapter(
-            deployCode(
-                "UniswapV3Adapter.sol:UniswapV3Adapter",
-                abi.encode(address(router), v3Factory, v3Router)
-            )
-        );
-        router.setAdapterApproved(address(v4Adapter), true);
-        router.setAdapterApproved(address(v3Adapter), true);
+        universalAdapter = UniswapUniversalRouterAdapter(deployCode("UniswapUniversalRouterAdapter.sol:UniswapUniversalRouterAdapter", abi.encode(address(router), v3Factory, bytes32(0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54), poolManager, stateView, universalRouter, permit2)));
+        router.setAdapterApproved(address(universalAdapter), true);
     }
 
     function _seedV4(address token) private {
@@ -407,12 +391,12 @@ contract MainnetRoutingTest is Test {
         PathKey[] memory path = new PathKey[](1);
         path[0] = PathKey(Currency.wrap(tokenOut), 3000, 60, IHooks(address(0)), bytes(""));
         return SwapLeg(
-            v3 ? address(v3Adapter) : address(v4Adapter),
+            address(universalAdapter),
             tokenIn,
             tokenOut,
             amount,
             1,
-            v3 ? abi.encodePacked(tokenIn, uint24(3000), tokenOut) : abi.encode(tokenIn, path)
+            v3 ? abi.encodePacked(hex"03", tokenIn, uint24(3000), tokenOut) : bytes.concat(hex"04", abi.encode(tokenIn, path))
         );
     }
 
@@ -420,12 +404,11 @@ contract MainnetRoutingTest is Test {
         address[3] memory tokens = [address(weth), address(assetA), address(assetB)];
         for (uint256 i; i < tokens.length; i++) {
             assertEq(IERC20(tokens[i]).balanceOf(address(router)), 0);
-            assertEq(IERC20(tokens[i]).balanceOf(address(v4Adapter)), 0);
-            assertEq(IERC20(tokens[i]).balanceOf(address(v3Adapter)), 0);
-            assertEq(IERC20(tokens[i]).allowance(address(v4Adapter), permit2), 0);
-            assertEq(IERC20(tokens[i]).allowance(address(v3Adapter), v3Router), 0);
+            assertEq(IERC20(tokens[i]).balanceOf(address(universalAdapter)), 0);
+            assertEq(IERC20(tokens[i]).balanceOf(address(universalAdapter)), 0);
+            assertEq(IERC20(tokens[i]).allowance(address(universalAdapter), permit2), 0);
             (uint160 allowance,,) = IPermit2AllowanceTransfer(permit2)
-                .allowance(address(v4Adapter), tokens[i], universalRouter);
+                .allowance(address(universalAdapter), tokens[i], universalRouter);
             assertEq(allowance, 0);
         }
     }

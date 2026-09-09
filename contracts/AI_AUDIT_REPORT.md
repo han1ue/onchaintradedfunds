@@ -1,5 +1,7 @@
 # Onchain Traded Funds security review
 
+This historical review predates the current Universal Router batch adapter. Its routing conclusions apply to the reviewed commit.
+
 ## Review identity and working-tree state
 
 - Review date: 2026-09-04.
@@ -20,7 +22,7 @@ The review covered every production Solidity file under `contracts/src`:
 - `OTFToken`, `OTFLaunchManager`, `OTFLaunchManagerDeployer`, `OTFLaunchRouter`, and
   `TeamMarketCapVesting`;
 - `OTFFactory`, `ManagedOTFVault`, `ManagedOTFVaultStorage`, `OTFEntryExitRouter`,
-  `UniswapV3Adapter`, and `UniswapV4Adapter`;
+  the then-current V3 and V4 adapters;
 - `BuybackCollector`, `MerkleRewardsDistributor`, `VaultTypes`, all local interfaces, and all
   local libraries;
 - `FakeETHUSDOracle`, treated as testnet-only code.
@@ -126,7 +128,7 @@ supply.
   and inherited two-step ownership transfer. Adapter calls occur inside a router reentrancy
   boundary.
 - Each adapter exposes `executeSwap` only to its immutable router. The V3 path calls
-  SwapRouter02. The V4 path gives exact temporary approvals to Permit2 and the Universal Router,
+  its configured V3 router. The V4 path gives exact temporary approvals to Permit2 and the Universal Router,
   executes a V4 command, checks deltas, and clears approvals.
 - `BuybackCollector` exposes one-time factory/router configuration, factory-only registration,
   vault-only fee accounting, and beneficiary-only settlement by redemption or share sale.
@@ -399,8 +401,8 @@ an open question rather than presented as a vulnerability.
 9. **Evidence or executable reproduction**
 
    Disassembly found `MCOPY` in the current deployed runtimes for `OTFToken`, `BuybackCollector`,
-   `OTFFactory`, `ManagedOTFVault`, `UniswapV3Adapter`, and `UniswapV4Adapter`. On local
-   `anvil --hardfork shanghai --port 8549`, a current `UniswapV3Adapter.executeSwap` transaction
+   `OTFFactory`, `ManagedOTFVault`, the then-current V3 and V4 adapters. On local
+   `anvil --hardfork shanghai --port 8549`, a V3 adapter `executeSwap` transaction from that revision
    reverted with status 0 and `EvmError: NotActivated` at the runtime `MCOPY` at program counter
    `0x5b5`, before the mock V3 venue was called. Balance and allowance changes rolled back.
    Calling the current `OTFToken.tokenURI` bytecode on the same hardfork also failed with

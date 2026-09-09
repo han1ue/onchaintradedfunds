@@ -3780,22 +3780,42 @@ export const otfEntryExitRouterAbi = [
   }
 ] as const;
 
-export const uniswapV3AdapterAbi = [
+export const uniswapUniversalRouterAdapterAbi = [
   {
     "type": "constructor",
     "inputs": [
       {
-        "name": "entryExitRouter_",
+        "name": "router",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "uniswapV3Factory_",
+        "name": "factory",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "uniswapV3Router_",
+        "name": "poolHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "manager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "stateView",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "universal",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "permit",
         "type": "address",
         "internalType": "address"
       }
@@ -3805,6 +3825,32 @@ export const uniswapV3AdapterAbi = [
   {
     "type": "function",
     "name": "MAX_HOPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_TOKENS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_TRADES",
     "inputs": [],
     "outputs": [
       {
@@ -3830,387 +3876,61 @@ export const uniswapV3AdapterAbi = [
   },
   {
     "type": "function",
-    "name": "executeSwap",
+    "name": "executeBatch",
     "inputs": [
       {
-        "name": "tokenIn",
-        "type": "address",
-        "internalType": "address"
+        "name": "trades",
+        "type": "tuple[]",
+        "internalType": "struct ITradeAdapter.Trade[]",
+        "components": [
+          {
+            "name": "tokenIn",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "tokenOut",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "minAmountOut",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       },
       {
-        "name": "tokenOut",
-        "type": "address",
-        "internalType": "address"
+        "name": "tokens",
+        "type": "address[]",
+        "internalType": "address[]"
       },
       {
-        "name": "amountIn",
+        "name": "funding",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "deadline",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "minAmountOut",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
       }
     ],
     "outputs": [
       {
-        "name": "amountOut",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "uniswapV3Factory",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "uniswapV3Router",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "error",
-    "name": "AdapterBalanceMismatch",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ApprovalMismatch",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InputMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidAmount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidDependency",
-    "inputs": [
-      {
-        "name": "dependency",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidPath",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MinimumOutputNotMet",
-    "inputs": [
-      {
-        "name": "minimum",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "actual",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "OutputMismatch",
-    "inputs": [
-      {
-        "name": "reported",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ReentrancyGuardReentrantCall",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RouterFactoryMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "observed",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "SafeERC20FailedOperation",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TooManyHops",
-    "inputs": [
-      {
-        "name": "supplied",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "maximum",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnauthenticatedPool",
-    "inputs": [
-      {
-        "name": "token0",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "token1",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "fee",
-        "type": "uint24",
-        "internalType": "uint24"
-      },
-      {
-        "name": "pool",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnauthorizedCaller",
-    "inputs": [
-      {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ZeroAddress",
-    "inputs": []
-  }
-] as const;
-
-export const uniswapV4AdapterAbi = [
-  {
-    "type": "constructor",
-    "inputs": [
-      {
-        "name": "entryExitRouter_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "uniswapV4PoolManager_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "uniswapV4StateView_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "uniswapUniversalRouter_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "permit2_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "receive",
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "MAX_HOOK_DATA_LENGTH",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_HOPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "entryExitRouter",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "executeSwap",
-    "inputs": [
-      {
-        "name": "tokenIn",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "tokenOut",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amountIn",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "minAmountOut",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "amountOut",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "returned",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "stateMutability": "nonpayable"
@@ -4230,7 +3950,66 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "function",
+    "name": "routeTokens",
+    "inputs": [
+      {
+        "name": "trades",
+        "type": "tuple[]",
+        "internalType": "struct ITradeAdapter.Trade[]",
+        "components": [
+          {
+            "name": "tokenIn",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "tokenOut",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amountIn",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "minAmountOut",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "uniswapUniversalRouter",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "uniswapV3Factory",
     "inputs": [],
     "outputs": [
       {
@@ -4269,6 +4048,19 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "function",
+    "name": "v3PoolInitCodeHash",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "weth",
     "inputs": [],
     "outputs": [
@@ -4282,7 +4074,7 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "AdapterBalanceMismatch",
+    "name": "BalanceMismatch",
     "inputs": [
       {
         "name": "token",
@@ -4303,66 +4095,29 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "ApprovalMismatch",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "HookDataTooLong",
-    "inputs": [
-      {
-        "name": "supplied",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "maximum",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InputMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidAmount",
+    "name": "DeadlineExpired",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "available",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -4382,113 +4137,13 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "MinimumOutputNotMet",
-    "inputs": [
-      {
-        "name": "minimum",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "actual",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NativeBalanceMismatch",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "OutputMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "observed",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "Permit2ApprovalMismatch",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "expectedAmount",
-        "type": "uint160",
-        "internalType": "uint160"
-      },
-      {
-        "name": "observedAmount",
-        "type": "uint160",
-        "internalType": "uint160"
-      },
-      {
-        "name": "expectedExpiration",
-        "type": "uint48",
-        "internalType": "uint48"
-      },
-      {
-        "name": "observedExpiration",
-        "type": "uint48",
-        "internalType": "uint48"
-      }
-    ]
+    "name": "InvalidPlan",
+    "inputs": []
   },
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RouterPoolManagerMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "observed",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -4503,46 +4158,8 @@ export const uniswapV4AdapterAbi = [
   },
   {
     "type": "error",
-    "name": "StateViewPoolManagerMismatch",
-    "inputs": [
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "observed",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TooManyHops",
-    "inputs": [
-      {
-        "name": "supplied",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "maximum",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "UnauthenticatedPool",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
+    "inputs": []
   },
   {
     "type": "error",
@@ -4554,22 +4171,6 @@ export const uniswapV4AdapterAbi = [
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "UnexpectedNativeSender",
-    "inputs": [
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ZeroAddress",
-    "inputs": []
   }
 ] as const;
 

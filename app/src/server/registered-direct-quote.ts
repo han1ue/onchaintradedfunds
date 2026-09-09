@@ -4,7 +4,7 @@ import { otfFactoryAbi } from "@onchaintradedfunds/generated";
 import { readRegistry } from "./registry";
 import { registeredRouteClient } from "./registered-route-client";
 import { chainClient } from "./pricing";
-import { protocolDeploymentForChain, robinhoodMainnetUniswap } from "../lib/deployment";
+import { protocolDeploymentForChain } from "../lib/deployment";
 import { registeredCandidates,bestRegisteredQuote,REGISTERED_ROUTE_POLICY } from "../lib/registered-routes";
 import { registeredDirectExecution } from "../lib/registered-direct-execution";
 import { applySlippageDown, type BasketPlannerRequest } from "../lib/basket-planner";
@@ -13,7 +13,7 @@ import { QuoteFailure } from "../lib/quote-errors";
 export async function quoteRegisteredDirect(request:BasketPlannerRequest,expiresAt:number) {
   const registry=await readRegistry(request.chainId);
   const deployment=protocolDeploymentForChain(request.chainId)?.addresses;
-  const {universalRouter,permit2}=robinhoodMainnetUniswap;
+  const {universalRouter,permit2}=protocolDeploymentForChain(request.chainId)?.v4 ?? {};
   if(!deployment?.weth||!universalRouter||!permit2)return undefined;
   const paths=registeredCandidates(registry.pools,request.chainId,request.input.address,request.output.address,deployment.weth);
   if(!paths.length||paths.length>REGISTERED_ROUTE_POLICY.maxCandidates)return undefined;

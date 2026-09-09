@@ -23,6 +23,7 @@ export type BasketClient = {
 export type BasketRouteQuote = { amountIn: bigint; amountOut: bigint; legs: AdapterSwapLeg[] };
 export type BasketRouteProvider = {
   quote(type: "EXACT_INPUT" | "EXACT_OUTPUT", tokenIn: Address, tokenOut: Address, amount: bigint): Promise<BasketRouteQuote>;
+  optimizeMint?(legs: AdapterSwapLeg[]): Promise<AdapterSwapLeg[]>;
 };
 const ONE_OTF = 10n ** 18n;
 const ROUTER_DEADLINE_SECONDS = 120;
@@ -73,7 +74,7 @@ export async function planMint(vault: Address, input: BasketAsset, amountIn: big
   let shares = amountIn * ONE_OTF / unit.spent;
   for (let attempt = 0; attempt < 3 && shares > 0n; attempt++) {
     const plan = await quoteAmounts(shares);
-    if (plan.spent <= amountIn) return { ...plan, shares, residual: amountIn - plan.spent };
+    if (plan.spent <= amountIn) return { ...plan, legs: routes.optimizeMint ? await routes.optimizeMint(plan.legs) : plan.legs, shares, residual: amountIn - plan.spent };
     const next = shares * amountIn / plan.spent;
     shares = next < shares ? next : shares - 1n;
   }
