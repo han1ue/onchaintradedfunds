@@ -7,6 +7,21 @@ export type OnchainAssetMetadata = {
   decimals: number;
 };
 
+export function creationAssetSnapshot(value: unknown): { assets: CreationAssetData[]; collectedAt?: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("ASSET_DATA_UNAVAILABLE");
+  const payload = value as Record<string, unknown>;
+  if (!Array.isArray(payload.data)) throw new Error("ASSET_DATA_UNAVAILABLE");
+  const assets = payload.data.flatMap((value) => {
+    const asset = creationAsset(value);
+    return asset ? [asset] : [];
+  });
+  if (!assets.length) return { assets };
+  if (typeof payload.collectedAt !== "string" || !Number.isFinite(Date.parse(payload.collectedAt))) {
+    throw new Error("ASSET_SNAPSHOT_UNAVAILABLE");
+  }
+  return { assets, collectedAt: new Date(payload.collectedAt).toISOString() };
+}
+
 export function defaultCreationAssetSelection(
   assets: readonly CreationAssetData[],
   random: () => number = Math.random,
@@ -63,5 +78,26 @@ export function manualCreationAsset(
     symbol: metadata.symbol || valuation.symbol,
     decimals: metadata.decimals,
     verified: valuation.address.toLowerCase() === address.toLowerCase() && valuation.verified,
+  };
+}
+
+function creationAsset(value: unknown): CreationAssetData | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const asset = value as Record<string, unknown>;
+  if (
+    typeof asset.address !== "string" || !isAddress(asset.address)
+    || typeof asset.symbol !== "string" || typeof asset.name !== "string"
+    || typeof asset.priceUsd !== "string" || typeof asset.marketCapUsd !== "string"
+    || !Number.isInteger(asset.decimals)
+  ) return undefined;
+  return {
+    address: getAddress(asset.address),
+    symbol: asset.symbol,
+    name: asset.name,
+    decimals: Number(asset.decimals),
+    priceUsd: asset.priceUsd,
+    marketCapUsd: asset.marketCapUsd,
+    priceUpdatedAt: typeof asset.priceUpdatedAt === "string" ? asset.priceUpdatedAt : undefined,
+    verified: asset.verified === true,
   };
 }

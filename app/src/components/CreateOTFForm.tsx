@@ -63,6 +63,7 @@ import {
   type OtfCreationMetadataDraft,
 } from "@/lib/creation-metadata";
 import {
+  creationAssetSnapshot,
   defaultCreationAssetSelection,
   filterCreationAssetOptions,
   manualCreationAsset,
@@ -121,27 +122,6 @@ function fixedInput(value: string, decimals: number): string | undefined {
   return normalized;
 }
 
-function creationAsset(value: unknown): CreationAssetData | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const asset = value as Record<string, unknown>;
-  if (
-    typeof asset.address !== "string" || !isAddress(asset.address)
-    || typeof asset.symbol !== "string" || typeof asset.name !== "string"
-    || typeof asset.priceUsd !== "string" || typeof asset.marketCapUsd !== "string"
-    || !Number.isInteger(asset.decimals)
-  ) return undefined;
-  return {
-    address: getAddress(asset.address),
-    symbol: asset.symbol,
-    name: asset.name,
-    decimals: Number(asset.decimals),
-    priceUsd: asset.priceUsd,
-    marketCapUsd: asset.marketCapUsd,
-    priceUpdatedAt: typeof asset.priceUpdatedAt === "string" ? asset.priceUpdatedAt : undefined,
-    verified: asset.verified === true,
-  };
-}
-
 function applyMarketCapDefaults(assets: readonly CreationAssetData[]): SelectedAsset[] {
   if (!assets.length) return [];
   const percentages = resetToMarketCapPercentageUnits(assets.map((asset) => asset.marketCapUsd));
@@ -190,6 +170,7 @@ export function CreateOTFForm() {
   const [availableAssets, setAvailableAssets] = useState<CreationAssetData[]>([]);
   const [selectedAssets, setSelectedAssets] = useState<SelectedAsset[]>([]);
   const [assetLoadState, setAssetLoadState] = useState<"loading" | "ready" | "empty" | "failure">("loading");
+  const [assetLoadAttempt, setAssetLoadAttempt] = useState(0);
   const [submission, setSubmission] = useState<CreationSubmissionState>("idle");
   const [submissionMessage, setSubmissionMessage] = useState<string>();
   const [transactionHash, setTransactionHash] = useState<Hex>();
@@ -242,30 +223,22 @@ export function CreateOTFForm() {
     setMarketCapSnapshotAt(undefined);
     void fetch(`/api/creation-assets?chainId=${chainId}`, {
       cache: "no-store",
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
     }).then(async (response) => {
       if (!response.ok) throw new Error("ASSET_DATA_UNAVAILABLE");
-      const payload = await response.json() as { data?: unknown[]; marketCapSnapshotAt?: unknown };
-      if (
-        typeof payload.marketCapSnapshotAt !== "string"
-        || !Number.isFinite(Date.parse(payload.marketCapSnapshotAt))
-      ) throw new Error("MARKET_CAP_SNAPSHOT_UNAVAILABLE");
-      const assets = (payload.data ?? []).flatMap((value) => {
-        const parsed = creationAsset(value);
-        return parsed ? [parsed] : [];
-      });
+      const { assets, collectedAt } = creationAssetSnapshot(await response.json());
       if (controller.signal.aborted) return;
       setAvailableAssets(assets);
       const initial = applyMarketCapDefaults(defaultCreationAssetSelection(assets));
       setSelectedAssets(initial);
       setMarketCapWeighted(true);
-      setMarketCapSnapshotAt(new Date(payload.marketCapSnapshotAt).toISOString());
+      setMarketCapSnapshotAt(collectedAt);
       setAssetLoadState(assets.length ? "ready" : "empty");
     }).catch(() => {
       if (!controller.signal.aborted) setAssetLoadState("failure");
     });
     return () => controller.abort();
-  }, [chainId]);
+  }, [chainId, assetLoadAttempt]);
 
   useEffect(() => {
     if (openAssetPickerIndex === undefined) return;
@@ -720,6 +693,14 @@ export function CreateOTFForm() {
               </div>
               <span id="basket-percentage-total" className="visuallyHidden" role="status" aria-live="polite">Allocation total: {formatPercentageDisplay(totalPercentage)}</span>
 
+              {assetLoadState === "failure" || assetLoadState === "empty" ? (
+                <div className="validationSummary" role="status">
+                  <CircleAlert size={15} />
+                  <div><strong>{assetLoadState === "failure" ? "Could not load constituents" : "No priced constituents available"}</strong><span>Current prices and market caps are required to build the basket.</span></div>
+                  <button type="button" className="secondaryAction compactAction" onClick={() => setAssetLoadAttempt((attempt) => attempt + 1)}>Retry</button>
+                </div>
+              ) : null}
+
               <div className="constituentsRewardsNote">
                 <Info size={16} aria-hidden="true" />
                 <p>Weekly distributions are based on eligible $OTF balances, as determined by the weekly rewards snapshot. <a href="https://docs.onchaintradedfunds.com/token-and-fee-incentives#cumulative-rewards-and-incentive-emissions" target="_blank" rel="noreferrer">How rewards work<ExternalLink size={12} aria-hidden="true" /></a></p>
@@ -734,6 +715,7 @@ export function CreateOTFForm() {
                     {selectedAssets.map((asset, index) => <div key={asset.address}><span style={{ background: ALLOCATION_COLORS[index % ALLOCATION_COLORS.length] }} /><strong>{asset.symbol}</strong><small>{formatPercentageDisplay(asset.percentageUnits)}</small></div>)}
                   </div>
                   <button type="button" className="secondaryAction addCreateAsset" disabled={assetLoadState !== "ready" || !remainingAssets.length || selectedAssets.length >= 20} onClick={addNextAsset}><Plus size={14} />Add constituent</button>
+                  {assetLoadState === "ready" && !remainingAssets.length && selectedAssets.length < 20 ? <small role="status">No more assets have current prices and market caps.</small> : null}
                 </div>
 
                 <div className="createAssetList combinedConstituentList">
