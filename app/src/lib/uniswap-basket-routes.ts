@@ -3,8 +3,11 @@ import { applySlippageDown, applySlippageUp, sameAddress, type BasketRouteProvid
 import { MAX_SWAP_LEGS, type AdapterSwapLeg } from "./swap-model";
 import { routeFrom } from "./v3-route";
 import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4-route";
-import { quoteFailureCode, quoteStep } from "./quote-errors";
+import { QuoteFailure, quoteStep } from "./quote-errors";
 import { universalRouteData } from "./universal-route";
+import { quoteRegisteredPath, routeSegments, type RegisteredPath, type RouteSegment, type SegmentQuote } from "./registered-routes";
+import { v4PoolId } from "./v4-route";
+import type { CatalogAsset } from "./asset-catalog";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -28,6 +31,8 @@ export function uniswapBasketRoutes(options: {
   router: Address;
   adapter: Address;
   weth: Address;
+  poolManager?: Address;
+  quoteSegment?(segment: RouteSegment, type: "EXACT_INPUT" | "EXACT_OUTPUT", amount: bigint): Promise<SegmentQuote>;
   reservedTokens?: readonly Address[];
   slippageBps: number;
   forbiddenTokens: readonly Address[];
@@ -61,12 +66,15 @@ export function uniswapBasketRoutes(options: {
     if (!amountIn || !amountOut || (type === "EXACT_INPUT" ? amountIn : amountOut) !== amount) throw new Error("Wrong exact quote amount.");
     if (!Array.isArray(quote.route) || !quote.route.length || quote.route.length > MAX_SWAP_LEGS) throw new Error("Invalid split route.");
     const splits = quote.route;
+    const authenticatedPaths: RegisteredPath[] = [];
+    const discoveredPaths: NonNullable<BasketRouteQuote["discoveredPaths"]> = [];
     let totalInput = 0n;
     let totalOutput = 0n;
     let maximumInput = 0n;
     const splitLegs = await Promise.all(splits.map(async (value: unknown, index: number) => {
       if (!Array.isArray(value) || !value.length || value.length > 3) throw new Error("Invalid route hop count.");
       const pools = value.map(record);
+      const authenticatedPath: RegisteredPath = [];
       const tokens: Address[] = [];
       const segments: { kind: "v3-pool" | "v4-pool"; tokens: Address[]; fees: number[]; path: V4PathKey[] }[] = [];
       for (const pool of pools) {
@@ -103,6 +111,20 @@ export function uniswapBasketRoutes(options: {
           segment.path.push(hop);
         }
         tokens.push(next);
+        const asset = (token: Address): CatalogAsset => ({ id: token, chainId: options.chainId, address: token,
+          decimals: 18, symbol: "", name: "", assetType: "other", enabled: true, verified: false, featured: false });
+        const v4Hop: V4PathKey = { intermediateCurrency: next, fee, tickSpacing: Number(pool.tickSpacing), hooks: pool.hooks as Address, hookData: (pool.hookData ?? "0x") as Hex };
+        // Ephemeral authenticated path metadata, never written to or approved in the registry.
+        authenticatedPath.push({ tokenIn: current, tokenOut: next, pool: {
+          id: String(pool.address ?? (pool.type === "v4-pool" ? v4PoolId(current, v4Hop) : "")), chainId: options.chainId,
+          venue: "uniswap", protocolVersion: pool.type === "v3-pool" ? 3 : 4,
+          assetA: asset(current), assetB: asset(next), address: pool.type === "v3-pool" ? address(pool.address) : undefined,
+          poolManager: pool.type === "v4-pool" ? options.poolManager : undefined,
+          poolId: pool.type === "v4-pool" ? v4PoolId(current, v4Hop) : undefined,
+          fee, tickSpacing: pool.type === "v4-pool" ? v4Hop.tickSpacing : undefined,
+          hooks: pool.type === "v4-pool" ? v4Hop.hooks : undefined, hookData: (pool.hookData ?? "0x") as Hex,
+          approved: false, enabled: true, validationMetadata: {},
+        } });
         segment.tokens.push(next);
         segment.fees.push(fee);
       }
@@ -115,6 +137,8 @@ export function uniswapBasketRoutes(options: {
       totalInput += splitInput;
       totalOutput += splitOutput;
       maximumInput += budget;
+      authenticatedPaths[index] = authenticatedPath;
+      discoveredPaths[index] = { path: authenticatedPath, amountIn: splitInput, amountOut: splitOutput };
       return segments.map((segment, segmentIndex): AdapterSwapLeg => {
         const first = segmentIndex === 0;
         const last = segmentIndex === segments.length - 1;
@@ -138,34 +162,47 @@ export function uniswapBasketRoutes(options: {
     if (totalInput !== amountIn || totalOutput !== amountOut) throw new Error("Split route amounts do not match the quote.");
     return {
       amountIn: type === "EXACT_OUTPUT" ? maximumInput : amountIn,
-      amountOut, legs,
+      amountOut, legs, authenticatedPath: splits.length === 1 ? authenticatedPaths[0] : undefined, discoveredPaths,
     };
   };
-  const quoteWithFallback: BasketRouteProvider["quote"] = async (type, tokenIn, tokenOut, amount) => {
-    try {
-      return await quoteCandidate(type, tokenIn, tokenOut, amount);
-    } catch (cause) {
-      // Ask for the basket's WETH endpoints first. Only a missing route warrants
-      // another API call using ETH; provider and validation errors stay distinct.
-      if (quoteFailureCode(cause) === "NO_ROUTE"
-        && (sameAddress(tokenIn, options.weth) || sameAddress(tokenOut, options.weth))) {
-        return quoteCandidate(type,
-          sameAddress(tokenIn, options.weth) ? zeroAddress : tokenIn,
-          sameAddress(tokenOut, options.weth) ? zeroAddress : tokenOut, amount);
-      }
-      throw cause;
-    }
-  };
-  // This cache lives for one basket calculation, including its sizing passes.
-  // Different amounts and later user requests always receive fresh quotes.
+  // One discovery request per endpoint pair, including failed requests and all sizing passes.
+  const discoveries = new Map<string, Promise<BasketRouteQuote>>();
   const quotes = new Map<string, Promise<BasketRouteQuote>>();
   return {
     async quote(type, tokenIn, tokenOut, amount) {
       const key = `${type}:${tokenIn.toLowerCase()}:${tokenOut.toLowerCase()}:${amount}`;
       let pending = quotes.get(key);
       if (!pending) {
-        pending = quoteStep("INVALID_PROVIDER_QUOTE", () => quoteWithFallback(type, tokenIn, tokenOut, amount), { tokenIn, tokenOut })
-          .catch((error) => { quotes.delete(key); throw error; });
+        const pair = `${tokenIn.toLowerCase()}:${tokenOut.toLowerCase()}`;
+        const existing = discoveries.get(pair);
+        if (!existing) {
+          pending = quoteStep("INVALID_PROVIDER_QUOTE", () => quoteCandidate(type, tokenIn, tokenOut, amount), { tokenIn, tokenOut });
+          discoveries.set(pair, pending);
+        } else {
+          pending = existing.then(async discovered => {
+            if (!discovered.discoveredPaths?.length || !options.quoteSegment) throw new QuoteFailure("NO_ROUTE");
+            const total = discovered.discoveredPaths.reduce((sum, split) => sum + (type === "EXACT_INPUT" ? split.amountIn : split.amountOut), 0n);
+            let assigned = 0n;
+            const quotes = await Promise.all(discovered.discoveredPaths.map(async (split, splitIndex, splits) => {
+            const exact = splitIndex === splits.length - 1 ? amount - assigned : amount * (type === "EXACT_INPUT" ? split.amountIn : split.amountOut) / total;
+            assigned += exact;
+            if (!exact) throw new QuoteFailure("NO_ROUTE");
+            const quoted = await quoteRegisteredPath(split.path, type, exact, options.quoteSegment!);
+            const amountIn = type === "EXACT_OUTPUT" ? applySlippageUp(quoted.amountIn, options.slippageBps) : quoted.amountIn;
+            const legs = routeSegments(quoted.path).map((segment, index): AdapterSwapLeg => ({
+              adapter: options.adapter, tokenIn: boundary(segment.tokens[0]!), tokenOut: boundary(segment.tokens.at(-1)!),
+              amountIn: index === 0 && (type === "EXACT_OUTPUT" || splitIndex !== splits.length - 1) ? amountIn : maxUint256,
+              minAmountOut: index === quoted.segments.length - 1 ? type === "EXACT_OUTPUT" ? quoted.amountOut : applySlippageDown(quoted.amountOut, options.slippageBps) : 1n,
+              data: universalRouteData(segment.version, segment.data),
+              hops: segment.version === 3 ? routeFrom(segment.tokens, segment.hops.map(hop => hop.pool.fee)).hops : parseV4Path(segment.data),
+            }));
+            return { amountIn, amountOut: quoted.amountOut, legs, authenticatedPath: quoted.path };
+            }));
+            return { amountIn: quotes.reduce((sum, quote) => sum + quote.amountIn, 0n), amountOut: quotes.reduce((sum, quote) => sum + quote.amountOut, 0n),
+              legs: quotes.flatMap(quote => quote.legs), authenticatedPath: quotes.length === 1 ? quotes[0]!.authenticatedPath : undefined,
+              discoveredPaths: discovered.discoveredPaths };
+          });
+        }
         quotes.set(key, pending);
       }
       return pending;

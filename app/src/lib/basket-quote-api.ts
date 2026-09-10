@@ -1,7 +1,7 @@
 import { formatUnits, zeroAddress } from "viem";
 import { basketQuote, sameAddress, type BasketPlannerRequest } from "./basket-planner";
-import { robinhoodMainnetBasketDeployment } from "./deployment";
-import { mainnetBasketClient, type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
+import { robinhoodMainnetBasketDeployment, robinhoodTestnetBasketDeployment, protocolDeploymentForChain } from "./deployment";
+import { basketClient, type BasketQuoteClient, type BasketDeployment } from "./basket-client";
 import { parseTypedQuoteResponse } from "./swap-model";
 import { uniswapBasketRoutes } from "./uniswap-basket-routes";
 import { QuoteFailure, quoteStep } from "./quote-errors";
@@ -12,21 +12,20 @@ import { registeredBasketRoutes } from "./registered-routes";
 import type { AssetRegistry } from "./asset-catalog";
 import { canonicalOtfBasketRoutes } from "./canonical-otf-routing";
 
-export async function quoteMainnetBasket(request: BasketPlannerRequest, dependencies: {
+export async function quoteBasketSwap(request: BasketPlannerRequest, dependencies: {
   now?: () => number;
-  requestQuote(body: Record<string, unknown>): Promise<unknown>;
-  client?: MainnetBasketClient;
-  deployment?: MainnetBasketDeployment;
+  requestQuote?(body: Record<string, unknown>): Promise<unknown>;
+  client?: BasketQuoteClient;
+  deployment?: BasketDeployment;
   registry?: AssetRegistry;
   registeredClient?: ReturnType<typeof registeredRouteClient>;
 }) {
-  const deployment = dependencies.deployment ?? robinhoodMainnetBasketDeployment;
-  if (request.chainId !== 4663 || request.route !== "basket" || !deployment) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
+  const deployment = dependencies.deployment ?? (request.chainId === 46630 ? robinhoodTestnetBasketDeployment : robinhoodMainnetBasketDeployment);
+  if (![4663,46630].includes(request.chainId) || request.route !== "basket" || !deployment
+    || (!dependencies.deployment && !protocolDeploymentForChain(request.chainId)?.routingReady)) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
   const clock = dependencies.now ?? Date.now;
   const now = clock();
-  const client = dependencies.client ?? mainnetBasketClient(deployment);
-  let registeredPoolsUsed = false;
-  let registryForFallback:AssetRegistry|undefined;
+  const client = dependencies.client ?? basketClient(deployment, request.chainId);
   let stage = "bindings";
   try {
     await quoteStep("DEPLOYMENT_MISMATCH", () => client.verifyBindings());
@@ -43,31 +42,28 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
       return assets;
     } };
     stage = "routing";
-    const fallback = uniswapBasketRoutes({
+    const routing = dependencies.registeredClient ?? registeredRouteClient(request.chainId);
+    const fallback = request.chainId === 4663 && dependencies.requestQuote ? uniswapBasketRoutes({
       chainId: request.chainId, router: deployment.entryRouter, adapter: deployment.uniswapUniversalRouterAdapter,
       weth: deployment.weth,
+      poolManager: deployment.uniswapV4PoolManager, quoteSegment: routing.quoteSegment,
       reservedTokens: [...vaultAssets.values()].flat(),
       slippageBps: request.slippageBps,
       forbiddenTokens: [request.input, request.output].filter((asset) => asset.kind === "otf").map((asset) => asset.address),
       requestQuote: dependencies.requestQuote, authenticatePool: client.authenticatePool, authenticateV4Pool: client.authenticateV4Pool,
-    });
+    }) : undefined;
     const registry = dependencies.registry ?? await readRegistry(request.chainId);
-    registryForFallback=registry;
-    const baseRoutes = registry.pools.length ? registeredBasketRoutes({
+    const tokens = [request.input.address, request.output.address, ...vaultAssets.values()].flat();
+    if (tokens.some(token => registry.assets.some(asset => asset.chainId === request.chainId && sameAddress(token, asset.address) && !asset.enabled))) throw new QuoteFailure("INVALID_ASSET_METADATA");
+    const baseRoutes = registeredBasketRoutes({
       pools: registry.pools, chainId: request.chainId, weth: deployment.weth, adapter: deployment.uniswapUniversalRouterAdapter,
       slippageBps: request.slippageBps,
       reservedTokens: [...vaultAssets.values()].flat(),
       forbiddenTokens: [request.input,request.output].filter(asset=>asset.kind==="otf").map(asset=>asset.address),
-      ...(dependencies.registeredClient ?? registeredRouteClient(request.chainId)), fallback,
-    }) : fallback;
+      ...routing, fallback,
+    });
     const routes = canonicalOtfBasketRoutes(baseRoutes, { ...deployment, slippageBps: request.slippageBps, client });
-    const trackedRoutes={optimizeMint: routes.optimizeMint, quote:async(...args:Parameters<typeof routes.quote>)=>{
-      const quoted=await routes.quote(...args);
-      // API fallback is still independently authenticated; a second plan is bounded to one retry.
-      if(registry.pools.length)registeredPoolsUsed=true;
-      return quoted;
-    }};
-    const result = await basketQuote(request, basketClient, now, deployment.entryRouter, deployment.uniswapUniversalRouterAdapter, trackedRoutes, { address: deployment.weth, decimals: 18 });
+    const result = await basketQuote(request, basketClient, now, deployment.entryRouter, deployment.uniswapUniversalRouterAdapter, routes, { address: deployment.weth, decimals: 18 });
     stage = "plan-validation";
     const quote = parseTypedQuoteResponse(result.body, {
       route: "basket", chainId: request.chainId, now,
@@ -103,9 +99,6 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
       residualRefunds,
     } };
   } catch (error) {
-    if(registeredPoolsUsed && stage==="simulation" && registryForFallback) {
-      return quoteMainnetBasket(request,{...dependencies,registry:{assets:registryForFallback.assets,pools:[]}});
-    }
     return unavailableQuoteResponse(request, stage, error);
   }
 }

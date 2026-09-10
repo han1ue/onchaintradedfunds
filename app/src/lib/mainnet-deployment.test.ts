@@ -29,7 +29,9 @@ describe("mainnet activation manifest", () => {
   it.each(["otfToken", "launchManager"])("requires %s before enabling canonical OTF basket routing", async (name) => {
     const partial = { ...contracts };
     delete partial[name];
-    expect((await deployment({ protocolContracts: partial })).routingReady).toBe(false);
+    const config = await deployment({ protocolContracts: partial });
+    expect(config.canonicalReady).toBe(false);
+    expect(config.routingReady).toBe(true);
   });
   it("requires the V4 quoter before enabling routing", async () => {
     const selected = await deployment({ externalContracts: { ...config.externalContracts, uniswapV4Quoter: undefined } });
@@ -40,15 +42,21 @@ describe("mainnet activation manifest", () => {
     expect(pending.addresses.factory).toBeUndefined();
     expect(pending.routingReady).toBe(false);
     const partial = await deployment({ routing: { status: "ready", approvedAdapters: [] } });
-    expect(partial.creationReady).toBe(false);
+    expect(partial.creationReady).toBe(true);
     expect(partial.routingReady).toBe(false);
+    expect(partial.nativeEntryReady).toBe(false);
+    expect(partial.canonicalReady).toBe(true);
   });
   it("requires the mainnet rewards block and timestamp rather than a testnet schedule", async () => {
-    expect((await deployment()).rewardsDeployedAtMs).toBeUndefined();
+    const missing = await deployment();
+    expect(missing.rewardsDeployedAtMs).toBeUndefined();
+    expect(missing.rewardsReady).toBe(false);
     const timestamp = "2026-10-01T12:00:00.000Z";
-    const selected = await deployment({ protocolContracts: { ...contracts,
+    const selected = await deployment({ routing: { status: "pending", approvedAdapters: [] }, protocolContracts: { ...contracts,
       merkleRewardsDistributor: { ...contracts.merkleRewardsDistributor, blockNumber: "60000000", blockTimestamp: timestamp },
     } });
     expect(selected.rewardsDeployedAtMs).toBe(Date.parse(timestamp));
+    expect(selected.rewardsReady).toBe(true);
+    expect(selected.routingReady).toBe(false);
   });
 });

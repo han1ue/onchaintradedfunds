@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { formatUnits, zeroAddress, type Address, type Hex } from "viem";
 import { useAccount, useChainId, usePublicClient, useReadContract, useWalletClient } from "wagmi";
 import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
-import { robinhoodMainnetLiquidity, protocolDeploymentForChain } from "@/lib/deployment";
+import { protocolDeploymentForChain } from "@/lib/deployment";
 import { burnedSupply, feeBenefitRows } from "@/lib/otf-market";
 
 const DOCS_URL = "https://docs.onchaintradedfunds.com/token-and-fee-incentives";
@@ -36,7 +36,7 @@ function ClaimPanel({ distributor, explorer }: { distributor?: Address; explorer
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
-  const configured = Boolean(distributor);
+  const configured = Boolean(distributor && protocolDeploymentForChain(chainId)?.rewardsReady);
   const contract = distributor ?? zeroAddress;
   const query = { enabled: configured, refetchInterval: 12_000 } as const;
   const rootRead = useReadContract({ address: contract, abi: merkleRewardsDistributorAbi, functionName: "merkleRoot", query });
@@ -111,7 +111,7 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const weth = protocolDeploymentForChain(chainId)?.addresses.weth ?? zeroAddress;
   const oracle = protocolDeploymentForChain(chainId)?.addresses.ethUsdOracle ?? zeroAddress;
   const distributor = protocolDeploymentForChain(chainId)?.addresses.merkleRewardsDistributor;
-  const configured = protocolDeploymentForChain(chainId)?.routingReady === true && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
+  const configured = protocolDeploymentForChain(chainId)?.canonicalReady === true && token !== zeroAddress && launch !== zeroAddress && weth !== zeroAddress;
   const query = { enabled: configured, refetchInterval: 12_000 } as const;
   const totalSupplyRead = useReadContract({ address: token, abi: otfTokenAbi, functionName: "totalSupply", query });
   const phaseRead = useReadContract({ address: launch, abi: otfLaunchManagerAbi, functionName: "phase", query });
@@ -130,12 +130,12 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
   const [finalizeState, setFinalizeState] = useState<TransactionState>("idle");
   const [finalizeHash, setFinalizeHash] = useState<Hex>();
   const explorer = testnet ? robinhoodChainTestnet.blockExplorers.default.url : robinhoodChain.blockExplorers.default.url;
-  const poolHref = testnet ? "/liquidity" : mainnet ? robinhoodMainnetLiquidity.baseUrl : undefined;
-  const poolVenue = testnet ? "Testnet liquidity" : mainnet ? "Uniswap" : "Unavailable";
+  const poolHref = configured ? `${explorer}/address/${launch}` : undefined;
+  const poolVenue = poolHref ? "Canonical V4 market" : "Unavailable";
   const tokenStats = <section className="tokenSupplyLedger" aria-label="OTF token statistics">
     <div><span>Price</span><strong>{!configured ? "Unavailable" : priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(priceUsd, 8)}</strong><small>{!configured ? "WETH price unavailable" : priceRead.isPending ? "WETH price loading…" : `${tokenNumber(priceRead.data, 10)} WETH`}</small></div>
     <div><span>Market cap</span><strong>{!configured ? "Unavailable" : totalSupplyRead.isPending || priceRead.isPending || oracleRead.isPending ? "Loading…" : usd(marketCap, 0)}</strong><small>{!configured ? "WETH market cap unavailable" : totalSupplyRead.isPending || priceRead.isPending ? "WETH market cap loading…" : `${tokenNumber(marketCapWeth)} WETH`}</small></div>
-    <div><span>Pool</span><strong>{poolHref ? <a className="metricExternalLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{testnet ? "OTF / WETH" : mainnet ? "Open on Uniswap" : "No supported venue"}</small></div>
+    <div><span>Pool</span><strong>{poolHref ? <a className="metricExternalLink" href={poolHref} target={mainnet ? "_blank" : undefined} rel={mainnet ? "noreferrer" : undefined}>{poolVenue}<ExternalLink size={11} /></a> : poolVenue}</strong><small>{poolHref ? "OTF / WETH" : "No supported venue"}</small></div>
   </section>;
 
   async function finalizeGraduation() {
@@ -152,7 +152,7 @@ export function OTFTokenSurface({ swap }: { swap: ReactNode }) {
     } catch (error) { setFinalizeState(transactionError(error).state); }
   }
 
-  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><OtfCoinIcon className="tokenMarketTokenIcon" size={44} /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className="tokenTopRow solo">{tokenStats}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>$OTF deployment unavailable</h2><p>The OTF protocol is not deployed or configured on this network.</p></div></section></div>;
+  if (!configured) return <div className="appView tokenView tokenMarketView"><header className="tokenMarketHeader"><div className="tokenMarketIdentity"><OtfCoinIcon className="tokenMarketTokenIcon" size={44} /><div><h1>$OTF</h1><p>Canonical market, launch lifecycle, buybacks, and fee split.</p></div></div><a className="secondaryAction" href={DOCS_URL} target="_blank" rel="noreferrer"><ReceiptText size={14} />Docs<ExternalLink size={12} /></a></header><div className={protocolDeploymentForChain(chainId)?.rewardsReady ? "tokenTopRow" : "tokenTopRow solo"}>{tokenStats}{protocolDeploymentForChain(chainId)?.rewardsReady && <ClaimPanel distributor={distributor} explorer={explorer} />}</div><section className="sectionCard tokenUnavailable"><CircleAlert size={20} /><div><h2>$OTF deployment unavailable</h2><p>The OTF protocol is not deployed or configured on this network.</p></div></section></div>;
 
   const progressPercent = progressRead.data ? Math.min(100, Math.max(0, Number(progressRead.data[0]) / 100)) : undefined;
 

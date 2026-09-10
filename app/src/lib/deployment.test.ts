@@ -9,13 +9,11 @@ import {
   robinhoodTestnetDeploymentReady,
   robinhoodTestnetNativeEntryReady,
   robinhoodTestnetV4,
-  robinhoodTestnetUniversalAdapterReady,
 } from "./deployment";
 
 describe("Robinhood Testnet Universal Router deployment", () => {
   it("enables routing for the fresh deployment and its approved adapter", () => {
     expect(robinhoodTestnetDeploymentReady).toBe(true);
-    expect(robinhoodTestnetUniversalAdapterReady).toBe(true);
     expect(robinhoodTestnetNativeEntryReady).toBe(true);
     expect(robinhoodTestnetRewardsDeploymentBlock).toBe(114598826n);
     expect(robinhoodTestnetRewardsDeployedAtMs).toBe(Date.parse("2026-09-07T04:21:42.000Z"));

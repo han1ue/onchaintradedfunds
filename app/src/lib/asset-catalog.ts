@@ -45,8 +45,3 @@ export function fundAssetsVerified(registry: AssetRegistry, chainId: number, add
   return addresses.length > 0 && addresses.every(address => registry.assets.some(asset =>
     asset.chainId === chainId && asset.address.toLowerCase() === address.toLowerCase() && asset.enabled && asset.verified));
 }
-
-/** Endpoint policy only; metadata, provenance and pool authentication remain server checks. */
-export function testnetSwapPairAllowed(input: { address: Address; kind: string }, output: { address: Address; kind: string }): boolean {
-  return input.address.toLowerCase() !== output.address.toLowerCase() && (input.kind === "otf" || output.kind === "otf");
-}

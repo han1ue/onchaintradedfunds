@@ -41,7 +41,7 @@ describe("Uniswap basket route translation", () => {
 
   it.each([
     ["EXACT_INPUT", false], ["EXACT_OUTPUT", false], ["EXACT_INPUT", true], ["EXACT_OUTPUT", true],
-  ] as const)("requests ETH only after WETH has no route: %s, fallback=%s", async (type, fallback) => {
+  ] as const)("makes one WETH endpoint request: %s, missing=%s", async (type, fallback) => {
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
       const native = body.tokenIn === zeroAddress;
       if (!native && fallback) throw new QuoteFailure("NO_ROUTE");
@@ -54,7 +54,9 @@ describe("Uniswap basket route translation", () => {
           fee: "3000", tickSpacing: 60, hooks: zeroAddress }]],
       } };
     });
-    const quote = await uniswapBasketRoutes({ ...options(), weth: A, authenticateV4Pool: async () => {}, requestQuote }).quote(type, A, B, 10000n);
+    const pending = uniswapBasketRoutes({ ...options(), weth: A, authenticateV4Pool: async () => {}, requestQuote }).quote(type, A, B, 10000n);
+    if (fallback) { await expect(pending).rejects.toThrow(); expect(requestQuote).toHaveBeenCalledOnce(); return; }
+    const quote = await pending;
     expect(requestQuote).toHaveBeenCalledTimes(fallback ? 2 : 1);
     expect(requestQuote.mock.calls[0]![0].tokenIn).toBe(A);
     expect(quote.legs[0]!.tokenIn).toBe(A);
@@ -89,7 +91,7 @@ describe("Uniswap basket route translation", () => {
     expect(deps.requestQuote).toHaveBeenCalledTimes(2);
   });
 
-  it("gets a fresh quote for changed amounts and does not cache failures", async () => {
+  it("retains a failed discovery across repeated requests and sizing passes", async () => {
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
       const response = fixture();
       response.quote.input.amount = String(body.amount);
@@ -99,9 +101,9 @@ describe("Uniswap basket route translation", () => {
     requestQuote.mockRejectedValueOnce(new QuoteFailure("PROVIDER_UNAVAILABLE"));
     const routes = uniswapBasketRoutes({ ...options(), requestQuote });
     await expect(routes.quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
-    await routes.quote("EXACT_INPUT", A, B, 10000n);
-    await routes.quote("EXACT_INPUT", A, B, 10001n);
-    expect(requestQuote).toHaveBeenCalledTimes(3);
+    await expect(routes.quote("EXACT_INPUT", A, B, 10000n)).rejects.toThrow();
+    await expect(routes.quote("EXACT_INPUT", A, B, 10001n)).rejects.toThrow();
+    expect(requestQuote).toHaveBeenCalledTimes(1);
   });
 
   it("rejects native currencies in V3 pools", async () => {

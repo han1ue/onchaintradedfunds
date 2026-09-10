@@ -1,11 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getAddress, isAddress, type Address } from "viem";
-import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses } from "./deployment";
-import { quoteMainnetBasket } from "./mainnet-basket-api";
-import { type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
+import { robinhoodMainnetAddresses, robinhoodMainnetUniswap, robinhoodTestnetAddresses, protocolDeploymentForChain } from "./deployment";
+import { quoteBasketSwap } from "./basket-quote-api";
+import { type BasketQuoteClient, type BasketDeployment } from "./basket-client";
 import { QUOTE_MAX_AGE_MS, swapIncludesOtf } from "./swap-model";
-import { quoteTestnetSwap, type TestnetRoutingClient } from "./testnet-uniswap-v3-api";
-import { QuoteFailure, quoteStep } from "./quote-errors";
+import { QuoteFailure, quoteFailureCode, quoteStep } from "./quote-errors";
 import { unavailableQuoteResponse } from "./quote-diagnostics";
 import { requestUniswapProvider } from "./uniswap-provider";
 import { quoteRegisteredDirect } from "../server/registered-direct-quote";
@@ -20,9 +19,8 @@ export type SwapQuoteApiDependencies = {
   apiKey?: string;
   now?: () => number;
   providerRequest?: ProviderRequest;
-  testnetClient?: TestnetRoutingClient;
-  mainnetClient?: MainnetBasketClient;
-  mainnetDeployment?: MainnetBasketDeployment;
+  basketClient?: BasketQuoteClient;
+  basketDeployment?: BasketDeployment;
   registry?: AssetRegistry;
   registeredDirect?: typeof quoteRegisteredDirect;
 };
@@ -60,7 +58,6 @@ type DirectQuotePayload = {
   nativeInput: boolean;
   nativeOutput: boolean;
   nativeValue: string;
-  registeredTransaction?: ObjectRecord;
 };
 
 const UNISWAP_NATIVE_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
@@ -284,7 +281,6 @@ function executionJson(payload: DirectQuotePayload, quoteToken: string, universa
     nativeOutput: payload.nativeOutput,
     nativeValue: payload.nativeValue,
     permitData: payload.permitData,
-    registered: Boolean(payload.registeredTransaction),
     transaction,
   };
 }
@@ -293,31 +289,34 @@ function unavailable(route: "direct" | "basket", reason: string, status = 503) {
   return { status, body: { state: "unavailable", route, reason } };
 }
 
-async function directQuote(request: ValidatedQuoteRequest, dependencies: Required<Pick<SwapQuoteApiDependencies, "apiKey" | "now" | "providerRequest">> & { registeredDirect: typeof quoteRegisteredDirect }) {
-  if (request.chainId !== 4663 || !robinhoodMainnetUniswap.permit2 || !robinhoodMainnetUniswap.universalRouter) {
-    return unavailable("direct", "Uniswap Trading API swaps are unsupported on this network.");
+async function directQuote(request: ValidatedQuoteRequest, dependencies: Required<Pick<SwapQuoteApiDependencies, "now" | "providerRequest">> & { apiKey?: string; registeredDirect: typeof quoteRegisteredDirect }) {
+  const config = protocolDeploymentForChain(request.chainId);
+  if (!config?.routingReady || !config.v4.permit2 || !config.v4.universalRouter) {
+    return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
   }
-  const permit2 = robinhoodMainnetUniswap.permit2;
-  const universalRouter = robinhoodMainnetUniswap.universalRouter;
+  const { permit2, universalRouter } = config.v4;
   let stage = "provider-quote";
   try {
     let registered: Awaited<ReturnType<typeof quoteRegisteredDirect>>;
     try { registered = await dependencies.registeredDirect(request,dependencies.now()+QUOTE_MAX_AGE_MS); }
-    catch { /* Failed candidates use the existing Trading API fallback. */ }
+    catch (error) { if (request.chainId === 46630 || error instanceof QuoteFailure && error.code === "INVALID_ASSET_METADATA" || quoteFailureCode(error) === "INVALID_ASSET_METADATA") throw error; }
     if (registered) {
       const payload: DirectQuotePayload = {
         chainId:request.chainId,caller:request.caller,inputToken:request.input.address,outputToken:request.output.address,
         amountIn:request.inputAmountRaw.toString(),minAmountOut:registered.minAmountOut.toString(),expectedAmountOut:registered.expectedAmountOut.toString(),
-        expiresAtMs:registered.expiresAtMs,providerQuote:null,registeredTransaction:registered.transaction,
+        expiresAtMs:registered.expiresAtMs,providerQuote:null,
         nativeInput:request.input.kind==="native",nativeOutput:request.output.kind==="native",nativeValue:registered.transaction.value,
       };
       if (dependencies.now()>=payload.expiresAtMs) throw new QuoteFailure("QUOTE_EXPIRED");
       return {status:200,body:{state:"available",id:`registered-${request.requestedAtMs}`,route:"direct",chainId:request.chainId,caller:request.caller,
         quotedAtMs:dependencies.now(),expiresAtMs:payload.expiresAtMs,inputAmountRaw:payload.amountIn,
         expectedOutputRaw:payload.expectedAmountOut,expectedOutput:formatRaw(registered.expectedAmountOut,request.output.decimals),outputAmount:formatRaw(registered.expectedAmountOut,request.output.decimals),
-        minimumReceivedRaw:payload.minAmountOut,minimumReceived:formatRaw(registered.minAmountOut,request.output.decimals),routeLabel:"Direct pool",hops:[],
-        gasEstimate:registered.gasEstimate,priceImpactBps:registered.impactBps,execution:executionJson(payload,sealQuote(payload,dependencies.apiKey),universalRouter)}};
+        minimumReceivedRaw:payload.minAmountOut,minimumReceived:formatRaw(registered.minAmountOut,request.output.decimals),routeLabel:"Registered pools",hops:registered.hops,
+        gasEstimate:registered.gasEstimate,priceImpactBps:registered.impactBps,
+        execution:{...executionJson(payload,"",universalRouter,registered.transaction),kind:"direct-registered",segments:registered.segments}}};
     }
+    if (request.chainId !== 4663 || !dependencies.apiKey) throw new QuoteFailure("NO_ROUTE");
+    const apiKey = dependencies.apiKey;
     const quoteResponse = await quoteStep("PROVIDER_UNAVAILABLE", () => dependencies.providerRequest("quote", {
       type: "EXACT_INPUT",
       amount: request.inputAmountRaw.toString(),
@@ -329,7 +328,7 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
       slippageTolerance: request.slippageBps / 100,
       routingPreference: "BEST_PRICE",
       protocols: ["V3", "V4"],
-    }, dependencies.apiKey));
+    }, apiKey));
     stage = "quote-validation";
     const semantics = quoteSemantics(quoteResponse, request, dependencies.now());
     validatePermitData(semantics.permitData, request, permit2, universalRouter);
@@ -365,7 +364,7 @@ async function directQuote(request: ValidatedQuoteRequest, dependencies: Require
         expectedOutputRaw: semantics.expectedAmountOut.toString(),
         minimumReceived: formatRaw(semantics.minAmountOut, request.output.decimals),
         minimumReceivedRaw: semantics.minAmountOut.toString(),
-        routeLabel: "Direct pool",
+        routeLabel: "Uniswap API",
         hops: [],
         execution: executionJson(payload, quoteToken, universalRouter),
       },
@@ -431,7 +430,7 @@ async function finalizeDirect(value: unknown, dependencies: Required<Pick<SwapQu
   } else if (signature !== undefined) {
     throw new Error("A Permit2 signature was supplied for a quote that does not require one.");
   }
-  const swapResponse = payload.registeredTransaction ? { swap: payload.registeredTransaction } : record(await dependencies.providerRequest("swap", {
+  const swapResponse = record(await dependencies.providerRequest("swap", {
     quote: payload.providerQuote,
     ...(signature === undefined ? {} : { signature }),
   }, dependencies.apiKey), "Uniswap swap response");
@@ -456,17 +455,12 @@ export async function handleSwapQuoteRequest(value: unknown, dependencies: SwapQ
     if (!swapIncludesOtf(request.input, request.output)) {
       return unavailable(request.route, "Swap is only available for OTF assets.");
     }
-    if (request.chainId === 46630) {
-      return quoteTestnetSwap(request, { now, client: dependencies.testnetClient });
-    }
     if (request.route === "basket") {
-      if (!apiKey) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
-      return await quoteMainnetBasket(request, {
-        now, client: dependencies.mainnetClient, deployment: dependencies.mainnetDeployment, registry: dependencies.registry,
-        requestQuote: (body) => providerRequest("quote", body, apiKey),
+      return await quoteBasketSwap(request, {
+        now, client: dependencies.basketClient, deployment: dependencies.basketDeployment, registry: dependencies.registry,
+        requestQuote: apiKey && request.chainId === 4663 ? (body) => providerRequest("quote", body, apiKey) : undefined,
       });
     }
-    if (!apiKey) return unavailableQuoteResponse(request, "configuration", new QuoteFailure("ROUTE_NOT_CONFIGURED"));
     return await directQuote(request, { apiKey, now, providerRequest, registeredDirect: dependencies.registeredDirect ?? quoteRegisteredDirect });
   } catch {
     return { status: 400, body: { error: "INVALID_SWAP_QUOTE_REQUEST" } };

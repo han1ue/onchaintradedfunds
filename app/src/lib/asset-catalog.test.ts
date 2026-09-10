@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetCatalog, fundAssetsVerified, testnetSwapPairAllowed } from "./asset-catalog";
+import { assetCatalog, fundAssetsVerified } from "./asset-catalog";
 import { registryFixture, testnetAssetById, testnetFundAssets, testnetPools, testnetQuoteAssets } from "../test/registry-fixture";
 import { registeredCandidates } from "./registered-routes";
 
@@ -28,6 +28,5 @@ describe("database registry projections", () => {
     expect(registeredCandidates([pool,competing],46630,weth,usdg,weth)).toHaveLength(2);
     expect(registeredCandidates([pool,competing],4663,weth,usdg,weth)).toHaveLength(0);
     expect(registeredCandidates([pool],46630,weth,"0x00000000000000000000000000000000000000f1",weth)).toHaveLength(0);
-    expect(testnetSwapPairAllowed({address:weth,kind:"erc20"},{address:usdg,kind:"erc20"})).toBe(false);
   });
 });

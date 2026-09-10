@@ -8,20 +8,28 @@ import { protocolDeploymentForChain } from "../lib/deployment";
 import { registeredCandidates,bestRegisteredQuote,REGISTERED_ROUTE_POLICY } from "../lib/registered-routes";
 import { registeredDirectExecution } from "../lib/registered-direct-execution";
 import { applySlippageDown, type BasketPlannerRequest } from "../lib/basket-planner";
-import { QuoteFailure } from "../lib/quote-errors";
+import { QuoteFailure, quoteStep } from "../lib/quote-errors";
+import { routeFrom } from "../lib/v3-route";
+import { parseV4Path } from "../lib/v4-route";
 
 export async function quoteRegisteredDirect(request:BasketPlannerRequest,expiresAt:number) {
-  const registry=await readRegistry(request.chainId);
   const deployment=protocolDeploymentForChain(request.chainId)?.addresses;
   const {universalRouter,permit2}=protocolDeploymentForChain(request.chainId)?.v4 ?? {};
-  if(!deployment?.weth||!universalRouter||!permit2)return undefined;
+  if(!protocolDeploymentForChain(request.chainId)?.routingReady || !deployment?.weth||!universalRouter||!permit2)return undefined;
+  const weth = deployment.weth;
+  const client=chainClient(request.chainId);
+  const registry = await quoteStep("INVALID_ASSET_METADATA", async () => {
+    for(const asset of [request.input,request.output]) {
+      if(asset.kind==="native" && (asset.decimals!==18 || asset.address.toLowerCase()!==weth.toLowerCase()))throw new QuoteFailure("INVALID_ASSET_METADATA");
+      if(asset.kind==="otf" && (!deployment.factory||!asset.isFactoryVault||!await client.readContract({address:deployment.factory,abi:otfFactoryAbi,functionName:"isVault",args:[asset.address]})))throw new QuoteFailure("INVALID_ASSET_METADATA");
+      if(asset.kind!=="native" && await client.readContract({address:asset.address,abi:erc20Abi,functionName:"decimals"})!==asset.decimals)throw new QuoteFailure("INVALID_ASSET_METADATA");
+    }
+    return readRegistry(request.chainId);
+  });
+  if ([request.input, request.output].some(asset => registry.assets.some(registered => registered.chainId === request.chainId
+    && registered.address.toLowerCase() === asset.address.toLowerCase() && !registered.enabled))) throw new QuoteFailure("INVALID_ASSET_METADATA");
   const paths=registeredCandidates(registry.pools,request.chainId,request.input.address,request.output.address,deployment.weth);
   if(!paths.length||paths.length>REGISTERED_ROUTE_POLICY.maxCandidates)return undefined;
-  const client=chainClient(request.chainId);
-  for(const asset of [request.input,request.output]) {
-    if(asset.kind==="otf" && (!deployment.factory||!asset.isFactoryVault||!await client.readContract({address:deployment.factory,abi:otfFactoryAbi,functionName:"isVault",args:[asset.address]})))throw new QuoteFailure("INVALID_ASSET_METADATA");
-    if(asset.kind!=="native" && await client.readContract({address:asset.address,abi:erc20Abi,functionName:"decimals"})!==asset.decimals)throw new QuoteFailure("INVALID_ASSET_METADATA");
-  }
   const routing=registeredRouteClient(request.chainId);
   const best=await bestRegisteredQuote({paths,type:"EXACT_INPUT",amount:request.inputAmountRaw,...routing});
   if(!best || best.impactBps>REGISTERED_ROUTE_POLICY.maxImpactBps || !await routing.withinTradeSize(request.input.address,best.amountIn))return undefined;
@@ -36,6 +44,8 @@ export async function quoteRegisteredDirect(request:BasketPlannerRequest,expires
   const simulation=await client.simulateCalls({account:request.caller,calls,validation:false});
   if(simulation.results.length!==calls.length||simulation.results.some(result=>result.status!=="success"))throw new QuoteFailure("SIMULATION_FAILED");
   return {expectedAmountOut:best.amountOut,minAmountOut:minimum,expiresAtMs:expiresAt,
+    segments: best.segments.map(({version,data}) => ({version,data})),
+    hops: best.segments.flatMap(segment => segment.version === 3 ? routeFrom(segment.tokens, segment.hops.map(hop => hop.pool.fee)).hops : parseV4Path(segment.data)),
     transaction:{chainId:request.chainId,from:request.caller,to:universalRouter,data:tx.data,value:tx.value.toString()},
     gasEstimate:simulation.results.reduce((gas,result)=>gas+result.gasUsed,0n).toString(),impactBps:best.impactBps};
 }

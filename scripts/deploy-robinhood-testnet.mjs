@@ -813,7 +813,6 @@ const deployment = {
     approvedAdapters: [uniswapUniversalRouterAdapter.address],
     uniswapUniversalRouterAdapter: uniswapUniversalRouterAdapter.address,
     launchRouter: launchRouter.address,
-    nativeEntryExitEnabled: true,
     v4RouteData: "0x04 || abi.encode(address currencyIn, PathKey[] path)",
     maxV4HopsPerLeg: 3,
     maxLegs: 40,

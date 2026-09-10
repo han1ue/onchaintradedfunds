@@ -6,6 +6,7 @@ import { encodeV4Path, parseV4Path, v4BoundaryToken, type V4PathKey } from "./v4
 import { QuoteFailure } from "./quote-errors";
 import { universalRouteData } from "./universal-route";
 import type { AdapterSwapLeg } from "./swap-model";
+import { aggregateExitQuotes } from "./exit-aggregation";
 
 export const REGISTERED_ROUTE_POLICY = { maxHops: 2, maxCandidates: 16, maxImpactBps: 200, maxTradeUsd: 10_000, probeDivisor: 100n } as const;
 export type RegisteredHop = { pool: RegisteredPool; tokenIn: Address; tokenOut: Address };
@@ -119,7 +120,7 @@ export function registeredBasketRoutes(options:{
 }):BasketRouteProvider {
   const pending=new Map<string,Promise<BasketRouteQuote>>();
   const selected = new WeakMap<AdapterSwapLeg, RegisteredPath>();
-  return {async optimizeMint(legs) {
+  return { optimizeExit: quotes => aggregateExitQuotes(quotes, options), async optimizeMint(legs) {
     // The registry policy permits two-hop routes. Merge only a complete group of
     // independent, hookless routes with one shared prefix and distinct leaf pools.
     // Any unsupported route or failed quote retains the original executable plan.
@@ -196,7 +197,7 @@ export function registeredBasketRoutes(options:{
           hops:segment.version===3?routeFrom(segment.tokens,segment.hops.map(hop=>hop.pool.fee)).hops:parseV4Path(segment.data)};
       });
       if (type === "EXACT_OUTPUT" && legs.length === 1) selected.set(legs[0]!, best.path);
-      return {amountIn,amountOut:best.amountOut,legs};
+      return {amountIn,amountOut:best.amountOut,legs,authenticatedPath:best.path};
     };
     const result=run().catch(error=>{pending.delete(key);throw error;});pending.set(key,result);return result;
   }};

@@ -26,7 +26,7 @@ export function createUniswapProviderRequest(sharedSlot: SharedProviderSlot = da
     if (!routerVersion) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
     const keyHash = createHash("sha256").update(apiKey).digest("hex");
     const deadline = Date.now() + MAX_QUEUE_WAIT_MS;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < (path === "quote" ? 1 : 3); attempt++) {
       let admitted = false;
       for (let poll=0; poll<60 && Date.now()<deadline; poll++) {
         const wait = await sharedSlot(keyHash);

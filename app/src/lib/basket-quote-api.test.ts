@@ -3,22 +3,21 @@ import { emptyRegistry } from "./asset-catalog";
 import { decodeFunctionData, maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { type BasketPlannerRequest } from "./basket-planner";
-import { quoteMainnetBasket } from "./mainnet-basket-api";
-import { basketSimulationCalls, type MainnetBasketClient, type MainnetBasketDeployment } from "./mainnet-basket-client";
+import { quoteBasketSwap } from "./basket-quote-api";
+import { basketSimulationCalls, type BasketQuoteClient, type BasketDeployment } from "./basket-client";
 import { parseTypedQuoteResponse, type BasketRouterExecution } from "./swap-model";
 import { handleSwapQuoteRequest } from "./uniswap-trading-api";
 import { otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { encodeV4Path, parseV4Path } from "./v4-route";
-import { QuoteFailure } from "./quote-errors";
 
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
 const INPUT = addr(1), A = addr(2), B = addr(3), VAULT = addr(4), CALLER = addr(5);
 const NOW = 1_750_000_000_000;
-const DEPLOYMENT: MainnetBasketDeployment = {
+const DEPLOYMENT = {
   factory: addr(10), entryRouter: addr(11), uniswapUniversalRouterAdapter: addr(12), weth: addr(13), uniswapV3Factory: addr(14),
   uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34),
   otfToken: addr(35), launchManager: addr(36), uniswapV4Quoter: addr(37),
-};
+} satisfies BasketDeployment;
 const token = (address: Address, kind: "erc20" | "native" | "otf" = "erc20") => ({ address, kind, decimals: 18, isFactoryVault: kind === "otf" });
 function request(burn = false): BasketPlannerRequest {
   return { route: "basket", chainId: 4663, caller: CALLER,
@@ -45,7 +44,7 @@ function provider(split = false) {
     } };
   });
 }
-function client(overrides: Partial<MainnetBasketClient> = {}): MainnetBasketClient {
+function client(overrides: Partial<BasketQuoteClient> = {}): BasketQuoteClient {
   return {
     verifyOtfBindings: vi.fn(async () => {}),
     quoteOtf: vi.fn(async (type, buy, amount) => type === "EXACT_OUTPUT" ? (amount + 999n) / 1000n : buy ? amount * 1000n : amount / 1000n),
@@ -62,7 +61,8 @@ function client(overrides: Partial<MainnetBasketClient> = {}): MainnetBasketClie
   };
 }
 function deps(routingClient = client(), quoteProvider = provider()) {
-  return { registry: emptyRegistry, now: () => NOW, deployment: DEPLOYMENT, client: routingClient, requestQuote: quoteProvider };
+  return { registry: emptyRegistry, now: () => NOW, deployment: DEPLOYMENT, client: routingClient, requestQuote: quoteProvider,
+    registeredClient: { authenticate: async () => {}, withinTradeSize: async () => true, quoteSegment: async (_segment: unknown, type: "EXACT_INPUT" | "EXACT_OUTPUT", amount: bigint) => ({ amount: type === "EXACT_INPUT" ? amount * 2n : (amount + 1n) / 2n, gas: 1n }) } };
 }
 function parse(body: unknown, req: BasketPlannerRequest) {
   return parseTypedQuoteResponse(body, {
@@ -77,7 +77,7 @@ describe("mainnet basket planner", () => {
     const routingClient = client({ vaultAssets: vi.fn(async () => [A, DEPLOYMENT.otfToken]) });
     const quoteProvider = provider();
     const req = { ...request(), input };
-    const result = await quoteMainnetBasket(req, deps(routingClient, quoteProvider));
+    const result = await quoteBasketSwap(req, deps(routingClient, quoteProvider));
     expect(result.status).toBe(200);
     const execution = parse(result.body, req).execution as BasketRouterExecution;
     if (execution.call.method !== "mintFromToken" && execution.call.method !== "mintFromNative") throw new Error("Missing mint execution");
@@ -96,7 +96,7 @@ describe("mainnet basket planner", () => {
   it("redeems OTF through split settlement routes without consuming the basket's other WETH", async () => {
     const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken, DEPLOYMENT.weth]) });
     const req = request(true);
-    const result = await quoteMainnetBasket(req, deps(routingClient, provider(true)));
+    const result = await quoteBasketSwap(req, deps(routingClient, provider(true)));
     expect(result.status).toBe(200);
     const execution = parse(result.body, req).execution as BasketRouterExecution;
     if (execution.call.method !== "redeemToToken") throw new Error("Missing redeem execution");
@@ -113,7 +113,7 @@ describe("mainnet basket planner", () => {
     const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken]), previewMint: vi.fn(async (_vault, shares) => [shares]),
       quoteOtf: vi.fn(async (type, _buy, amount) => { if (type === "EXACT_INPUT") throw new Error("BootstrapPriceOutOfBounds"); return amount; }),
     });
-    expect((await quoteMainnetBasket(request(), deps(routingClient))).status).toBe(503);
+    expect((await quoteBasketSwap(request(), deps(routingClient))).status).toBe(503);
     expect(routingClient.simulate).not.toHaveBeenCalled();
   });
 
@@ -121,7 +121,7 @@ describe("mainnet basket planner", () => {
     const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken]), previewMint: vi.fn(async (_vault, shares) => [shares]),
       verifyOtfBindings: vi.fn(async () => { throw new Error("Adapter is not approved"); }),
     });
-    const result = await quoteMainnetBasket(request(), deps(routingClient));
+    const result = await quoteBasketSwap(request(), deps(routingClient));
     expect(result.body).toMatchObject({ code: "DEPLOYMENT_MISMATCH" });
     expect(routingClient.quoteOtf).not.toHaveBeenCalled();
     expect(routingClient.simulate).not.toHaveBeenCalled();
@@ -130,15 +130,14 @@ describe("mainnet basket planner", () => {
   it.each([false, true])("uses native V4 pools behind WETH router endpoints (burn=%s)", async (burn) => {
     const base = provider();
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {
-      if (body.tokenIn !== zeroAddress && body.tokenOut !== zeroAddress) throw new QuoteFailure("NO_ROUTE");
       const response = await base(body);
-      response.quote.route = response.quote.route.map((path) => path.map((pool) => ({ ...pool, type: "v4-pool", tickSpacing: 60, hooks: zeroAddress })));
+      response.quote.route = response.quote.route.map((path) => path.map((pool) => ({ ...pool, type: "v4-pool", tickSpacing: 60, hooks: zeroAddress, tokenIn: {...pool.tokenIn, address: body.tokenIn === DEPLOYMENT.weth ? zeroAddress : pool.tokenIn.address}, tokenOut: {...pool.tokenOut, address: body.tokenOut === DEPLOYMENT.weth ? zeroAddress : pool.tokenOut.address} })));
       return response;
     });
     const req = request(burn);
     if (burn) req.output = token(DEPLOYMENT.weth, "native"); else req.input = token(DEPLOYMENT.weth, "native");
     const dependencies = { ...deps(), requestQuote };
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const execution = parse(result.body, req).execution as BasketRouterExecution;
     const legs = execution.call.method === "mintFromNative" ? execution.call.args[1] : execution.call.args[2];
@@ -162,7 +161,7 @@ describe("mainnet basket planner", () => {
       return response;
     });
     const req = request(burn), dependencies = { ...deps(), requestQuote };
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const quote = parse(result.body, req);
     expect(quote.hops?.map((hop) => hop.venue)).toEqual(["Uniswap V3", "Uniswap V4", "Uniswap V3", "Uniswap V4"]);
@@ -185,7 +184,7 @@ describe("mainnet basket planner", () => {
     });
     const dependencies = { ...deps(), requestQuote };
     const req = request(burn);
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const quote = parse(result.body, req);
     expect(quote.hops?.map((hop) => hop.venue)).toEqual(["Uniswap V4", "Uniswap V4"]);
@@ -215,7 +214,7 @@ describe("mainnet basket planner", () => {
       return response;
     });
     const req = request(burn), dependencies = { ...deps(), requestQuote };
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const quote = parse(result.body, req);
     expect(quote.hops?.map((hop) => hop.venue)).toEqual(["Uniswap V3", "Uniswap V4", "Uniswap V3", "Uniswap V4"]);
@@ -239,13 +238,13 @@ describe("mainnet basket planner", () => {
       return response;
     });
     const dependencies = { ...deps(), requestQuote };
-    expect((await quoteMainnetBasket(request(true), dependencies)).status).toBe(503);
+    expect((await quoteBasketSwap(request(true), dependencies)).status).toBe(503);
     expect(dependencies.client.simulate).not.toHaveBeenCalled();
   });
 
   it.each([false, true])("quotes and simulates independent constituent routes (burn=%s)", async (burn) => {
     const req = request(burn), dependencies = deps();
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const quote = parse(result.body, req);
     expect(quote.hops).toHaveLength(2);
@@ -261,7 +260,7 @@ describe("mainnet basket planner", () => {
   it.each([false, true])("supports V3 split routes within each constituent (burn=%s)", async (burn) => {
     const dependencies = deps(client(), provider(true));
     const req = request(burn);
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     const execution = parse(result.body, req).execution as BasketRouterExecution;
     const legs = execution.call.method === "mintFromToken" ? execution.call.args[1] : execution.call.args[2];
@@ -277,7 +276,7 @@ describe("mainnet basket planner", () => {
   it.each([false, true])("keeps native wrap/unwrap in the basket router (burn=%s)", async (burn) => {
     const req = request(burn);
     if (burn) req.output = token(DEPLOYMENT.weth, "native"); else req.input = token(DEPLOYMENT.weth, "native");
-    const result = await quoteMainnetBasket(req, deps());
+    const result = await quoteBasketSwap(req, deps());
     expect(result.status).toBe(200);
     const execution = parse(result.body, req).execution as BasketRouterExecution;
     expect(execution.call.method).toBe(burn ? "redeemToNative" : "mintFromNative");
@@ -293,7 +292,7 @@ describe("mainnet basket planner", () => {
     const routingClient = client({ vaultAssets: vi.fn(async () => [INPUT, B]) });
     const dependencies = deps(routingClient);
     const req = request(burn);
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     expect(parse(result.body, req).hops).toHaveLength(1);
     for (const [body] of dependencies.requestQuote.mock.calls) expect(body.tokenIn).not.toBe(body.tokenOut);
@@ -302,7 +301,7 @@ describe("mainnet basket planner", () => {
   it("uses the owner preview, reports simulated refunds, and includes approval reset in preflight", async () => {
     const dependencies = deps(client({ simulate: vi.fn(async () => ({ amountOut: 2n * 10n ** 18n, refunds: [{ token: B, amount: 7n }], gasUsed: 123n })) }));
     const req = request(true);
-    const result = await quoteMainnetBasket(req, dependencies);
+    const result = await quoteBasketSwap(req, dependencies);
     expect(result.status).toBe(200);
     expect(dependencies.client.previewRedeem).toHaveBeenCalledWith(VAULT, req.inputAmountRaw, CALLER, 0n);
     expect(parse(result.body, req).residualRefunds).toEqual([{ token: B, amount: 7n, displayAmount: "0.000000000000000007" }]);
@@ -321,7 +320,7 @@ describe("mainnet basket planner", () => {
       ...(failure === "insufficient output" ? { simulate: async () => ({ amountOut: 1n, refunds: [], gasUsed: 1n }) } : {}),
       ...(failure === "preview" ? { previewRedeem: async () => [1n] } : {}),
     });
-    const result = await quoteMainnetBasket(request(true), deps(routingClient));
+    const result = await quoteBasketSwap(request(true), deps(routingClient));
     const codes: Record<string, string> = { bindings: "DEPLOYMENT_MISMATCH", vault: "INVALID_ASSET_METADATA", decimals: "INVALID_ASSET_METADATA", pool: "POOL_VALIDATION_FAILED", simulation: "SIMULATION_FAILED", "insufficient output": "MINIMUM_OUTPUT_NOT_MET", preview: "QUOTE_FAILED" };
     expect(result).toMatchObject({ status: 503, body: { state: "unavailable", code: codes[failure], requestId: expect.any(String) } });
     expect(JSON.stringify(result)).not.toContain("Private RPC detail");
@@ -330,7 +329,7 @@ describe("mainnet basket planner", () => {
 
   it("does not renew a quote that expired during routing or simulation", async () => {
     const clock = vi.fn().mockReturnValueOnce(NOW).mockReturnValue(NOW + 46_000);
-    expect((await quoteMainnetBasket(request(true), { ...deps(), now: clock })).status).toBe(503);
+    expect((await quoteBasketSwap(request(true), { ...deps(), now: clock })).status).toBe(503);
   });
 
   it("wires mainnet baskets into the same-origin API without using wallet swap calldata", async () => {
@@ -340,7 +339,7 @@ describe("mainnet basket planner", () => {
       return dependencies.requestQuote(body);
     });
     const result = await handleSwapQuoteRequest({ action: "quote", ...req, inputAmountRaw: req.inputAmountRaw.toString() }, {
-      registry: emptyRegistry, apiKey: "test", now: dependencies.now, mainnetClient: dependencies.client, mainnetDeployment: DEPLOYMENT, providerRequest,
+      registry: emptyRegistry, apiKey: "test", now: dependencies.now, basketClient: dependencies.client, basketDeployment: DEPLOYMENT, providerRequest,
     });
     expect(result.status).toBe(200);
     expect(providerRequest).toHaveBeenCalledTimes(2);
@@ -348,8 +347,8 @@ describe("mainnet basket planner", () => {
 
   it("keeps unconfigured mainnet and unsupported networks unavailable", async () => {
     const requestQuote = provider();
-    expect((await quoteMainnetBasket(request(), { requestQuote })).body).toMatchObject({ code: "ROUTE_NOT_CONFIGURED" });
-    expect((await quoteMainnetBasket({ ...request(), chainId: 1 }, { ...deps(), requestQuote })).status).toBe(503);
+    expect((await quoteBasketSwap(request(), { requestQuote })).body).toMatchObject({ code: "ROUTE_NOT_CONFIGURED" });
+    expect((await quoteBasketSwap({ ...request(), chainId: 1 }, { ...deps(), requestQuote })).status).toBe(503);
     expect(requestQuote).not.toHaveBeenCalled();
   });
 });

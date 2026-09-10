@@ -43,9 +43,7 @@ import { robinhoodChain, robinhoodChainTestnet } from "@/lib/chains";
 import {
   robinhoodMainnetAddresses,
   robinhoodMainnetBasketDeployment,
-  robinhoodMainnetUniswap,
   protocolDeploymentForChain,
-  robinhoodTestnetDeploymentReady,
 } from "@/lib/deployment";
 import { fundAssetsVerified, type AssetRegistry } from "@/lib/asset-catalog";
 import { useAssetRegistry } from "@/lib/use-asset-registry";
@@ -357,7 +355,7 @@ function TokenPicker({
           {searchable.map((asset) => (
             <button type="button" key={`${asset.kind}-${asset.address}`} className="swapTokenOption" onClick={() => onSelect(asset)}>
               <AssetMark asset={asset} />
-              <span><strong>{asset.symbol}</strong><small>{asset.name}</small></span>
+              <span><strong>{asset.symbol}</strong><small>{asset.name}{asset.verified === false && asset.kind !== "native" ? " · Unverified" : ""}</small></span>
               {sameAsset(asset, selected) ? <Check size={15} aria-label="Selected" /> : <small>{shortAddress(asset.address)}</small>}
             </button>
           ))}
@@ -428,7 +426,7 @@ function QuoteReview({
   const remainingPercent = Math.min(100, remainingMs / QUOTE_MAX_AGE_MS * 100);
   const executionTarget = activeQuote?.execution?.kind === "direct-api"
     ? activeQuote.execution.universalRouter
-    : activeQuote?.execution?.kind === "direct-v3"
+    : activeQuote?.execution?.kind === "direct-registered"
       ? activeQuote.execution.universalRouter
       : activeQuote?.execution?.router;
   return (
@@ -627,7 +625,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const launchManager = protocolDeploymentForChain(chainId)?.addresses.launchManager;
   const launchRouter = protocolDeploymentForChain(chainId)?.addresses.launchRouter;
   const canonicalOtfPair = Boolean(
-    protocolDeploymentForChain(chainId)?.routingReady
+    protocolDeploymentForChain(chainId)?.canonicalReady
     && protocolToken
     && canonicalWeth
     && ((input.address.toLowerCase() === protocolToken.toLowerCase() && output.address.toLowerCase() === canonicalWeth.toLowerCase())
@@ -691,21 +689,15 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
   const usableQuote = nativeWrapPair ? amountValid : canonicalOtfPair ? canonicalQuoteUsable : Boolean(activeQuote && quoteIsFresh(activeQuote, now));
   const quoteService = useMemo(() => quoteServiceForChain(chainId), [chainId]);
   const executionPlan = useMemo(() => executionPlanForQuote(activeQuote, chainId, now), [activeQuote, chainId, now]);
-  const executionConfigured = executionPlan?.kind === "direct-api"
-    ? chainId === robinhoodChain.id && robinhoodMainnetUniswap.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase()
-    : executionPlan?.kind === "direct-v3"
-      ? chainId === robinhoodChainTestnet.id && executionPlan.universalRouter.toLowerCase() === protocolDeploymentForChain(chainId)?.v4.universalRouter!.toLowerCase()
-      : executionPlan?.kind === "basket-router" && (chainId === robinhoodChain.id ? Boolean(robinhoodMainnetBasketDeployment) : chainId === robinhoodChainTestnet.id && robinhoodTestnetDeploymentReady);
-  const quoteNetworkConfigured = nativeWrapPair ? Boolean(configuredWeth) : chainId === robinhoodChain.id || robinhoodTestnetDeploymentReady;
-  const routingLabel = nativeWrapPair
-    ? "Native wrap · 1:1"
-    : chainId === robinhoodChain.id
-      ? "Mainnet · Uniswap API"
-      : canonicalOtfPair
-        ? canonicalPhase === 1 ? "Testnet · Launch boundary router" : "Testnet · Canonical V4"
-        : chainId === robinhoodChainTestnet.id
-          ? "Testnet · Uniswap"
-          : "Unsupported network";
+  const executionConfigured = executionPlan?.kind === "basket-router"
+    ? Boolean(input.kind === "native" || output.kind === "native"
+      ? protocolDeploymentForChain(chainId)?.nativeEntryReady : protocolDeploymentForChain(chainId)?.routingReady)
+    : Boolean(executionPlan && protocolDeploymentForChain(chainId)?.routingReady
+      && protocolDeploymentForChain(chainId)?.v4.universalRouter?.toLowerCase() === executionPlan.universalRouter.toLowerCase());
+  const quoteNetworkConfigured = nativeWrapPair ? Boolean(configuredWeth) : canonicalOtfPair ? Boolean(protocolDeploymentForChain(chainId)?.canonicalReady) : Boolean(protocolDeploymentForChain(chainId)?.routingReady);
+  const routingLabel = nativeWrapPair ? "Native wrap · 1:1"
+    : canonicalOtfPair ? canonicalPhase === 1 ? "Launch boundary router" : "Canonical V4"
+      : activeQuote?.routeLabel ?? "Uniswap pools";
   const inputSelected = input.address !== zeroAddress;
   const outputSelected = output.address !== zeroAddress;
   const outputOtfLoading = isUnselectedOtf(output) && otfDirectoryState === "loading";
@@ -1040,6 +1032,9 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The swap approval reset reverted." : "The exact swap approval reverted.");
           });
           if (!bootstrap) {
+            const [permitted, expiration] = await publicClient.readContract({ address: permit2!, abi: PERMIT2_ALLOWANCE_ABI,
+              functionName: "allowance", args: [address, input.address, universalRouter!] });
+            if (permitted < canonicalAmountRaw || expiration < Number(deadline)) {
             const permitHash = await walletClient.writeContract({
               account: address,
               address: permit2!,
@@ -1049,6 +1044,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             });
             const permitReceipt = await publicClient.waitForTransactionReceipt({ hash: permitHash });
             if (permitReceipt.status !== "success") throw new Error("The Universal Router Permit2 approval reverted.");
+            }
           }
         }
         let data: Hex;
@@ -1106,7 +1102,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
     try {
       setExecutionMessage(undefined);
       setExecution(
-        executionPlan.kind === "direct-api"
+        (executionPlan.kind === "direct-api" || executionPlan.kind === "direct-registered")
           ? executionPlan.nativeInput ? "simulation" : "approval"
           : executionPlan.kind === "basket-router" && !executionPlan.approval
             ? "simulation"
@@ -1115,10 +1111,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
       let target: Address;
       let data: Hex;
       let value = 0n;
-      if (executionPlan.kind === "direct-api") {
-        if (robinhoodMainnetUniswap.universalRouter?.toLowerCase() !== executionPlan.universalRouter.toLowerCase()) throw new Error("The direct plan has an unsupported Universal Router target.");
+      if ((executionPlan.kind === "direct-api" || executionPlan.kind === "direct-registered")) {
+        if (protocolDeploymentForChain(chainId)?.v4.universalRouter?.toLowerCase() !== executionPlan.universalRouter.toLowerCase()) throw new Error("The direct plan has an unsupported Universal Router target.");
         if (!executionPlan.nativeInput) {
-          const permit2 = robinhoodMainnetUniswap.permit2;
+          const permit2 = protocolDeploymentForChain(chainId)?.v4.permit2;
           if (!permit2) throw new Error("The direct plan has no configured Permit2 target.");
           const allowance = await publicClient.readContract({
             address: executionPlan.inputToken,
@@ -1137,10 +1133,10 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
             if (approvalReceipt.status !== "success") throw new Error("The required Permit2 token authorization reverted.");
           });
-          if (executionPlan.registered) {
+          if (executionPlan.kind === "direct-registered") {
             const [permitted,expiration]=await publicClient.readContract({address:permit2,abi:PERMIT2_ALLOWANCE_ABI,functionName:"allowance",args:[address,executionPlan.inputToken,executionPlan.universalRouter]});
             const deadline=Math.floor(executionPlan.expiresAt/1000);
-            if(permitted!==executionPlan.amountIn || expiration<deadline) {
+            if(permitted<executionPlan.amountIn || expiration<deadline) {
               const permitHash = await walletClient.writeContract({ account: address, address: permit2, abi: PERMIT2_APPROVE_ABI,
                 functionName: "approve", args: [executionPlan.inputToken,executionPlan.universalRouter,executionPlan.amountIn,deadline] });
               if ((await publicClient.waitForTransactionReceipt({hash:permitHash})).status !== "success") throw new Error("The exact router authorization reverted.");
@@ -1156,40 +1152,11 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
             message: executionPlan.permitData.message,
           } as never)
           : undefined;
-        const finalized = await quoteService.finalizeDirect(executionPlan, signature);
+        const finalized = executionPlan.kind === "direct-registered" ? executionPlan : await quoteService.finalizeDirect(executionPlan, signature);
         if (!finalized.transaction) throw new Error("Uniswap did not return a final transaction.");
         target = finalized.transaction.to;
         data = finalized.transaction.data;
         value = finalized.transaction.value;
-        setExecution("simulation");
-        await publicClient.call({ account: address, to: target, data, value });
-        await publicClient.estimateGas({ account: address, to: target, data, value });
-      } else if (executionPlan.kind === "direct-v3") {
-        if (executionPlan.universalRouter.toLowerCase() !== protocolDeploymentForChain(chainId)?.v4.universalRouter!.toLowerCase()) throw new Error("The direct plan has an unsupported Uniswap V3 router target.");
-        const allowance = await publicClient.readContract({
-          address: executionPlan.approval.token,
-          abi: ERC20_APPROVE_ABI,
-          functionName: "allowance",
-          args: [address, executionPlan.approval.spender],
-        });
-        await ensureExactErc20Approval(allowance, executionPlan.approval.amount, async (approvalAmount) => {
-          const approvalHash = await walletClient.writeContract({
-            account: address,
-            address: executionPlan.approval.token,
-            abi: ERC20_APPROVE_ABI,
-            functionName: "approve",
-            args: [executionPlan.approval.spender, approvalAmount],
-          });
-          const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
-          if (approvalReceipt.status !== "success") throw new Error(approvalAmount === 0n ? "The Uniswap V3 approval reset reverted." : "The exact Uniswap V3 approval reverted.");
-        });
-        const permit2 = executionPlan.approval.spender;
-        const deadline = Math.floor(executionPlan.expiresAt / 1000);
-        const authorization = await walletClient.writeContract({ account: address, address: permit2, abi: PERMIT2_APPROVE_ABI, functionName: "approve", args: [executionPlan.inputToken, executionPlan.universalRouter, executionPlan.amountIn, deadline] });
-        if ((await publicClient.waitForTransactionReceipt({hash: authorization})).status !== "success") throw new Error("The router authorization reverted.");
-        target = executionPlan.transaction.to;
-        data = executionPlan.transaction.data;
-        value = executionPlan.transaction.value;
         setExecution("simulation");
         await publicClient.call({ account: address, to: target, data, value });
         await publicClient.estimateGas({ account: address, to: target, data, value });
@@ -1329,7 +1296,7 @@ export function SwapSurface({ embeddedFund, embedded = false, protocolTokenMode 
                   ? !hasOtfSide
                     ? "Choose a fund share or the OTF token on either side."
                     : chainId === robinhoodChainTestnet.id
-                      ? "On testnet, OTFs can swap only against USDG, WETH, or another OTF."
+                      ? "Choose a fund or $OTF and a token with an available route."
                       : "This OTF pair is unsupported."
                   : quoteLoading
                     ? undefined
@@ -2046,7 +2013,7 @@ function useIncentivePricing(): IncentivePricing {
   const [pricing, setPricing] = useState<IncentivePricing>({ state: "loading", ended: false });
 
   useEffect(() => {
-    if (!protocolDeploymentForChain(chainId)?.routingReady) {
+    if (!protocolDeploymentForChain(chainId)?.rewardsReady) {
       setPricing({ state: "unavailable", ended: false });
       return;
     }

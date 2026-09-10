@@ -109,7 +109,7 @@ Object.assign(config.contracts,{buybackCollector:{address:collector},vaultImplem
 config.sampleOtfs = samples;
 for (const key of ["collectorFactory", "factoryRouter", "adapterApproval", "sampleOtfCreations"]) delete config.setupTransactions[key];
 config.routing.v4RouteData = "0x04 || abi.encode(address currencyIn, PathKey[] path)";
-Object.assign(config.routing,{status:"ready",approvedAdapters:[adapter],uniswapUniversalRouterAdapter:adapter,nativeEntryExitEnabled:true});
+Object.assign(config.routing,{status:"ready",approvedAdapters:[adapter],uniswapUniversalRouterAdapter:adapter});
 if (!broadcast) await validateTestnetFlows(config,pin,rpc);
 persist();
 console.log(`${broadcast?"Testnet":"Local testnet fork"} binding verification passed; total execution gas ${gasUsed}.`);

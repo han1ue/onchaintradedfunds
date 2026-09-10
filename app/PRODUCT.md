@@ -63,9 +63,11 @@ During protocol-token bootstrap, the launch router limits trades to the active r
 
 ### Quote sources and execution
 
-Production routes first quote approved direct and two-hop pool paths through the configured V3/V4 Quoters. The Uniswap Trading API supplies fallback routes when registered candidates fail or exceed policy limits. `UNISWAP_API_KEY` stays server-only, with shared Postgres request pacing. Robinhood testnet fund routes use registered pools and configured on-chain bindings.
+Both networks first quote approved direct and two-hop paths through V3/V4 Quoters, including mixed and native ETH paths. Mainnet can use Trading API fallback; testnet uses registered routes only. Registered execution needs no API key. Each basket quote permits one API discovery request per missing endpoint pair and uses Quoters for later sizing.
 
-Testnet basket execution uses `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` with ordered adapter legs. Before submission, the application simulates the exact sender, target, calldata, value, and route using `eth_call` and `estimateGas`.
+Fund-to-fund swaps settle through WETH. Compatible shared exit steps combine proceeds before conversion, and the complete transaction simulation supplies conservative output, gas, and refunds. Verification badges remain independent of tradeability.
+
+Basket execution on both networks uses `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` with ordered adapter legs. Before submission, the application simulates the exact sender, target, calldata, value, and route using `eth_call` and `estimateGas`.
 
 Postgres stores assets, verification decisions, price-source policies and approved pools. `/verified` has a Show unverified toggle, off by default. Pool approval and source approval remain independent of asset verification. The [registry operations guide](database/README.md) documents routing thresholds, freshness, migrations and production activation.
 

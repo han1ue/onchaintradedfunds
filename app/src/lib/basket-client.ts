@@ -1,18 +1,19 @@
 import { managedOtfVaultAbi, otfFactoryAbi, otfEntryExitRouterAbi } from "@onchaintradedfunds/generated";
 import { createPublicClient, decodeFunctionResult, encodeFunctionData, erc20Abi, http, parseAbi, zeroAddress, type Address, type Hex } from "viem";
 import { sameAddress, type BasketClient } from "./basket-planner";
-import { robinhoodChain } from "./chains";
+import { robinhoodChain, robinhoodChainTestnet } from "./chains";
 import { routerArgsForExecution, type BasketRouterExecution } from "./swap-model";
 import { v4PoolId, type V4PathKey } from "./v4-route";
 import { QuoteFailure } from "./quote-errors";
 import { V3_POOL_INIT_CODE_HASH } from "./universal-route";
 import { canonicalOtfRouting, type CanonicalOtfDeployment, type CanonicalOtfQuoteClient } from "./canonical-otf-routing";
+import { verifyImmutableDeployment } from "./deployment-verification";
 
-export type MainnetBasketDeployment = CanonicalOtfDeployment & {
+export type BasketDeployment = Omit<CanonicalOtfDeployment, "otfToken" | "launchManager"> & Partial<Pick<CanonicalOtfDeployment, "otfToken" | "launchManager">> & {
   factory: Address; uniswapV3Factory: Address;
 };
 export type BasketSimulation = { amountOut: bigint; refunds: readonly { token: Address; amount: bigint }[]; gasUsed: bigint };
-export type MainnetBasketClient = BasketClient & CanonicalOtfQuoteClient & {
+export type BasketQuoteClient = BasketClient & CanonicalOtfQuoteClient & {
   verifyBindings(): Promise<void>;
   isVault(vault: Address): Promise<boolean>;
   decimals(token: Address): Promise<number>;
@@ -55,9 +56,10 @@ export function basketSimulationCalls(execution: BasketRouterExecution) {
   return calls;
 }
 
-export function mainnetBasketClient(deployment: MainnetBasketDeployment): MainnetBasketClient {
-  const rpc = process.env.RH_MAINNET_RPC_URL?.trim() || robinhoodChain.rpcUrls.default.http[0];
-  const client = createPublicClient({ chain: robinhoodChain, transport: http(rpc, { timeout: 12_000, retryCount: 0 }) });
+export function basketClient(deployment: BasketDeployment, chainId = 4663): BasketQuoteClient {
+  const chain = chainId === 46630 ? robinhoodChainTestnet : robinhoodChain;
+  const rpc = (chainId === 46630 ? process.env.RH_TESTNET_RPC_URL : process.env.RH_MAINNET_RPC_URL)?.trim() || chain.rpcUrls.default.http[0];
+  const client = createPublicClient({ chain, transport: http(rpc, { timeout: 12_000, retryCount: 0 }) });
   const binding = async (address: Address, functionName: "factory" | "entryExitRouter" | "uniswapV3Factory" | "weth" | "uniswapV4PoolManager" | "uniswapV4StateView" | "uniswapUniversalRouter" | "permit2" | "poolManager", expected: Address) => {
     const actual = await client.readContract({ address, abi: bindings, functionName });
     if (!sameAddress(actual, expected)) throw new Error("Mainnet basket deployment binding mismatch.");
@@ -65,11 +67,16 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
   return {
     ...canonicalOtfRouting(client, deployment),
     async verifyBindings() {
-      if (await client.getChainId() !== 4663) throw new Error("Wrong mainnet RPC chain.");
-      await Promise.all(Object.values(deployment).map(async (address) => {
+      if (await client.getChainId() !== chainId) throw new Error("Wrong RPC chain.");
+      const targets = [deployment.factory, deployment.entryRouter, deployment.uniswapUniversalRouterAdapter,
+        deployment.weth, deployment.uniswapV3Factory, deployment.uniswapV4PoolManager,
+        deployment.uniswapV4StateView, deployment.uniswapV4Quoter, deployment.universalRouter, deployment.permit2];
+      const codes = await Promise.all(targets.map(async (address) => {
         const code = await client.getCode({ address });
-        if (!code || code === "0x") throw new Error("Missing mainnet contract.");
+        if (!code || code === "0x") throw new Error("Missing routing contract.");
+        return code;
       }));
+      await verifyImmutableDeployment(JSON.stringify([chainId, rpc, targets]), codes, async () => {
       await Promise.all([
         binding(deployment.entryRouter, "factory", deployment.factory),
         binding(deployment.entryRouter, "weth", deployment.weth),
@@ -87,8 +94,9 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
       ]);
       for (const adapter of [deployment.uniswapUniversalRouterAdapter]) {
         if (await client.readContract({ address: adapter, abi: bindings, functionName: "v3PoolInitCodeHash" }) !== V3_POOL_INIT_CODE_HASH) throw new Error("Mainnet V3 pool init-code hash mismatch.");
-        if (!await client.readContract({ address: deployment.entryRouter, abi: bindings, functionName: "isAdapterApproved", args: [adapter] })) throw new Error("Mainnet swap adapter is not approved.");
       }
+      });
+      if (!await client.readContract({ address: deployment.entryRouter, abi: bindings, functionName: "isAdapterApproved", args: [deployment.uniswapUniversalRouterAdapter] })) throw new Error("Swap adapter is not approved.");
     },
     isVault: (vault) => client.readContract({ address: deployment.factory, abi: otfFactoryAbi, functionName: "isVault", args: [vault] }),
     decimals: (token) => client.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }),

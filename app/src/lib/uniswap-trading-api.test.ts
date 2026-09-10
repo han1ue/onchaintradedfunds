@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { robinhoodMainnetAddresses } from "./deployment";
 import { handleSwapQuoteRequest } from "./uniswap-trading-api";
 
+vi.mock("./deployment", async importOriginal => {
+  const actual = await importOriginal<typeof import("./deployment")>();
+  return {...actual, protocolDeploymentForChain: (chainId: number) => {
+    const config = actual.protocolDeploymentForChain(chainId);
+    return config && {...config, routingReady: true};
+  }};
+});
+
 const INPUT = "0x0000000000000000000000000000000000000001" as const;
 const OUTPUT = "0x0000000000000000000000000000000000000002" as const;
 const CALLER = "0x0000000000000000000000000000000000000003" as const;
@@ -49,17 +57,16 @@ function provider(overrides: Record<string, unknown> = {}) {
 }
 
 describe("same-origin Uniswap quote API", () => {
-  it("seals a simulated registered transaction without a Trading API discovery request",async()=>{
+  it("returns a registered transaction without API credentials or finalization",async()=>{
     const providerRequest=provider();
-    const result=await handleSwapQuoteRequest(request(),{apiKey:"test-key",now:()=>NOW,providerRequest,
-      registeredDirect:async()=>({expectedAmountOut:AMOUNT*2n,minAmountOut:AMOUNT*199n/100n,expiresAtMs:NOW+45000,
+    const result=await handleSwapQuoteRequest(request(),{apiKey:"",now:()=>NOW,providerRequest,
+      registeredDirect:async()=>({expectedAmountOut:AMOUNT*2n,minAmountOut:AMOUNT*199n/100n,expiresAtMs:NOW+45000,hops:[],segments:[],
         transaction:{chainId:4663,from:CALLER,to:UNIVERSAL_ROUTER,data:"0x1234",value:"0"},gasEstimate:"100000",impactBps:10})});
     expect(result.status).toBe(200);expect(providerRequest).not.toHaveBeenCalled();
     const execution=(result.body as Record<string,unknown>).execution as Record<string,unknown>;
-    expect(execution.registered).toBe(true);
-    const plan=Object.fromEntries(Object.entries(execution).filter(([key])=>!["registered","permitData","transaction"].includes(key)));
-    const finalized=await handleSwapQuoteRequest({action:"finalize-direct",plan},{apiKey:"test-key",now:()=>NOW,providerRequest});
-    expect(finalized.status).toBe(200);expect(providerRequest).not.toHaveBeenCalled();
+    expect(execution.kind).toBe("direct-registered");
+    expect(execution.transaction).toBeDefined();
+    expect(execution.quoteToken).toBe("");
   });
   it("falls back when a registered transaction fails simulation",async()=>{
     const providerRequest=provider();
@@ -78,7 +85,7 @@ describe("same-origin Uniswap quote API", () => {
     const requestProvider = provider();
     const result = await handleSwapQuoteRequest(request(), { registeredDirect: async () => undefined, apiKey: "test-key", now: () => NOW, providerRequest: requestProvider });
     expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({ state: "available", route: "direct", routeLabel: "Direct pool" });
+    expect(result.body).toMatchObject({ state: "available", route: "direct", routeLabel: "Uniswap API" });
     const quoteCall = requestProvider.mock.calls.find(([path]) => path === "quote");
     expect(quoteCall?.[1]).toMatchObject({
       type: "EXACT_INPUT",

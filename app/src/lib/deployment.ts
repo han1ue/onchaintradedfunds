@@ -100,27 +100,11 @@ export const robinhoodTestnetV4 = Object.freeze({
   permit2: address(testnetExternalContracts.permit2),
 });
 
-export const robinhoodTestnetUniversalAdapterReady = testnet.status === "deployed"
-  && testnetRouting.status === "ready"
-  && Boolean(
-    robinhoodTestnetAddresses.entryRouter
-    && robinhoodTestnetAddresses.uniswapUniversalRouterAdapter
-    && robinhoodTestnetV4.poolManager
-    && robinhoodTestnetV4.stateView
-    && robinhoodTestnetV4.universalRouter
-    && robinhoodTestnetV4.permit2
-    && Array.isArray(testnetRouting.approvedAdapters)
-    && testnetRouting.approvedAdapters.some((candidate) => (
-      address(candidate)?.toLowerCase() === robinhoodTestnetAddresses.uniswapUniversalRouterAdapter?.toLowerCase()
-    )),
-  );
-
 export const robinhoodTestnetCreation = Object.freeze({
   assetDataEndpoint: httpsUrl(testnetCreation.assetDataEndpoint),
 });
 
 export const robinhoodTestnetCreationReady = testnet.status === "deployed"
-  && testnetRouting.status === "ready"
   && Boolean(robinhoodTestnetAddresses.factory);
 
 export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
@@ -128,14 +112,10 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
   && Boolean(
     robinhoodTestnetAddresses.factory
     && robinhoodTestnetAddresses.entryRouter
-    && robinhoodTestnetAddresses.buybackCollector
-    && robinhoodTestnetAddresses.otfToken
-    && robinhoodTestnetAddresses.launchManager
-    && robinhoodTestnetAddresses.launchRouter
-    && robinhoodTestnetAddresses.teamVesting
-    && robinhoodTestnetAddresses.merkleRewardsDistributor
-    && robinhoodTestnetAddresses.ethUsdOracle
     && robinhoodTestnetAddresses.uniswapUniversalRouterAdapter
+    && robinhoodTestnetAddresses.weth
+    && robinhoodTestnetV4.poolManager && robinhoodTestnetV4.stateView && robinhoodTestnetV4.quoter
+    && robinhoodTestnetV4.universalRouter && robinhoodTestnetV4.permit2
     && address(testnetExternalContracts.uniswapV3Factory)?.toLowerCase() === testnetVenue.factory.toLowerCase()
     && Array.isArray(testnetRouting.approvedAdapters)
     && testnetRouting.approvedAdapters.some((candidate) => (
@@ -145,7 +125,7 @@ export const robinhoodTestnetDeploymentReady = testnet.status === "deployed"
 
 /** Native basket calls stay disabled until the deployed entry router includes canonical WETH endpoints. */
 export const robinhoodTestnetNativeEntryReady = robinhoodTestnetDeploymentReady
-  && testnetRouting.nativeEntryExitEnabled === true;
+  && Boolean(robinhoodTestnetAddresses.weth);
 
 const mainnet = record(mainnetDeployment);
 const mainnetConfigValid = Number(mainnet.chainId) === 4663
@@ -186,9 +166,18 @@ export const robinhoodMainnetBasketDeployment = (() => {
   const uniswapV4Quoter = address(mainnetExternalContracts.uniswapV4Quoter);
   const universalRouter = address(mainnetTradingApi.universalRouter);
   const permit2 = address(mainnetTradingApi.permit2);
-  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth || !otfToken || !launchManager || !uniswapV3Factory
+  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth || !uniswapV3Factory
     || !uniswapV4PoolManager || !uniswapV4StateView || !uniswapV4Quoter || !universalRouter || !permit2) return undefined;
   return { factory, entryRouter, uniswapUniversalRouterAdapter, weth, otfToken, launchManager, uniswapV3Factory, uniswapV4PoolManager, uniswapV4StateView, uniswapV4Quoter, universalRouter, permit2 };
+})();
+
+export const robinhoodTestnetBasketDeployment = (() => {
+  const { factory, entryRouter, uniswapUniversalRouterAdapter, weth, otfToken, launchManager } = robinhoodTestnetAddresses;
+  const { poolManager: uniswapV4PoolManager, stateView: uniswapV4StateView, quoter: uniswapV4Quoter, universalRouter, permit2 } = robinhoodTestnetV4;
+  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth
+    || !uniswapV4PoolManager || !uniswapV4StateView || !uniswapV4Quoter || !universalRouter || !permit2) return undefined;
+  return { factory, entryRouter, uniswapUniversalRouterAdapter, weth, otfToken, launchManager,
+    uniswapV3Factory: robinhoodTestnetV3.factory, uniswapV4PoolManager, uniswapV4StateView, uniswapV4Quoter, universalRouter, permit2 };
 })();
 
 export const robinhoodMainnetLiquidity = Object.freeze({
@@ -226,12 +215,18 @@ export function protocolDeploymentForChain(chainId: number) {
   if (chainId === 46630) return {
     addresses: robinhoodTestnetAddresses, v4: robinhoodTestnetV4,
     creationReady: robinhoodTestnetCreationReady, routingReady: robinhoodTestnetDeploymentReady,
+    nativeEntryReady: robinhoodTestnetNativeEntryReady,
+    canonicalReady: Boolean(robinhoodTestnetAddresses.otfToken && robinhoodTestnetAddresses.launchManager && robinhoodTestnetAddresses.launchRouter && robinhoodTestnetAddresses.weth && robinhoodTestnetV4.quoter && robinhoodTestnetV4.universalRouter && robinhoodTestnetV4.permit2),
+    rewardsReady: Boolean(robinhoodTestnetAddresses.merkleRewardsDistributor && robinhoodTestnetRewardsDeployedAtMs),
     rewardsDeployedAtMs: robinhoodTestnetRewardsDeployedAtMs,
     assetDataEndpoint: robinhoodTestnetCreation.assetDataEndpoint,
   };
   if (chainId === 4663) return {
     addresses: robinhoodMainnetAddresses, v4: robinhoodMainnetV4,
-    creationReady: mainnetRoutingReady && Boolean(robinhoodMainnetAddresses.factory), routingReady: mainnetRoutingReady,
+    creationReady: mainnetDeployed && Boolean(robinhoodMainnetAddresses.factory), routingReady: mainnetRoutingReady,
+    nativeEntryReady: mainnetRoutingReady && Boolean(robinhoodMainnetAddresses.weth),
+    canonicalReady: Boolean(robinhoodMainnetAddresses.otfToken && robinhoodMainnetAddresses.launchManager && robinhoodMainnetAddresses.launchRouter && robinhoodMainnetAddresses.weth && robinhoodMainnetV4.quoter && robinhoodMainnetV4.universalRouter && robinhoodMainnetV4.permit2),
+    rewardsReady: Boolean(robinhoodMainnetAddresses.merkleRewardsDistributor && safePositiveBigInt(record(mainnetProtocolContracts.merkleRewardsDistributor).blockNumber) && timestampMillis(record(mainnetProtocolContracts.merkleRewardsDistributor).blockTimestamp)),
     rewardsDeployedAtMs: mainnetDeployed && robinhoodMainnetAddresses.merkleRewardsDistributor
       && safePositiveBigInt(record(mainnetProtocolContracts.merkleRewardsDistributor).blockNumber)
       ? timestampMillis(record(mainnetProtocolContracts.merkleRewardsDistributor).blockTimestamp) : undefined,

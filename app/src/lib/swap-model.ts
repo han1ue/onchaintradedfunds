@@ -1,4 +1,3 @@
-import { universalV3Execution } from "./universal-v3-execution";
 import { decodeUniversalRouteData } from "./universal-route";
 import {
   getAddress,
@@ -16,9 +15,9 @@ import {
   robinhoodTestnetV4,
   robinhoodTestnetLiquidity,
 } from "./deployment";
-import { testnetSwapPairAllowed } from "./asset-catalog";
 import { parseV4Path, v4BoundaryToken } from "./v4-route";
 import { quoteFailureReasons, type QuoteFailureCode } from "./quote-errors";
+import { registeredSegmentsExecution, type DirectRouteSegment } from "./registered-direct-execution";
 
 export type SwapAssetKind = "native" | "erc20" | "otf";
 
@@ -103,8 +102,7 @@ export type PermitData = {
 };
 
 export type DirectApiExecution = {
-  registered?: boolean;
-  kind: "direct-api";
+  segments?: readonly DirectRouteSegment[];
   chainId: number;
   caller: Address;
   inputToken: Address;
@@ -119,22 +117,8 @@ export type DirectApiExecution = {
   nativeValue: bigint;
   permitData?: PermitData;
   transaction?: PlannedTransaction;
-};
+} & ({ kind: "direct-api" } | { kind: "direct-registered" });
 
-export type DirectV3Execution = {
-  kind: "direct-v3";
-  chainId: number;
-  caller: Address;
-  inputToken: Address;
-  outputToken: Address;
-  universalRouter: Address;
-  amountIn: bigint;
-  minAmountOut: bigint;
-  expiresAt: number;
-  approval: { token: Address; spender: Address; amount: bigint };
-  path: Hex;
-  transaction: PlannedTransaction;
-};
 
 export type BasketRouterExecution = {
   kind: "basket-router";
@@ -148,7 +132,7 @@ export type BasketRouterExecution = {
   call: TypedRouterCall;
 };
 
-export type SwapExecutionPlan = DirectApiExecution | DirectV3Execution | BasketRouterExecution;
+export type SwapExecutionPlan = DirectApiExecution | BasketRouterExecution;
 
 export type ResidualRefund = {
   token: Address;
@@ -289,9 +273,9 @@ export function isNativeWrapPair(
     && output.address.toLowerCase() === weth.toLowerCase();
 }
 
-export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset, chainId?: number): boolean {
-  if (!input || !output || !swapIncludesOtf(input, output)) return false;
-  return chainId === 46630 ? testnetSwapPairAllowed(input, output) : true;
+export function supportedSwapDirection(input?: SwapAsset, output?: SwapAsset, _chainId?: number): boolean {
+  if ((_chainId !== undefined && _chainId !== 4663 && _chainId !== 46630) || !input || !output || !swapIncludesOtf(input, output)) return false;
+  return input.address.toLowerCase() !== output.address.toLowerCase();
 }
 
 export function pastedAsset(value: string): SwapAsset | undefined {
@@ -578,13 +562,12 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   if (!context.permit2 || !context.universalRouter || !context.permit2 || !context.request.caller) throw new Error("Direct execution targets are not configured.");
   const execution = object(value, "execution");
   exactKeys(execution, [
-    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut", "registered",
-    "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "permitData", "transaction",
+    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
+    "expiresAtMs", "quoteToken", "nativeInput", "nativeOutput", "nativeValue", "permitData", "transaction", "segments",
   ], "execution");
-  if (string(execution.kind, "execution.kind") !== "direct-api") throw new Error("Direct quote has the wrong execution kind.");
+  if (execution.kind !== "direct-api" && execution.kind !== "direct-registered") throw new Error("Direct quote has the wrong execution kind.");
   const plan: DirectApiExecution = {
-    registered: execution.registered === true,
-    kind: "direct-api",
+    kind: execution.kind,
     chainId: integer(execution.chainId, "execution.chainId"),
     caller: address(execution.caller, "execution.caller"),
     inputToken: address(execution.inputToken, "execution.inputToken"),
@@ -593,7 +576,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     amountIn: uint(execution.amountIn, "execution.amountIn", false),
     minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
     expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
-    quoteToken: string(execution.quoteToken, "execution.quoteToken"),
+    quoteToken: execution.kind === "direct-registered" ? "" : string(execution.quoteToken, "execution.quoteToken"),
     nativeInput: execution.nativeInput === true,
     nativeOutput: execution.nativeOutput === true,
     nativeValue: uint(execution.nativeValue, "execution.nativeValue"),
@@ -613,6 +596,7 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
   if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Direct execution has an invalid expiry.");
   if (execution.permitData !== undefined) {
     if (plan.nativeInput) throw new Error("Native input cannot contain Permit2 data.");
+    if (plan.kind === "direct-registered") throw new Error("Registered execution cannot contain Permit2 signature data.");
     plan.permitData = parsePermitData(execution.permitData, {
       chainId: context.chainId,
       permit2: context.permit2,
@@ -629,6 +613,20 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
       value: plan.nativeValue,
     });
   }
+  if (plan.kind === "direct-registered" && !plan.transaction) throw new Error("Registered execution requires a transaction.");
+  if (plan.kind === "direct-registered") {
+    if (!context.weth || !Array.isArray(execution.segments) || execution.segments.length > 2) throw new Error("Invalid registered segments.");
+    plan.segments = execution.segments.map(value => {
+      const segment = object(value, "segment");
+      exactKeys(segment, ["version", "data"], "segment");
+      if (segment.version !== 3 && segment.version !== 4) throw new Error("Unsupported registered segment.");
+      return { version: segment.version, data: hex(segment.data, "segment.data") };
+    });
+    const transaction = registeredSegmentsExecution({ segments: plan.segments, weth: context.weth,
+      tokenIn: plan.inputToken, tokenOut: plan.outputToken, amountIn: plan.amountIn, minimumOut: plan.minAmountOut,
+      nativeInput: plan.nativeInput, nativeOutput: plan.nativeOutput, deadline: BigInt(Math.floor(plan.expiresAt / 1000)) });
+    if (plan.transaction!.data.toLowerCase() !== transaction.data.toLowerCase()) throw new Error("Registered calldata does not match the quote.");
+  } else if (execution.segments !== undefined) throw new Error("API execution cannot contain registered segments.");
   if (expected && (
     plan.quoteToken !== expected.quoteToken
     || plan.amountIn !== expected.amountIn
@@ -639,57 +637,6 @@ function parseDirectExecution(value: unknown, context: TypedQuoteParseContext, e
     || plan.nativeValue !== expected.nativeValue
   )) throw new Error("Final direct transaction does not match the authorized quote.");
   return plan;
-}
-
-function parseDirectV3Execution(value: unknown, context: TypedQuoteParseContext): DirectV3Execution {
-  if (!context.universalRouter || !context.permit2 || !context.request.caller) throw new Error("Uniswap V3 direct execution is not configured.");
-  if (context.request.input.kind === "native" || context.request.output.kind === "native") throw new Error("An atomic native Uniswap V3 route has not been verified.");
-  const execution = object(value, "execution");
-  exactKeys(execution, [
-    "kind", "chainId", "caller", "inputToken", "outputToken", "universalRouter", "amountIn", "minAmountOut",
-    "expiresAtMs", "approval", "path", "transaction",
-  ], "execution");
-  if (string(execution.kind, "execution.kind") !== "direct-v3") throw new Error("Uniswap V3 quote has the wrong execution kind.");
-  const plan = {
-    kind: "direct-v3" as const,
-    chainId: integer(execution.chainId, "execution.chainId"),
-    caller: address(execution.caller, "execution.caller"),
-    inputToken: address(execution.inputToken, "execution.inputToken"),
-    outputToken: address(execution.outputToken, "execution.outputToken"),
-    universalRouter: address(execution.universalRouter, "execution.universalRouter"),
-    amountIn: uint(execution.amountIn, "execution.amountIn", false),
-    minAmountOut: uint(execution.minAmountOut, "execution.minAmountOut", false),
-    expiresAt: integer(execution.expiresAtMs, "execution.expiresAtMs"),
-    path: hex(execution.path, "execution.path"),
-  };
-  if (
-    plan.chainId !== context.chainId
-    || !sameAddress(plan.caller, context.request.caller)
-    || !sameAddress(plan.inputToken, context.request.input.address)
-    || !sameAddress(plan.outputToken, context.request.output.address)
-    || !sameAddress(plan.universalRouter, context.universalRouter)
-  ) throw new Error("Uniswap V3 execution does not match the selected chain, caller, pair, or router.");
-  const requestedAmount = decimalAmount(context.request.inputAmount, context.request.input.decimals);
-  if (requestedAmount === undefined || plan.amountIn !== requestedAmount) throw new Error("Uniswap V3 execution has the wrong exact input amount.");
-  if (plan.expiresAt <= context.now || plan.expiresAt > context.now + QUOTE_MAX_FUTURE_DEADLINE_SECONDS * 1_000) throw new Error("Uniswap V3 execution has an invalid expiry.");
-  const hops = parseV3Path(plan.path, "Uniswap V3");
-  if (!sameAddress(hops[0]!.tokenIn, plan.inputToken) || !sameAddress(hops.at(-1)!.tokenOut, plan.outputToken)) throw new Error("Uniswap V3 path endpoints do not match the selected pair.");
-
-  const approvalValue = object(execution.approval, "execution.approval");
-  exactKeys(approvalValue, ["token", "spender", "amount"], "execution.approval");
-  const approval = {
-    token: address(approvalValue.token, "execution.approval.token"),
-    spender: address(approvalValue.spender, "execution.approval.spender"),
-    amount: uint(approvalValue.amount, "execution.approval.amount", false),
-  };
-  if (!sameAddress(approval.token, plan.inputToken) || !sameAddress(approval.spender, context.permit2) || approval.amount !== plan.amountIn) throw new Error("Uniswap V3 approval does not match the exact route input.");
-  const transaction = parseTransaction(execution.transaction, "execution.transaction", {
-    chainId: context.chainId,
-    caller: plan.caller,
-    target: plan.universalRouter,
-  });
-  if (transaction.data.toLowerCase() !== universalV3Execution(plan.path,plan.caller,plan.amountIn,plan.minAmountOut,BigInt(Math.floor(plan.expiresAt/1000))).toLowerCase()) throw new Error("Universal Router calldata does not match the quote.");
-  return { ...plan, approval, transaction };
 }
 
 function parseLeg(value: unknown, index: number, adapter: Address, weth?: Address): AdapterSwapLeg {
@@ -901,13 +848,11 @@ export function parseTypedQuoteResponse(value: unknown, context: TypedQuoteParse
   const minimumReceivedRaw = uint(response.minimumReceivedRaw, "minimumReceivedRaw", false);
   if (minimumReceivedRaw > expectedOutputRaw) throw new Error("Quote minimum exceeds expected output.");
   if (decimalAmount(outputAmount, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(expectedOutput, context.request.output.decimals) !== expectedOutputRaw || decimalAmount(minimumReceived, context.request.output.decimals) !== minimumReceivedRaw) throw new Error("Quote display amounts do not match their integer amounts.");
-  const executionValue = object(response.execution, "execution");
+
   const execution = context.route === "direct"
-    ? executionValue.kind === "direct-v3"
-      ? parseDirectV3Execution(response.execution, context)
-      : parseDirectExecution(response.execution, context)
+    ? parseDirectExecution(response.execution, context)
     : parseBasketExecution(response.execution, context, expiresAt);
-  if (execution.kind === "direct-api" || execution.kind === "direct-v3") {
+  if (execution.kind === "direct-api" || execution.kind === "direct-registered") {
     if (execution.minAmountOut !== minimumReceivedRaw) throw new Error("Direct execution minimum does not match the quote.");
   } else if (execution.call.method === "mintFromToken" || execution.call.method === "mintFromNative") {
     if (execution.call.args[0].minShares !== minimumReceivedRaw) throw new Error("Basket execution minimum does not match the quote.");

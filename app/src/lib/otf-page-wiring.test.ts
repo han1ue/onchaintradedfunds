@@ -35,8 +35,8 @@ describe("$OTF page wiring", () => {
     for (const label of [">Price<", ">Market cap<", ">Pool<"]) expect(ledger).toContain(label);
     expect(ledger.match(/<div>/g)).toHaveLength(3);
     for (const removed of [">Supply<", "Original supply", "Total burned", "Wallet balance", "FDV"]) expect(ledger).not.toContain(removed);
-    expect(component).toContain('testnet ? "/liquidity"');
-    expect(component).toContain("robinhoodMainnetLiquidity.baseUrl");
+    expect(component).not.toContain('testnet ? "/liquidity"');
+    expect(component).toContain("`${explorer}/address/${launch}`");
     expect(component).toContain('className="metricExternalLink"');
     expect(css).toContain('.metricExternalLink { display: inline-flex; align-items: center; gap: 5px; color: var(--text);');
   });

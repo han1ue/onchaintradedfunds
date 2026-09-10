@@ -26,24 +26,24 @@ describe("Uniswap provider pacing", () => {
       headers: expect.objectContaining({ "x-universal-router-version": "2.1.1" }),
     }));
   });
-  it("honors Retry-After before retrying a 429", async () => {
+  it("honors Retry-After for swap finalization", async () => {
     vi.useFakeTimers(); vi.setSystemTime(0);
     const starts: number[] = [];
     vi.stubGlobal("fetch", vi.fn(async () => {
       starts.push(Date.now());
       return starts.length === 1 ? new Response(null, { status: 429, headers: { "retry-after": "2" } }) : Response.json({ ok: true });
     }));
-    const result = createUniswapProviderRequest(sharedCoordinator())("quote", {}, "test-key");
+    const result = createUniswapProviderRequest(sharedCoordinator())("swap", {}, "test-key");
     await vi.runAllTimersAsync(); expect(await result).toEqual({ ok: true });
     expect(starts).toEqual([0, 2000]);
   });
-  it("stops after three rate-limited attempts and does not retry missing routes", async () => {
+  it("does not retry rate-limited or missing quote requests", async () => {
     vi.useFakeTimers(); vi.setSystemTime(0);
     const fetcher = vi.fn(async () => new Response(null, { status: 429 }));
     vi.stubGlobal("fetch", fetcher);
     const result = createUniswapProviderRequest(sharedCoordinator())("quote", {}, "test-key").catch((error) => error);
     await vi.runAllTimersAsync(); expect(await result).toMatchObject({ code: "PROVIDER_RATE_LIMITED" });
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(1);
     fetcher.mockClear().mockImplementation(async () => new Response(null, { status: 404 }));
     const missing = createUniswapProviderRequest(sharedCoordinator())("quote", {}, "test-key").catch((error) => error);
     await vi.runAllTimersAsync(); expect(await missing).toMatchObject({ code: "NO_ROUTE" });
@@ -57,8 +57,8 @@ describe("Uniswap provider pacing", () => {
       return starts.length === 1 ? new Response(null, { status: 429, headers: { "retry-after": "2" } }) : Response.json({ ok: true });
     }));
     const request = createUniswapProviderRequest(sharedCoordinator());
-    const results = Promise.all([request("quote", {}, "test-key"), request("quote", {}, "test-key")]);
+    const results = Promise.allSettled([request("quote", {}, "test-key"), request("quote", {}, "test-key")]);
     await vi.runAllTimersAsync(); await results;
-    expect(starts).toEqual([0, 2000, 2210]);
+    expect(starts).toEqual([0, 2000]);
   });
 });

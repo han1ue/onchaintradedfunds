@@ -1,5 +1,6 @@
+import { encodeV3Path } from "./v3-route";
 import { describe, expect, it } from "vitest";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
 import {
   feeClaimReadState,
   feeSettlementCall,
@@ -18,7 +19,7 @@ const adapter = "0x0000000000000000000000000000000000000004" as Address;
 const collector = "0x0000000000000000000000000000000000000005" as Address;
 const venue = "0x0000000000000000000000000000000000000006" as Address;
 const usdg = "0x0000000000000000000000000000000000000007" as Address;
-const path = "0x1234" as Hex;
+const path = encodeV3Path([vault,usdg,weth],[3000,3000]);
 const beneficiary = "0x0000000000000000000000000000000000000008" as Address;
 const otherAccount = "0x0000000000000000000000000000000000000009" as Address;
 
@@ -64,7 +65,7 @@ function shareSaleQuote(): SwapQuote {
       { venue: "Uniswap V3", tokenIn: usdg, tokenOut: weth, feeTier: 3_000 },
     ],
     execution: {
-      kind: "direct-v3",
+      kind: "direct-registered",
       chainId: 46630,
       caller: collector,
       inputToken: vault,
@@ -73,8 +74,7 @@ function shareSaleQuote(): SwapQuote {
       amountIn: 100n,
       minAmountOut: 91n,
       expiresAt: 200,
-      approval: { token: vault, spender: venue, amount: 100n },
-      path,
+      quoteToken: "", nativeInput: false, nativeOutput: false, nativeValue: 0n, segments: [{ version: 3, data: path }],
       transaction: { chainId: 46630, from: collector, to: venue, data: path, value: 0n },
     },
   };

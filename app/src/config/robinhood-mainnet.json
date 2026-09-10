@@ -51,7 +51,6 @@
   },
   "routing": {
     "status": "not-deployed",
-    "approvedAdapters": [],
-    "nativeEntryExitEnabled": false
+    "approvedAdapters": []
   }
 }

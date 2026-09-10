@@ -140,7 +140,6 @@
       "0x527b46dfe0e956749448AfB898263b17F9a8d02b"
     ],
     "launchRouter": "0xFFF782973e7AF25a88a482F1F81911eDB378c8e9",
-    "nativeEntryExitEnabled": true,
     "v4RouteData": "0x04 || abi.encode(address currencyIn, PathKey[] path)",
     "maxV4HopsPerLeg": 3,
     "maxLegs": 40,

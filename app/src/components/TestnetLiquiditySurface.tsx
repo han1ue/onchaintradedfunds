@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   formatUnits,
   isAddressEqual,
@@ -181,13 +182,18 @@ function ConnectLiquidityWallet() {
 
 export function TestnetLiquiditySurface() {
   const { catalog, isPending, isError, refetch } = useAssetRegistry();
+  const requestedVault = useSearchParams().get("vault");
   if (isPending) return <p role="status">Loading registered pools…</p>;
   if (isError) return <div role="alert"><p>Pool registry unavailable.</p><button type="button" onClick={() => void refetch()}>Retry</button></div>;
   if (!catalog.testnetPools.length) return <p>No approved pools are registered on this network.</p>;
-  return <RegisteredLiquiditySurface testnetPools={catalog.testnetPools} />;
+  const requestedPool = requestedVault ? catalog.testnetPools.find(pool =>
+    [pool.assetA.address.toLowerCase(), pool.assetB.address.toLowerCase()].includes(requestedVault.toLowerCase())
+    && [pool.assetA.address.toLowerCase(), pool.assetB.address.toLowerCase()].includes(usdg.toLowerCase())) : undefined;
+  if (requestedVault && !requestedPool) return <p role="status">No approved USDG liquidity market is available for this fund.</p>;
+  return <RegisteredLiquiditySurface key={requestedVault ?? "all"} testnetPools={catalog.testnetPools} initialMarket={requestedPool?.id} />;
 }
 
-function RegisteredLiquiditySurface({ testnetPools }: { testnetPools: TestnetPool[] }) {
+function RegisteredLiquiditySurface({ testnetPools, initialMarket }: { testnetPools: TestnetPool[]; initialMarket?: string }) {
   const markets = testnetPools.flatMap(pool => {
     if (pool.assetA.address.toLowerCase() === usdg.toLowerCase()) return [{ id: pool.id, symbol: pool.assetB.symbol, token: pool.assetB.address, fee: pool.fee }];
     if (pool.assetB.address.toLowerCase() === usdg.toLowerCase()) return [{ id: pool.id, symbol: pool.assetA.symbol, token: pool.assetA.address, fee: pool.fee }];
@@ -198,7 +204,7 @@ function RegisteredLiquiditySurface({ testnetPools }: { testnetPools: TestnetPoo
   const publicClient = usePublicClient({ chainId: robinhoodChainTestnet.id });
   const { switchChainAsync, isPending: switchingNetwork } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const [marketChoice, setMarketChoice] = useState(markets[0]?.id ?? "");
+  const [marketChoice, setMarketChoice] = useState(initialMarket ?? markets[0]?.id ?? "");
   const [amount0Text, setAmount0Text] = useState("");
   const [amount1Text, setAmount1Text] = useState("");
   const [slippageText, setSlippageText] = useState("1.0");

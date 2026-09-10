@@ -91,6 +91,7 @@ export function canonicalOtfBasketRoutes(routes: BasketRouteProvider, options: {
   const isOtf = (token: Address) => Boolean(otfToken && sameAddress(token, otfToken));
   return {
     optimizeMint: routes.optimizeMint,
+    optimizeExit: routes.optimizeExit,
     async quote(type, tokenIn, tokenOut, amount) {
       if (!isOtf(tokenIn) && !isOtf(tokenOut)) return routes.quote(type, tokenIn, tokenOut, amount);
       if (!launchManager || !client.verifyOtfBindings || !client.quoteOtf) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");

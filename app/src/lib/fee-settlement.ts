@@ -1,6 +1,7 @@
 import { universalRouteData } from "./universal-route";
-import type { Address } from "viem";
-import type { AdapterSwapLeg, SwapQuote } from "./swap-model";
+import { maxUint256, type Address } from "viem";
+import { parseV3Path, type AdapterSwapLeg, type SwapQuote } from "./swap-model";
+import { parseV4Path, v4BoundaryToken } from "./v4-route";
 
 export type PendingFeeShares = {
   creator: bigint;
@@ -133,7 +134,8 @@ export function shareSaleFeeSettlementRouteFromQuote(
     || !quote.expectedOutputRaw
     || !quote.minimumReceivedRaw
     || quote.expectedOutputRaw < quote.minimumReceivedRaw
-    || quote.execution?.kind !== "direct-v3"
+    || quote.execution?.kind !== "direct-registered"
+    || !quote.execution.segments?.length
     || quote.execution.caller.toLowerCase() !== collector.toLowerCase()
     || quote.execution.inputToken.toLowerCase() !== vault.toLowerCase()
     || quote.execution.outputToken.toLowerCase() !== weth.toLowerCase()
@@ -141,6 +143,7 @@ export function shareSaleFeeSettlementRouteFromQuote(
     || quote.execution.amountIn === 0n
     || quote.execution.minAmountOut !== quote.minimumReceivedRaw
   ) return undefined;
+  const shares = quote.execution.amountIn;
   return {
     mode: "share-sale",
     vault,
@@ -148,15 +151,13 @@ export function shareSaleFeeSettlementRouteFromQuote(
     shares: quote.execution.amountIn,
     expectedWethOut: quote.expectedOutputRaw,
     minWethOut: quote.minimumReceivedRaw,
-    legs: [{
-      adapter,
-      tokenIn: vault,
-      tokenOut: weth,
-      amountIn: quote.execution.amountIn,
-      minAmountOut: quote.minimumReceivedRaw,
-      data: universalRouteData(3,quote.execution.path),
-      hops: quote.hops ?? [],
-    }],
+    legs: quote.execution.segments.map((segment, index, segments) => {
+      const hops = segment.version === 3 ? parseV3Path(segment.data) : parseV4Path(segment.data);
+      return { adapter, tokenIn: v4BoundaryToken(hops[0]!.tokenIn, weth), tokenOut: v4BoundaryToken(hops.at(-1)!.tokenOut, weth),
+        amountIn: index === 0 ? shares : maxUint256,
+        minAmountOut: index === segments.length - 1 ? quote.minimumReceivedRaw! : 1n,
+        data: universalRouteData(segment.version, segment.data), hops };
+    }),
   };
 }
 

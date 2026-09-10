@@ -1,6 +1,7 @@
 import { zeroAddress, type Address } from "viem";
 import { QUOTE_MAX_AGE_MS, type AdapterSwapLeg } from "./swap-model";
 import { quoteStep } from "./quote-errors";
+import type { RegisteredPath } from "./registered-routes";
 
 export type BasketPlannerRequest = {
   route: "direct" | "basket";
@@ -20,10 +21,14 @@ export type BasketClient = {
   previewMint(vault: Address, shares: bigint): Promise<readonly bigint[]>;
   previewRedeem(vault: Address, shares: bigint, owner: Address, skipMask: bigint): Promise<readonly bigint[]>;
 };
-export type BasketRouteQuote = { amountIn: bigint; amountOut: bigint; legs: AdapterSwapLeg[] };
+export type BasketRouteQuote = {
+  amountIn: bigint; amountOut: bigint; legs: AdapterSwapLeg[]; authenticatedPath?: RegisteredPath;
+  discoveredPaths?: { path: RegisteredPath; amountIn: bigint; amountOut: bigint }[];
+};
 export type BasketRouteProvider = {
   quote(type: "EXACT_INPUT" | "EXACT_OUTPUT", tokenIn: Address, tokenOut: Address, amount: bigint): Promise<BasketRouteQuote>;
   optimizeMint?(legs: AdapterSwapLeg[]): Promise<AdapterSwapLeg[]>;
+  optimizeExit?(quotes: BasketRouteQuote[]): Promise<{ amountOut: bigint; legs: AdapterSwapLeg[] }>;
 };
 const ONE_OTF = 10n ** 18n;
 const ROUTER_DEADLINE_SECONDS = 120;
@@ -81,23 +86,18 @@ export async function planMint(vault: Address, input: BasketAsset, amountIn: big
   throw new Error("The input is too small after applying route slippage.");
 }
 
-export async function liquidationPlan(vault: Address, shares: bigint, owner: Address, output: BasketAsset, slippageBps: number, routes: BasketRouteProvider, client: BasketClient, intermediate?: Address) {
+export async function liquidationPlan(vault: Address, shares: bigint, owner: Address, output: BasketAsset, slippageBps: number, routes: BasketRouteProvider, client: BasketClient) {
   const assets = await basketAssets(vault, client);
   const amounts = await client.previewRedeem(vault, shares, owner, 0n);
   validateAmounts(amounts, assets);
-  const target = intermediate ?? output.address;
+  const target = output.address;
   const quotes = await Promise.all(assets.map((asset, index) => sameAddress(asset, target)
     ? Promise.resolve({ amountIn: amounts[index]!, amountOut: amounts[index]!, legs: [] })
     : quoteStep("QUOTE_FAILED", () => routes.quote("EXACT_INPUT", asset, target, amounts[index]!), { tokenIn: asset, tokenOut: target })));
-  let expectedOutput = quotes.reduce((sum, quote) => sum + quote.amountOut, 0n);
-  let minimumOutput = applySlippageDown(expectedOutput, slippageBps);
-  const legs = quotes.flatMap((quote) => quote.legs);
-  if (!sameAddress(target, output.address)) {
-    const settlement = await routes.quote("EXACT_INPUT", target, output.address, expectedOutput);
-    expectedOutput = settlement.amountOut;
-    minimumOutput = applySlippageDown(expectedOutput, slippageBps);
-    legs.push(...settlement.legs);
-  }
+  const optimized = routes.optimizeExit ? await routes.optimizeExit(quotes) : undefined;
+  const expectedOutput = optimized?.amountOut ?? quotes.reduce((sum, quote) => sum + quote.amountOut, 0n);
+  const minimumOutput = applySlippageDown(expectedOutput, slippageBps);
+  const legs = optimized?.legs ?? quotes.flatMap((quote) => quote.legs);
   return { assets, amounts, sourceMinimums: amounts.map((amount) => applySlippageDown(amount, slippageBps)), expectedOutput, minimumOutput, legs };
 }
 
@@ -158,7 +158,6 @@ export async function basketQuote(
   adapter: Address,
   routes: BasketRouteProvider,
   bridge: BasketAsset,
-  liquidationIntermediate?: Address,
 ) {
   const deadline = BigInt(Math.floor(now / 1_000) + ROUTER_DEADLINE_SECONDS);
   const approval = { token: request.input.address, spender: router, amount: request.inputAmountRaw.toString() };
@@ -184,7 +183,7 @@ export async function basketQuote(
   if (request.input.kind === "otf" && (request.output.kind === "erc20" || request.output.kind === "native")) {
     const nativeOutput = request.output.kind === "native";
     const output = request.output;
-    const plan = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, output, request.slippageBps, routes, client, liquidationIntermediate);
+    const plan = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, output, request.slippageBps, routes, client);
     return availableResponse(request, now, plan.expectedOutput, plan.minimumOutput, "Burn basket", {
       kind: "basket-router",
       chainId: request.chainId,
@@ -201,10 +200,10 @@ export async function basketQuote(
     }, plan.legs.flatMap((leg) => leg.hops));
   }
   if (request.input.kind === "otf" && request.output.kind === "otf") {
-    const usdg = bridge;
-    const liquidation = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, usdg, request.slippageBps, routes, client);
-    const mint = await planMint(request.output.address, usdg, liquidation.minimumOutput, routes, client);
-    const residuals = mint.residual > 0n ? [{ token: usdg.address, amount: mint.residual.toString(), displayAmount: formatRaw(mint.residual, usdg.decimals) }] : undefined;
+    const settlement = bridge;
+    const liquidation = await liquidationPlan(request.input.address, request.inputAmountRaw, request.caller, settlement, request.slippageBps, routes, client);
+    const mint = await planMint(request.output.address, settlement, liquidation.minimumOutput, routes, client);
+    const residuals = mint.residual > 0n ? [{ token: settlement.address, amount: mint.residual.toString(), displayAmount: formatRaw(mint.residual, settlement.decimals) }] : undefined;
     const legs = [...liquidation.legs, ...mint.legs];
     return availableResponse(request, now, mint.shares, mint.shares, "Burn + mint", {
       kind: "basket-router",

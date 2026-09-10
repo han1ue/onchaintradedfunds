@@ -117,7 +117,9 @@ Vaults and adapter trade boundaries use ERC-20 tokens. V4 pools may use native E
 
 Apart from ETH/WETH wrapping, Swap requires a vault share or protocol OTF on at least one side. Fund routes can trade shares through a pool, mint a basket, redeem a basket, or redeem one fund into another. The application selects the fresh quote with the highest expected output among queried routes. Users can choose another route.
 
-Mainnet direct quotes use the Uniswap Trading API. Basket routes use registered V3 and V4 pools, with Trading API fallback on mainnet. Both networks use the same helper for protocol OTF constituents: it verifies the canonical OTF/WETH pool and quotes through the V4 Quoter, including the launch hook's price limits. Mainnet activates this path from the recorded protocol deployment addresses. Constituent pools also support the separate liquidity utility.
+Direct and basket quotes use registered V3, V4, and mixed paths on both networks. Enabled assets can trade through approved pools without a verification badge. Mainnet can request a fallback path from the Trading API; testnet uses registered routes only. Both networks use the canonical OTF/WETH helper for protocol OTF constituents, including the launch hook's price limits. Mainnet remains unavailable until its deployment is configured.
+
+Fund-to-fund swaps settle through WETH. Redemptions target the requested token and can combine compatible shared exit steps before their final conversion. The planner re-quotes combined amounts and simulates the complete transaction. Each basket quote allows one API discovery request per missing endpoint pair; later sizing uses authenticated paths and on-chain Quoters. Simulation failures return unavailable. Quotes report simulated gas and refunds while keeping output estimates conservative.
 
 ETH and WETH appear separately in the asset selector. ETH needs no token approval, and `Max` leaves ETH for gas.
 
