@@ -19,6 +19,10 @@
       "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
       "codehash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
     },
+    "uniswapV4Quoter": {
+      "address": "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94",
+      "codehash": "0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6"
+    },
     "uniswapV4PositionManager": {
       "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
       "codehash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2"

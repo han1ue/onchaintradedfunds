@@ -57,4 +57,8 @@ Chain ID: 4663. Protocol status: not deployed.
 
 The configured external ETH/USD oracle is `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9`.
 
+The configured V4 Quoter is `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94`, bound to PoolManager `0x8366a39CC670B4001A1121B8F6A443A643e40951`. The mainnet verifier checks its pinned runtime hash and PoolManager binding.
+
+After deployment, record the OTF token, launch manager, entry router, and approved adapter in `app/src/config/robinhood-mainnet.json`. The shared basket helper derives the canonical OTF/WETH pool from those addresses without a separate registry entry. Initialize the pool and verify buy and sell quotes and basket simulations before setting routing status to `ready`.
+
 Mainnet execution requires the protocol contracts and their bindings. The maintained fork suite verifies the configured external venues and rehearses protocol operations locally. Testnet results do not establish production readiness.

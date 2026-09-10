@@ -1,5 +1,4 @@
 import { universalV3Execution } from "./universal-v3-execution";
-import { universalRouteData } from "./universal-route";
 import { managedOtfVaultAbi, otfFactoryAbi } from "@onchaintradedfunds/generated";
 import {
   createPublicClient,
@@ -21,11 +20,10 @@ import { registeredCandidates, bestRegisteredQuote, registeredBasketRoutes, type
 import { robinhoodTestnetV4, robinhoodTestnetAddresses, robinhoodTestnetDeploymentReady, robinhoodTestnetNativeEntryReady } from "./deployment";
 import { verifyTestnetV3Adapter } from "./testnet-v3-bindings";
 import { QUOTE_MAX_AGE_MS } from "./swap-model";
-import { availableResponse, basketQuote, sameAddress, applySlippageDown, applySlippageUp, type BasketPlannerRequest, type BasketRouteProvider } from "./basket-planner";
+import { availableResponse, basketQuote, sameAddress, applySlippageDown, type BasketPlannerRequest } from "./basket-planner";
 import { routeFrom } from "./v3-route";
 import { simulateTestnetQuote } from "../server/testnet-simulation";
-import { encodeV4Path, parseV4Path } from "./v4-route";
-import { testnetOtfRouting } from "./testnet-otf-routing";
+import { canonicalOtfBasketRoutes, canonicalOtfRouting } from "./canonical-otf-routing";
 import { QuoteFailure, quoteStep } from "./quote-errors";
 import { unavailableQuoteResponse } from "./quote-diagnostics";
 
@@ -111,7 +109,14 @@ function defaultRoutingClient(registry: AssetRegistry): TestnetRoutingClient {
     return decoded[0];
   };
   return {
-    ...testnetOtfRouting(publicClient),
+    ...canonicalOtfRouting(publicClient, {
+      ...robinhoodTestnetAddresses,
+      uniswapV4PoolManager: robinhoodTestnetV4.poolManager,
+      uniswapV4StateView: robinhoodTestnetV4.stateView,
+      universalRouter: robinhoodTestnetV4.universalRouter,
+      permit2: robinhoodTestnetV4.permit2,
+      uniswapV4Quoter: robinhoodTestnetV4.quoter,
+    }),
     verifyBindings: (factory, router, adapter) => verifyTestnetV3Adapter(publicClient, factory, router, adapter),
     isVault: (vault) => publicClient.readContract({ address: robinhoodTestnetAddresses.factory!, abi: otfFactoryAbi, functionName: "isVault", args: [vault] }),
     poolFor: async (tokenA, tokenB, fee) => {
@@ -196,39 +201,14 @@ async function testnetBasketQuote(request: BasketPlannerRequest, client: Testnet
       return assets;
     },
   };
-  const v3Routes = registeredBasketRoutes({
+  const baseRoutes = registeredBasketRoutes({
     pools:registry.pools,chainId:46630,weth:weth!,adapter,slippageBps:request.slippageBps,
     ...routing,
   });
-  const routes: BasketRouteProvider = {
-    optimizeMint: v3Routes.optimizeMint,
-    async quote(type, tokenIn, tokenOut, amount) {
-      if (!isOtfToken(tokenIn) && !isOtfToken(tokenOut)) return v3Routes.quote(type, tokenIn, tokenOut, amount);
-      if (!weth || !launchManager || !client.verifyOtfBindings || !client.quoteOtf) throw new QuoteFailure("ROUTE_NOT_CONFIGURED");
-      await quoteStep("DEPLOYMENT_MISMATCH", () => client.verifyOtfBindings!(router, adapter));
-      const buy = isOtfToken(tokenOut);
-      const currencyIn = buy ? weth : tokenIn;
-      const currencyOut = buy ? tokenOut : weth;
-      const data = encodeV4Path(currencyIn, [{ intermediateCurrency: currencyOut, fee: 0, tickSpacing: 1, hooks: launchManager, hookData: "0x" }]);
-      const leg = (amountIn: bigint, minAmountOut: bigint) => ({ adapter, tokenIn: currencyIn, tokenOut: currencyOut, amountIn, minAmountOut, data: universalRouteData(4,data), hops: parseV4Path(data) });
-      if (type === "EXACT_OUTPUT" && buy) {
-        const wethIn = applySlippageUp(await quoteStep("NO_ROUTE", () => client.quoteOtf!(type, true, amount)), request.slippageBps);
-        // Execution is exact input: check the padded amount against the hook's price bounds too.
-        if (await quoteStep("NO_ROUTE", () => client.quoteOtf!("EXACT_INPUT", true, wethIn)) < amount) throw new QuoteFailure("MINIMUM_OUTPUT_NOT_MET");
-        const funding = sameAddress(tokenIn, weth) ? { amountIn: wethIn, legs: [] } : await v3Routes.quote(type, tokenIn, weth, wethIn);
-        return { amountIn: funding.amountIn, amountOut: amount, legs: [...funding.legs, leg(wethIn, amount)] };
-      }
-      if (type === "EXACT_INPUT" && !buy) {
-        const wethOut = await quoteStep("NO_ROUTE", () => client.quoteOtf!(type, false, amount));
-        const minimumWeth = applySlippageDown(wethOut, request.slippageBps);
-        if (sameAddress(tokenOut, weth)) return { amountIn: amount, amountOut: wethOut, legs: [leg(amount, minimumWeth)] };
-        // Spend only this leg's guaranteed proceeds, preserving other basket balances.
-        const settlement = await v3Routes.quote(type, weth, tokenOut, minimumWeth);
-        return { amountIn: amount, amountOut: settlement.amountOut, legs: [leg(amount, minimumWeth), ...settlement.legs.map((entry) => ({ ...entry, amountIn: minimumWeth }))] };
-      }
-      throw new Error("Unsupported OTF basket leg direction.");
-    },
-  };
+  const routes = canonicalOtfBasketRoutes(baseRoutes, {
+    otfToken, weth: weth!, launchManager, entryRouter: router,
+    uniswapUniversalRouterAdapter: adapter, slippageBps: request.slippageBps, client,
+  });
   const usdg = testnetAssetById("usdg")!;
   const result = await basketQuote(request, basketClient, now, router, adapter, routes, usdg, usdg.address);
   return result;

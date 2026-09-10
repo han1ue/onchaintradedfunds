@@ -179,15 +179,16 @@ export const robinhoodMainnetAddresses = Object.freeze({
 });
 
 export const robinhoodMainnetBasketDeployment = (() => {
-  const { factory, entryRouter, uniswapUniversalRouterAdapter, weth } = robinhoodMainnetAddresses;
+  const { factory, entryRouter, uniswapUniversalRouterAdapter, weth, otfToken, launchManager } = robinhoodMainnetAddresses;
   const uniswapV3Factory = address(mainnetExternalContracts.uniswapV3Factory);
   const uniswapV4PoolManager = address(mainnetExternalContracts.uniswapV4PoolManager);
   const uniswapV4StateView = address(mainnetExternalContracts.uniswapV4StateView);
+  const uniswapV4Quoter = address(mainnetExternalContracts.uniswapV4Quoter);
   const universalRouter = address(mainnetTradingApi.universalRouter);
   const permit2 = address(mainnetTradingApi.permit2);
-  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth || !uniswapV3Factory
-    || !uniswapV4PoolManager || !uniswapV4StateView || !universalRouter || !permit2) return undefined;
-  return { factory, entryRouter, uniswapUniversalRouterAdapter, weth, uniswapV3Factory,  uniswapV4PoolManager, uniswapV4StateView, universalRouter, permit2 };
+  if (!factory || !entryRouter || !uniswapUniversalRouterAdapter || !weth || !otfToken || !launchManager || !uniswapV3Factory
+    || !uniswapV4PoolManager || !uniswapV4StateView || !uniswapV4Quoter || !universalRouter || !permit2) return undefined;
+  return { factory, entryRouter, uniswapUniversalRouterAdapter, weth, otfToken, launchManager, uniswapV3Factory, uniswapV4PoolManager, uniswapV4StateView, uniswapV4Quoter, universalRouter, permit2 };
 })();
 
 export const robinhoodMainnetLiquidity = Object.freeze({

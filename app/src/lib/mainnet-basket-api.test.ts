@@ -17,6 +17,7 @@ const NOW = 1_750_000_000_000;
 const DEPLOYMENT: MainnetBasketDeployment = {
   factory: addr(10), entryRouter: addr(11), uniswapUniversalRouterAdapter: addr(12), weth: addr(13), uniswapV3Factory: addr(14),
   uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34),
+  otfToken: addr(35), launchManager: addr(36), uniswapV4Quoter: addr(37),
 };
 const token = (address: Address, kind: "erc20" | "native" | "otf" = "erc20") => ({ address, kind, decimals: 18, isFactoryVault: kind === "otf" });
 function request(burn = false): BasketPlannerRequest {
@@ -46,6 +47,8 @@ function provider(split = false) {
 }
 function client(overrides: Partial<MainnetBasketClient> = {}): MainnetBasketClient {
   return {
+    verifyOtfBindings: vi.fn(async () => {}),
+    quoteOtf: vi.fn(async (type, buy, amount) => type === "EXACT_OUTPUT" ? (amount + 999n) / 1000n : buy ? amount * 1000n : amount / 1000n),
     verifyBindings: vi.fn(async () => {}), isVault: vi.fn(async () => true), decimals: vi.fn(async () => 18),
     authenticatePool: vi.fn(async () => {}), authenticateV4Pool: vi.fn(async () => {}), vaultAssets: vi.fn(async () => [A, B]),
     previewMint: vi.fn(async (_vault, shares) => [shares / 2n, shares - shares / 2n]),
@@ -70,6 +73,60 @@ function parse(body: unknown, req: BasketPlannerRequest) {
 }
 
 describe("mainnet basket planner", () => {
+  it.each([token(INPUT), token(DEPLOYMENT.weth), token(DEPLOYMENT.weth, "native")])("mints an OTF-containing basket from $kind $address through the canonical pool", async (input) => {
+    const routingClient = client({ vaultAssets: vi.fn(async () => [A, DEPLOYMENT.otfToken]) });
+    const quoteProvider = provider();
+    const req = { ...request(), input };
+    const result = await quoteMainnetBasket(req, deps(routingClient, quoteProvider));
+    expect(result.status).toBe(200);
+    const execution = parse(result.body, req).execution as BasketRouterExecution;
+    if (execution.call.method !== "mintFromToken" && execution.call.method !== "mintFromNative") throw new Error("Missing mint execution");
+    const canonical = execution.call.args[1].find(leg => leg.tokenOut === DEPLOYMENT.otfToken)!;
+    expect(canonical.tokenIn).toBe(DEPLOYMENT.weth);
+    expect(canonical.data).toBe(universalRouteData(4, encodeV4Path(DEPLOYMENT.weth, [{
+      intermediateCurrency: DEPLOYMENT.otfToken, fee: 0, tickSpacing: 1, hooks: DEPLOYMENT.launchManager, hookData: "0x",
+    }])));
+    expect(routingClient.verifyOtfBindings).toHaveBeenCalledWith(DEPLOYMENT.entryRouter, DEPLOYMENT.uniswapUniversalRouterAdapter);
+    expect(routingClient.quoteOtf).toHaveBeenCalledWith("EXACT_OUTPUT", true, expect.any(BigInt));
+    expect(routingClient.quoteOtf).toHaveBeenCalledWith("EXACT_INPUT", true, canonical.amountIn);
+    expect(quoteProvider.mock.calls.every(([body]) => body.tokenIn !== DEPLOYMENT.otfToken && body.tokenOut !== DEPLOYMENT.otfToken)).toBe(true);
+    expect(routingClient.simulate).toHaveBeenCalledWith(execution);
+  });
+
+  it("redeems OTF through split settlement routes without consuming the basket's other WETH", async () => {
+    const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken, DEPLOYMENT.weth]) });
+    const req = request(true);
+    const result = await quoteMainnetBasket(req, deps(routingClient, provider(true)));
+    expect(result.status).toBe(200);
+    const execution = parse(result.body, req).execution as BasketRouterExecution;
+    if (execution.call.method !== "redeemToToken") throw new Error("Missing redeem execution");
+    const [canonical, first, second, ...wethSale] = execution.call.args[2];
+    expect(canonical!.tokenIn).toBe(DEPLOYMENT.otfToken);
+    expect(canonical!.tokenOut).toBe(DEPLOYMENT.weth);
+    expect(first!.amountIn + second!.amountIn).toBe(canonical!.minAmountOut);
+    expect([first, second].every(leg => leg!.amountIn !== maxUint256)).toBe(true);
+    expect(wethSale).toHaveLength(2);
+    expect(routingClient.quoteOtf).toHaveBeenCalledWith("EXACT_INPUT", false, canonical!.amountIn);
+  });
+
+  it("rejects a mainnet OTF buy that crosses the launch hook's bounds after padding", async () => {
+    const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken]), previewMint: vi.fn(async (_vault, shares) => [shares]),
+      quoteOtf: vi.fn(async (type, _buy, amount) => { if (type === "EXACT_INPUT") throw new Error("BootstrapPriceOutOfBounds"); return amount; }),
+    });
+    expect((await quoteMainnetBasket(request(), deps(routingClient))).status).toBe(503);
+    expect(routingClient.simulate).not.toHaveBeenCalled();
+  });
+
+  it("rejects unapproved canonical OTF bindings before requesting a pool quote", async () => {
+    const routingClient = client({ vaultAssets: vi.fn(async () => [DEPLOYMENT.otfToken]), previewMint: vi.fn(async (_vault, shares) => [shares]),
+      verifyOtfBindings: vi.fn(async () => { throw new Error("Adapter is not approved"); }),
+    });
+    const result = await quoteMainnetBasket(request(), deps(routingClient));
+    expect(result.body).toMatchObject({ code: "DEPLOYMENT_MISMATCH" });
+    expect(routingClient.quoteOtf).not.toHaveBeenCalled();
+    expect(routingClient.simulate).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("uses native V4 pools behind WETH router endpoints (burn=%s)", async (burn) => {
     const base = provider();
     const requestQuote = vi.fn(async (body: Record<string, unknown>) => {

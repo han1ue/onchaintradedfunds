@@ -24,6 +24,16 @@ describe("mainnet activation manifest", () => {
     expect(selected.routingReady).toBe(true);
     expect(selected.addresses.factory).toBe(contracts.factory.address);
     expect(selected.addresses.launchRouter).toBe(contracts.launchRouter.address);
+    expect(selected.v4.quoter).toBe(config.externalContracts.uniswapV4Quoter);
+  });
+  it.each(["otfToken", "launchManager"])("requires %s before enabling canonical OTF basket routing", async (name) => {
+    const partial = { ...contracts };
+    delete partial[name];
+    expect((await deployment({ protocolContracts: partial })).routingReady).toBe(false);
+  });
+  it("requires the V4 quoter before enabling routing", async () => {
+    const selected = await deployment({ externalContracts: { ...config.externalContracts, uniswapV4Quoter: undefined } });
+    expect(selected.routingReady).toBe(false);
   });
   it("withholds contract addresses before deployment and actions before adapter approval", async () => {
     const pending = await deployment({ protocolStatus: "not-deployed" });

@@ -24,7 +24,8 @@ export function mainnetPreparation(config, pin, deployerAddress) {
       ...(!deployer ? ["Set DEPLOYER_ADDRESS to resolve initial roles to a concrete public address."] : []),
       "Deploy protocol contracts only after a separate deployment instruction.",
       "Record confirmed addresses, rewards deployment block and timestamp, and approved adapters in the mainnet manifest.",
-      "Initialize the canonical OTF pool and verify live basket quotes and simulations before enabling mainnet trading.",
+      "The shared OTF basket helper derives the canonical pool from the recorded OTF token and launch-manager addresses; no separate pool registration is needed.",
+      "Initialize the canonical OTF pool and verify V4 Quoter buys, sells, and complete basket simulations before enabling mainnet trading.",
     ],
   };
 }

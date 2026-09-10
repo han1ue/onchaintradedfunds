@@ -6,14 +6,13 @@ import { routerArgsForExecution, type BasketRouterExecution } from "./swap-model
 import { v4PoolId, type V4PathKey } from "./v4-route";
 import { QuoteFailure } from "./quote-errors";
 import { V3_POOL_INIT_CODE_HASH } from "./universal-route";
+import { canonicalOtfRouting, type CanonicalOtfDeployment, type CanonicalOtfQuoteClient } from "./canonical-otf-routing";
 
-export type MainnetBasketDeployment = {
-  factory: Address; entryRouter: Address; uniswapUniversalRouterAdapter: Address;
-  weth: Address; uniswapV3Factory: Address;
-  uniswapV4PoolManager: Address; uniswapV4StateView: Address; universalRouter: Address; permit2: Address;
+export type MainnetBasketDeployment = CanonicalOtfDeployment & {
+  factory: Address; uniswapV3Factory: Address;
 };
 export type BasketSimulation = { amountOut: bigint; refunds: readonly { token: Address; amount: bigint }[]; gasUsed: bigint };
-export type MainnetBasketClient = BasketClient & {
+export type MainnetBasketClient = BasketClient & CanonicalOtfQuoteClient & {
   verifyBindings(): Promise<void>;
   isVault(vault: Address): Promise<boolean>;
   decimals(token: Address): Promise<number>;
@@ -64,6 +63,7 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
     if (!sameAddress(actual, expected)) throw new Error("Mainnet basket deployment binding mismatch.");
   };
   return {
+    ...canonicalOtfRouting(client, deployment),
     async verifyBindings() {
       if (await client.getChainId() !== 4663) throw new Error("Wrong mainnet RPC chain.");
       await Promise.all(Object.values(deployment).map(async (address) => {
@@ -82,6 +82,7 @@ export function mainnetBasketClient(deployment: MainnetBasketDeployment): Mainne
         binding(deployment.uniswapUniversalRouterAdapter, "uniswapUniversalRouter", deployment.universalRouter),
         binding(deployment.uniswapUniversalRouterAdapter, "permit2", deployment.permit2),
         binding(deployment.uniswapV4StateView, "poolManager", deployment.uniswapV4PoolManager),
+        binding(deployment.uniswapV4Quoter, "poolManager", deployment.uniswapV4PoolManager),
         binding(deployment.universalRouter, "poolManager", deployment.uniswapV4PoolManager),
       ]);
       for (const adapter of [deployment.uniswapUniversalRouterAdapter]) {

@@ -1,9 +1,9 @@
 import { createRequire } from "node:module";
 
-const { keccak256 } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
+const { keccak256, parseAbi } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
 const requiredDependencies = [
   "weth", "uniswapV3Factory", "uniswapV4PoolManager",
-  "uniswapV4StateView", "uniswapV4PositionManager", "uniswapUniversalRouter", "permit2",
+  "uniswapV4StateView", "uniswapV4PositionManager", "uniswapV4Quoter", "uniswapUniversalRouter", "permit2",
 ];
 
 export function mainnetRehearsalDependencies(fixture) {
@@ -51,6 +51,14 @@ export async function verifyMainnetRoutingRuntime(client, pin, blockNumber) {
       throw new Error(`${name} runtime differs from the pinned mainnet bytecode`);
     }
   }));
+  const poolManager = await retryStateRead(() => client.readContract({
+    address: pin.dependencies.uniswapV4Quoter.address,
+    abi: parseAbi(["function poolManager() view returns (address)"]),
+    functionName: "poolManager", blockNumber,
+  }));
+  if (poolManager.toLowerCase() !== pin.dependencies.uniswapV4PoolManager.address.toLowerCase()) {
+    throw new Error("Mainnet V4 quoter PoolManager binding mismatch");
+  }
   return block;
 }
 

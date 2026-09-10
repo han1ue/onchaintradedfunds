@@ -4,6 +4,7 @@ Run `corepack pnpm contracts:validate:mainnet-routing` from the repository root.
 The runner forks Robinhood mainnet (chain 4663), selecting one block 64 blocks
 behind the current tip. It checks the pinned dependency runtime hashes at that block
 before running Foundry against the same state.
+The V4 Quoter check also verifies its PoolManager binding.
 Tests execute locally and do not broadcast transactions.
 
 The fixtures are `scripts/fixtures/robinhood-mainnet-routing.json` and
@@ -63,6 +64,12 @@ pinned aggregator. They check price normalization and canonical-pool FDV at
 initialization and graduation, checkpoint and claim after a funded market
 purchase, and acceptance at the maximum oracle age followed by rejection one
 second later. The tests do not replace oracle responses or overwrite pool state.
+
+`MainnetOtfQuoter.t.sol` checks the deployed V4 Quoter against a canonical pool
+created during the local deployment rehearsal. It rejects an uninitialized pool
+and quotes OTF basket entry and exit during bootstrap and after graduation.
+Each round trip re-quotes the padded buy amount before execution and checks the
+sale proceeds together with the basket's separate WETH constituent.
 
 The Solidity security workflow runs this suite on pushes and pull requests that
 match its path filters, plus manual runs. Default unit tests and the integration

@@ -33,6 +33,11 @@ const client = {
     return { number: blockNumber, hash: pin.blockHash };
   },
   getCode: async (args) => { assert.equal(args.blockNumber, blockNumber); return runtime; },
+  readContract: async (args) => {
+    assert.equal(args.address, pin.dependencies.uniswapV4Quoter.address);
+    assert.equal(args.functionName, "poolManager");
+    return pin.dependencies.uniswapV4PoolManager.address;
+  },
 };
 
 test("selects one recent block without caching the head", async () => {
@@ -66,6 +71,17 @@ test("rejects a missing dependency or unpinned runtime", async () => {
   await assert.rejects(verifyMainnetRoutingRuntime(client, changed, blockNumber), /Missing.*permit2/);
   changed.dependencies.permit2 = { address: pin.dependencies.permit2.address };
   await assert.rejects(verifyMainnetRoutingRuntime(client, changed, blockNumber), /Missing.*permit2/);
+});
+
+test("requires a pinned V4 quoter bound to the selected PoolManager", async () => {
+  const changed = structuredClone(fixture);
+  delete changed.dependencies.uniswapV4Quoter;
+  await assert.rejects(verifyMainnetRoutingRuntime(client, changed, blockNumber), /Missing.*uniswapV4Quoter/);
+  await assert.rejects(verifyMainnetRoutingRuntime({ ...client, readContract: async () => pin.dependencies.weth.address }, fixture, blockNumber), /quoter PoolManager binding/);
+  await verifyMainnetRoutingRuntime({ ...client, readContract: async (args) => {
+    assert.equal(args.blockNumber, blockNumber);
+    return client.readContract(args);
+  } }, fixture, blockNumber);
 });
 
 test("rejects a changed reference block before reading bytecode", async () => {

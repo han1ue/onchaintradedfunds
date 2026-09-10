@@ -15,6 +15,8 @@ test("rejects broadcasting, invalid roles, wrong networks, or altered external t
     (value) => { value.deploymentPolicy.teamBeneficiary = "other"; },
     (value) => { value.chainId = 46630; },
     (value) => { value.externalContracts.uniswapV4PoolManager = pin.dependencies.permit2.address; },
+    (value) => { delete value.externalContracts.uniswapV4Quoter; },
+    (value) => { value.externalContracts.uniswapV4Quoter = pin.dependencies.permit2.address; },
     (value) => { value.uniswapTradingApi.universalRouter = pin.dependencies.permit2.address; },
   ]) {
     const changed = structuredClone(config); mutate(changed);

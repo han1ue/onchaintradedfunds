@@ -10,6 +10,7 @@ import { readRegistry } from "../server/registry";
 import { registeredRouteClient } from "../server/registered-route-client";
 import { registeredBasketRoutes } from "./registered-routes";
 import type { AssetRegistry } from "./asset-catalog";
+import { canonicalOtfBasketRoutes } from "./canonical-otf-routing";
 
 export async function quoteMainnetBasket(request: BasketPlannerRequest, dependencies: {
   now?: () => number;
@@ -52,13 +53,14 @@ export async function quoteMainnetBasket(request: BasketPlannerRequest, dependen
     });
     const registry = dependencies.registry ?? await readRegistry(request.chainId);
     registryForFallback=registry;
-    const routes = registry.pools.length ? registeredBasketRoutes({
+    const baseRoutes = registry.pools.length ? registeredBasketRoutes({
       pools: registry.pools, chainId: request.chainId, weth: deployment.weth, adapter: deployment.uniswapUniversalRouterAdapter,
       slippageBps: request.slippageBps,
       reservedTokens: [...vaultAssets.values()].flat(),
       forbiddenTokens: [request.input,request.output].filter(asset=>asset.kind==="otf").map(asset=>asset.address),
       ...(dependencies.registeredClient ?? registeredRouteClient(request.chainId)), fallback,
     }) : fallback;
+    const routes = canonicalOtfBasketRoutes(baseRoutes, { ...deployment, slippageBps: request.slippageBps, client });
     const trackedRoutes={optimizeMint: routes.optimizeMint, quote:async(...args:Parameters<typeof routes.quote>)=>{
       const quoted=await routes.quote(...args);
       // API fallback is still independently authenticated; a second plan is bounded to one retry.

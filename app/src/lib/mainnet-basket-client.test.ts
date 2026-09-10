@@ -8,7 +8,7 @@ import { v4PoolId } from "./v4-route";
 const rpc = vi.hoisted(() => ({ simulateCalls: vi.fn(), readContract: vi.fn(), getCode: vi.fn() }));
 vi.mock("viem", async (importOriginal) => ({ ...await importOriginal<typeof import("viem")>(), createPublicClient: () => rpc }));
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as Address;
-const deployment: MainnetBasketDeployment = { factory: addr(1), entryRouter: addr(2), uniswapUniversalRouterAdapter: addr(3), weth: addr(4), uniswapV3Factory: addr(5), uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34) };
+const deployment: MainnetBasketDeployment = { factory: addr(1), entryRouter: addr(2), uniswapUniversalRouterAdapter: addr(3), weth: addr(4), uniswapV3Factory: addr(5), uniswapV4PoolManager: addr(31), uniswapV4StateView: addr(32), universalRouter: addr(33), permit2: addr(34), otfToken: addr(35), launchManager: addr(36), uniswapV4Quoter: addr(37) };
 function execution(native = false): BasketRouterExecution {
   return { kind: "basket-router", chainId: 4663, caller: addr(7), router: deployment.entryRouter, adapter: deployment.uniswapUniversalRouterAdapter,
     nativeValue: native ? 100n : 0n, approval: native ? undefined : { token: addr(8), spender: deployment.entryRouter, amount: 100n }, funding: [{ token: addr(8), amount: 100n }],
