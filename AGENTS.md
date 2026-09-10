@@ -40,6 +40,13 @@ This includes onboarding copy, explanatory text, empty states, modal content, he
 Do not invoke the full documentation workflow for ordinary microcopy such as button labels, field labels, short tooltips, validation messages, or similarly small strings. For these, prioritize clarity, brevity, consistency, and accurate terminology.
 Run Slopless only when a task introduces or substantially rewrites enough user-facing prose for linting to be useful. Do not run it for isolated UI strings.
 
+## Solidity Verification
+
+- After editing any Solidity file, run `forge fmt` and then `forge fmt --check` from `contracts/` before handing the work back. Check the whole directory, including tests and fork tests. If formatting still fails, rerun the formatter and check until it passes.
+- Use the Foundry version pinned in `.github/workflows/solidity-security.yml`.
+- After formatting production Solidity changes, run `forge lint src --deny warnings` from `contracts/` and `corepack pnpm contracts:security` from the repository root. Formatting can move casts away from their line-specific lint annotations; fix those annotations without removing the underlying safety checks.
+- Run tests appropriate to behavior changes. Fix verification failures before declaring the task complete; if a required check cannot run, state what blocked it.
+
 ## Browser Testing
 
 - Prefer the Codex in-app browser for local development, UI inspection, and browser-based testing.

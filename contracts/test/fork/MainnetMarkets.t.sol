@@ -196,7 +196,12 @@ contract MainnetMarketsTest is MainnetRehearsalBase {
             bytes memory path =
                 abi.encodePacked(address(weth), wethFee, address(usdg), fees[i], stocks[i]);
             legs[i] = SwapLeg(
-                address(universalAdapter), address(weth), stocks[i], amount, _minimum(path, amount), bytes.concat(hex"03", path)
+                address(universalAdapter),
+                address(weth),
+                stocks[i],
+                amount,
+                _minimum(path, amount),
+                bytes.concat(hex"03", path)
             );
         }
     }

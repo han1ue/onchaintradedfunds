@@ -64,16 +64,21 @@ contract MockTradeAdapter is ITradeAdapter {
             address[2] memory pair = [trades[i].tokenIn, trades[i].tokenOut];
             for (uint256 j; j < 2; ++j) {
                 bool found;
-                for (uint256 k; k < count; ++k) if (tokens[k] == pair[j]) found = true;
+                for (uint256 k; k < count; ++k) {
+                    if (tokens[k] == pair[j]) found = true;
+                }
                 if (!found) tokens[count++] = pair[j];
             }
         }
         assembly ("memory-safe") { mstore(tokens, count) }
     }
 
-    function executeBatch(Trade[] calldata trades, address[] calldata tokens, uint256[] calldata funding, uint256)
-        external returns (uint256[] memory returned)
-    {
+    function executeBatch(
+        Trade[] calldata trades,
+        address[] calldata tokens,
+        uint256[] calldata funding,
+        uint256
+    ) external returns (uint256[] memory returned) {
         if (msg.sender != entryExitRouter) {
             revert UnauthorizedCaller(msg.sender);
         }
