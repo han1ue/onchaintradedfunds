@@ -197,6 +197,7 @@ a { color: inherit; }
 }
 
 .splashPage {
+  --splash-viewport-height: 100dvh;
   --text: #f7f7f5;
   --text-soft: #d3d3ce;
   --text-muted: #999991;
@@ -206,7 +207,7 @@ a { color: inherit; }
   --accent-foreground: #090909;
   position: relative;
   isolation: isolate;
-  min-height: calc(100dvh - var(--testnet-banner-height));
+  min-height: calc(var(--splash-viewport-height) - var(--testnet-banner-height));
   overflow: hidden;
   background:
     radial-gradient(circle at 72% 46%, rgb(var(--accent-rgb) / 11%), transparent 31%),
@@ -277,7 +278,7 @@ a { color: inherit; }
   z-index: 4;
   display: grid;
   width: min(760px, calc(100% - 48px));
-  min-height: calc(100dvh - var(--testnet-banner-height));
+  min-height: calc(var(--splash-viewport-height) - var(--testnet-banner-height));
   align-content: center;
   margin-left: clamp(24px, 6.2vw, 104px);
   padding: 64px 0 78px;
@@ -401,6 +402,29 @@ a { color: inherit; }
   to { transform: rotate(-360deg); }
 }
 
+@media (max-width: 760px), (hover: none) and (pointer: coarse) {
+  .splashPage {
+    /* Browser toolbar changes must not resize the composition. */
+    --splash-viewport-height: 100svh;
+    overflow: clip;
+  }
+
+  .splashEffect {
+    contain: paint;
+  }
+
+  .splashEffect svg {
+    overflow: hidden;
+  }
+
+  /* Keep the slow field/orbit motion without repainting blurred paths. */
+  .splashFlowLines,
+  .splashCoreGlow { filter: none; }
+
+  .splashFlowLines path,
+  .splashCoreGlow { animation: none; }
+}
+
 @media (max-width: 760px) {
   .splashPage::before {
     background: linear-gradient(180deg, rgb(8 12 17 / 96%) 0%, rgb(8 12 17 / 78%) 46%, transparent 76%);
@@ -417,7 +441,7 @@ a { color: inherit; }
     width: calc(100% - 40px);
     align-content: start;
     margin-left: 20px;
-    padding-top: clamp(56px, 11vh, 92px);
+    padding-top: clamp(56px, 11svh, 92px);
     padding-bottom: 124px;
   }
 
@@ -432,9 +456,19 @@ a { color: inherit; }
 
   .splashEnter {
     right: auto;
-    bottom: 24px;
+    bottom: max(24px, env(safe-area-inset-bottom));
     left: 20px;
   }
+}
+
+@media (max-width: 760px) and (max-height: 500px) {
+  .splashCopy {
+    padding-top: 24px;
+    padding-bottom: 104px;
+  }
+
+  .splashCopy h1 { font-size: clamp(2.75rem, 12svh, 4rem); }
+  .splashCopy p { margin-top: 20px; }
 }
 
 @media (max-height: 620px) and (min-width: 761px) {
