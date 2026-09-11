@@ -805,8 +805,9 @@ export function CreateOTFForm() {
                   })}
                 </div>
               </div>
-              {selectedAssets.length < 2 ? <div className="inlineEmptyState">{assetLoadState === "loading" ? <LoaderCircle className="createAssetSpinner" size={18} aria-label="Please wait" /> : <Plus size={17} />}<div>{assetLoadState === "loading" ? null : <><strong>Select at least two priced assets</strong><span>Every OTF requires two to 20 constituents with current price, market cap, and token decimals.</span></>}</div></div> : null}
-              {basketGlobalError && selectedAssets.length ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Basket calculation needs attention</strong><span>{basketGlobalError}</span></div></div> : null}
+              {assetLoadState === "loading" ? <div className="inlineEmptyState"><LoaderCircle className="createAssetSpinner" size={18} aria-label="Loading constituents" /></div> : null}
+              {assetLoadState === "ready" && selectedAssets.length < 2 ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Select at least two assets</strong><span>An OTF requires at least two constituents. Add an asset to continue.</span></div></div> : null}
+              {basketGlobalError && selectedAssets.length >= 2 ? <div className="validationSummary" role="status"><CircleAlert size={15} /><div><strong>Basket calculation needs attention</strong><span>{basketGlobalError}</span></div></div> : null}
               {marketCapSnapshotAt ? <small className="constituentsSnapshot">Prices and market caps: {formatMarketCapSnapshotTimestamp(marketCapSnapshotAt)}.</small> : null}
             </div>
           ) : null}
