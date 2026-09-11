@@ -1,0 +1,21 @@
+export const OTF_INCENTIVE_WEEKS: number;
+export const OTF_INCENTIVE_TOTAL: number;
+export const OTF_DEPOSITOR_INCENTIVE_TOTAL: number;
+export const OTF_CREATOR_INCENTIVE_TOTAL: number;
+export const OTF_WEEK_ONE_EMISSION: number;
+export const OTF_WEEKLY_DECAY_FACTOR: number;
+export const OTF_REWARD_WEIGHT_CAP: number;
+export const OTF_REWARDS_APY_CAP_PERCENT: number;
+export const REWARD_WEEKS_PER_YEAR: number;
+export const REWARD_SCALE: bigint;
+export const UINT256_MAX: bigint;
+export function parseRewardDecimal(value: unknown, label?: string): bigint;
+export function formatRewardDecimal(raw: bigint): string;
+export function weeklyEmissionBucketsRaw(week: number): { total: bigint; depositors: bigint; creators: bigint };
+export function cappedDepositorAllocation(input: {
+  weeklyDepositorEmissionRaw: bigint;
+  fundNavUsdRaw: bigint;
+  otfPriceUsdRaw: bigint;
+  fundWeightRaw: bigint;
+  totalWeightRaw: bigint;
+}): { proportionalRaw: bigint; capRaw: bigint; allocatedRaw: bigint; capped: boolean };

@@ -1,10 +1,21 @@
-export const OTF_INCENTIVE_WEEKS = 208;
-export const OTF_INCENTIVE_TOTAL = 700_000_000;
-export const OTF_DEPOSITOR_INCENTIVE_TOTAL = 650_000_000;
-export const OTF_CREATOR_INCENTIVE_TOTAL = 50_000_000;
-export const OTF_WEEK_ONE_EMISSION = 14_000_000;
-export const OTF_WEEKLY_DECAY_FACTOR = 0.9803203;
-export const OTF_REWARD_WEIGHT_CAP = 10_000_000;
+import {
+  cappedDepositorAllocation,
+  OTF_REWARD_WEIGHT_CAP,
+  OTF_REWARDS_APY_CAP_PERCENT,
+  REWARD_WEEKS_PER_YEAR,
+  weeklyEmissionBucketsRaw,
+} from "../../../scripts/lib/reward-policy.mjs";
+
+export {
+  OTF_INCENTIVE_WEEKS,
+  OTF_INCENTIVE_TOTAL,
+  OTF_DEPOSITOR_INCENTIVE_TOTAL,
+  OTF_CREATOR_INCENTIVE_TOTAL,
+  OTF_WEEK_ONE_EMISSION,
+  OTF_WEEKLY_DECAY_FACTOR,
+  OTF_REWARD_WEIGHT_CAP,
+  OTF_REWARDS_APY_CAP_PERCENT,
+} from "../../../scripts/lib/reward-policy.mjs";
 
 const WEEK_MS = 7 * 24 * 60 * 60_000;
 
@@ -14,23 +25,15 @@ export function incentiveWeekAt(deployedAtMs: number, nowMs: number): number | u
 }
 
 export function weeklyEmissionOtf(week: number): number {
-  if (!Number.isInteger(week) || week < 1 || week > OTF_INCENTIVE_WEEKS) return 0;
-  if (week < OTF_INCENTIVE_WEEKS) {
-    return OTF_WEEK_ONE_EMISSION * OTF_WEEKLY_DECAY_FACTOR ** (week - 1);
-  }
-  const first207Weeks = OTF_WEEK_ONE_EMISSION
-    * (1 - OTF_WEEKLY_DECAY_FACTOR ** (OTF_INCENTIVE_WEEKS - 1))
-    / (1 - OTF_WEEKLY_DECAY_FACTOR);
-  return OTF_INCENTIVE_TOTAL - first207Weeks;
+  return Number(weeklyEmissionBucketsRaw(week).total) / 1e18;
 }
 
 export function weeklyEmissionBucketsOtf(week: number) {
-  const total = weeklyEmissionOtf(week);
-  const depositors = total * OTF_DEPOSITOR_INCENTIVE_TOTAL / OTF_INCENTIVE_TOTAL;
+  const buckets = weeklyEmissionBucketsRaw(week);
   return {
-    total,
-    depositors,
-    creators: total - depositors,
+    total: Number(buckets.total) / 1e18,
+    depositors: Number(buckets.depositors) / 1e18,
+    creators: Number(buckets.creators) / 1e18,
   };
 }
 
@@ -47,6 +50,14 @@ export function accountedRewardWeightOtf(assets: readonly string[], balances: re
   return Number(balances[index] > capRaw ? capRaw : balances[index]) / 1e18;
 }
 
+function estimatedAmountRaw(value: number): bigint {
+  const [coefficient, exponent = "0"] = value.toString().split("e");
+  const [whole, fraction = ""] = coefficient.split(".");
+  const digits = BigInt(whole + fraction);
+  const shift = 18 + Number(exponent) - fraction.length;
+  return shift >= 0 ? digits * 10n ** BigInt(shift) : digits / 10n ** BigInt(-shift);
+}
+
 export function estimatedRewardsApy(input: {
   weeklyDepositorEmissionOtf: number;
   otfPriceUsd: number;
@@ -54,7 +65,9 @@ export function estimatedRewardsApy(input: {
   fundRewardWeightOtf: number;
   totalRewardWeightOtf: number;
 }) {
-  if (input.fundAumUsd === 0 || input.fundRewardWeightOtf === 0) return { percent: 0 };
+  if (input.fundAumUsd === 0 || input.fundRewardWeightOtf === 0) {
+    return { percent: 0, weeklyRewardOtf: 0, weeklyRewardUsd: 0, capped: false };
+  }
   if (
     !Number.isFinite(input.weeklyDepositorEmissionOtf) || input.weeklyDepositorEmissionOtf < 0
     || !Number.isFinite(input.otfPriceUsd) || input.otfPriceUsd <= 0
@@ -62,9 +75,19 @@ export function estimatedRewardsApy(input: {
     || !Number.isFinite(input.fundRewardWeightOtf) || input.fundRewardWeightOtf < 0 || input.fundRewardWeightOtf > OTF_REWARD_WEIGHT_CAP
     || !Number.isFinite(input.totalRewardWeightOtf) || input.totalRewardWeightOtf < input.fundRewardWeightOtf
   ) return undefined;
-  const fundWeeklyEmissionOtf = input.weeklyDepositorEmissionOtf * input.fundRewardWeightOtf / input.totalRewardWeightOtf;
+  // Live values are estimates. Publication parses decimal strings directly into bigint.
+  const [weeklyDepositorEmissionRaw, fundNavUsdRaw, otfPriceUsdRaw, fundWeightRaw, totalWeightRaw] =
+    [input.weeklyDepositorEmissionOtf, input.fundAumUsd, input.otfPriceUsd,
+      input.fundRewardWeightOtf, input.totalRewardWeightOtf].map(estimatedAmountRaw);
+  if (otfPriceUsdRaw === 0n) return undefined;
+  const allocation = cappedDepositorAllocation({ weeklyDepositorEmissionRaw, fundNavUsdRaw, otfPriceUsdRaw, fundWeightRaw, totalWeightRaw });
+  const weeklyRewardOtf = Number(allocation.allocatedRaw) / 1e18;
+  const weeklyRewardUsd = weeklyRewardOtf * input.otfPriceUsd;
   return {
-    percent: fundWeeklyEmissionOtf * input.otfPriceUsd * 52 / input.fundAumUsd * 100,
+    percent: Math.min(OTF_REWARDS_APY_CAP_PERCENT, weeklyRewardUsd * REWARD_WEEKS_PER_YEAR / input.fundAumUsd * 100),
+    weeklyRewardOtf,
+    weeklyRewardUsd,
+    capped: allocation.capped,
   };
 }
 

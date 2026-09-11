@@ -34,9 +34,22 @@ describe("fund rewards explanation", () => {
   it("keeps known holdings and reward share when zero NAV makes APY zero", () => {
     const html = render({ zeroNav: true, navUsd: 0, apyText: "0%" });
     expect(html).toContain("40%");
-    expect(html).toContain("5.2M");
+    expect(html).not.toContain("5.2M");
+    expect(html).toContain("Zero NAV or reward weight means no weekly allocation");
     expect(html).not.toContain("No eligible OTF");
     expect(html).not.toContain("Weekly rewards in USD × 52 ÷ fund NAV × 100");
+  });
+
+  it("shows capped weekly amounts and explains the publisher-selected price", () => {
+    const html = render({ navUsd: 5200, apyText: "2,000%" });
+    expect(html).toContain("2,000% maximum");
+    expect(html).toContain("Reduced to the 2,000% APY limit");
+    expect(html).toContain("1,000");
+    expect(html).toContain("$2,000.00");
+    expect(html).not.toContain("5.2M");
+    expect(html).not.toContain("$10,400,000.00");
+    expect(html).toContain("price selected by the publisher");
+    expect(html).toContain("without redistribution or automatic rollover");
   });
 
   it("explains no-OTF eligibility without showing division by zero", () => {
@@ -57,7 +70,8 @@ describe("fund rewards explanation", () => {
     const html = render({ apyText: "0%", error: "One or more constituent prices are missing or stale." });
     expect(html).toContain("One or more constituent prices are missing or stale.");
     expect(html).toContain(">0%</strong>");
-    expect(html).not.toContain("This fund receives 40% of the depositor pool.");
+    expect(html).not.toContain("of the depositor budget before the APY cap");
+    expect(html).not.toContain("$10,400,000.00");
   });
 
   it("keeps a known zero return for a fund without OTF despite unavailable price data", () => {

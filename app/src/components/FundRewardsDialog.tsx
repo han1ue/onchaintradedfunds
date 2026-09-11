@@ -4,6 +4,7 @@ import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { OtfTokenIcon } from "@onchaintradedfunds/brand";
+import { estimatedRewardsApy, OTF_REWARDS_APY_CAP_PERCENT } from "@/lib/incentive-apy";
 
 type Props = {
   fundName: string;
@@ -51,10 +52,16 @@ export function FundRewardsDialog(props: Props) {
   const share = weight === 0 ? 0 : weight !== undefined && props.totalWeightOtf !== undefined && props.totalWeightOtf > 0
     ? weight / props.totalWeightOtf : undefined;
   const shareText = share === undefined ? "—" : `${(share * 100).toLocaleString("en", { maximumFractionDigits: 2 })}%`;
-  const weeklyTokens = share === 0 ? 0 : share !== undefined && props.weeklyDepositorEmissionOtf !== undefined
-    ? props.weeklyDepositorEmissionOtf * share : undefined;
-  const weeklyUsd = weeklyTokens === 0 ? 0 : weeklyTokens !== undefined && props.otfPriceUsd !== undefined
-    ? weeklyTokens * props.otfPriceUsd : undefined;
+  const estimate = props.loading || props.error ? undefined : estimatedRewardsApy({
+    weeklyDepositorEmissionOtf: props.weeklyDepositorEmissionOtf ?? NaN,
+    otfPriceUsd: props.otfPriceUsd ?? NaN,
+    fundAumUsd: props.zeroNav ? 0 : props.navUsd ?? NaN,
+    fundRewardWeightOtf: weight ?? NaN,
+    totalRewardWeightOtf: props.totalWeightOtf ?? NaN,
+  });
+  const weeklyTokens = estimate?.weeklyRewardOtf;
+  const weeklyUsd = estimate?.weeklyRewardUsd;
+  const maximumApy = `${OTF_REWARDS_APY_CAP_PERCENT.toLocaleString("en")}%`;
   const reason = props.hasOtf === false
     ? "This fund does not include the OTF token, so it receives no share of the depositor rewards pool."
     : props.zeroNav
@@ -67,7 +74,9 @@ export function FundRewardsDialog(props: Props) {
     ? props.error
     : props.apyText === "—"
     ? "Some balances or prices are unavailable, so this fund's APY cannot be calculated yet."
-    : `This fund receives ${shareText} of the depositor pool. Its APY compares the dollar value of those rewards with its NAV.`;
+    : estimate?.capped
+    ? `This fund reaches the ${maximumApy} rewards APY maximum. Its weekly depositor rewards are reduced, and excess OTF stays unallocated.`
+    : `This fund's weight gives it ${shareText} of the depositor budget before the APY cap. Its APY compares the dollar value of its rewards with its NAV.`;
 
   return createPortal(
     <dialog
@@ -90,8 +99,8 @@ export function FundRewardsDialog(props: Props) {
           <p className="rewardsDialogRule">Only OTF held through fund deposits counts. Each fund&apos;s weight is capped at <strong>10M OTF</strong>; any excess adds no reward share. This APY uses the depositor pool; creator rewards are separate.</p>
           <dl className="rewardsCalculation">
             <div><dt>OTF counted toward rewards<small>Fund holdings, capped at 10M OTF</small></dt><dd>{tokens(weight)} <span>OTF</span></dd></div>
-            <div><dt>Share of the pool<small>{weight === 0 ? "No eligible OTF means no share of the pool" : `${tokens(weight)} ÷ ${tokens(props.totalWeightOtf)} eligible OTF across funds`}</small></dt><dd>{shareText}</dd></div>
-            <div><dt>Weekly depositor rewards<small>{share === 0 ? "Zero reward weight means no weekly allocation" : `${tokens(props.weeklyDepositorEmissionOtf)} OTF in ${props.week ? `week ${props.week}` : "this week's pool"} × ${shareText}`}</small></dt><dd>{tokens(weeklyTokens)} <span>OTF</span></dd></div>
+            <div><dt>Weight-based share<small>{weight === 0 ? "No eligible OTF means no share of the pool" : `${tokens(weight)} ÷ ${tokens(props.totalWeightOtf)} eligible OTF across funds, before the APY cap`}</small></dt><dd>{shareText}</dd></div>
+            <div><dt>Estimated weekly depositor rewards<small>{props.zeroNav || share === 0 ? "Zero NAV or reward weight means no weekly allocation" : estimate?.capped ? `Reduced to the ${maximumApy} APY limit` : `${tokens(props.weeklyDepositorEmissionOtf)} OTF budget in ${props.week ? `week ${props.week}` : "this week"} × ${shareText}`}</small></dt><dd>{tokens(weeklyTokens)} <span>OTF</span></dd></div>
           </dl>
           <dl className="rewardsValuationInputs">
             <div><dt>Fund NAV</dt><dd>{dollars(props.navUsd)}</dd></div>
@@ -99,12 +108,13 @@ export function FundRewardsDialog(props: Props) {
           </dl>
           <div className="rewardsApyResult">
             <div><span>Estimated annual return</span><strong>{props.apyText}</strong></div>
+            <p>{maximumApy} maximum. Excess rewards stay unallocated without redistribution or automatic rollover.</p>
             {props.zeroNav || weight === 0 ? <p>Zero NAV or zero OTF weight means 0% APY.</p> : <>
               <p>Weekly rewards in USD × 52 ÷ fund NAV × 100</p>
               <small>({dollars(weeklyUsd)} × 52) ÷ {dollars(props.navUsd)} × 100</small>
             </>}
           </div>
-          <p className="rewardsDialogNote">Rewards are paid in protocol $OTF. APY projects one week over a year; actual returns change with emissions, fund balances and token prices. Displayed figures are rounded.</p>
+          <p className="rewardsDialogNote">This estimate uses current prices and projects one week over 52 weeks without compounding. Published rewards use snapshot NAV and the OTF USD price selected by the publisher for that week. Later price changes can change realized returns. Displayed figures are rounded.</p>
         </div>
       </div>
     </dialog>,

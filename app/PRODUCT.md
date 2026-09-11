@@ -43,9 +43,11 @@ The Funds directory reads vault addresses, identity, creator, constituent count,
 
 The fund page reads the permanent thesis and accounted balances onchain. NAV per share and AUM use shared Postgres snapshots and approved price observations. The scheduled collector records holdings, supply, block identity and price references every five minutes. These informational values do not affect settlement or execution prices.
 
-The Funds summary shows the combined weekly OTF distribution. The directory shows each fund's total NAV in dollars and estimated depositor rewards APY. Each fund's weight is its accounted protocol OTF balance, capped at 10 million OTF. Its share of the depositor pool is that weight divided by the sum of capped weights across factory funds.
+The Funds summary shows the combined weekly OTF rewards budget. The directory shows each fund's total NAV in dollars and estimated depositor rewards APY. Each fund's weight is its accounted protocol OTF balance, capped at 10 million OTF. Its share of the depositor budget before the APY cap is that weight divided by the sum of capped weights across factory funds.
 
-APY values that share at the current OTF price and annualizes it over 52 weeks against the fund's NAV. Funds with zero NAV or no OTF weight show 0% APY. There is no calculation baseline. The estimate does not determine Merkle entitlements.
+Depositor rewards APY has a 2,000% maximum. The app limits estimated weekly OTF rewards to the smaller of the proportional allocation and `NAV USD × 20 ÷ 52 ÷ current OTF price USD`. It annualizes the dollar value over 52 weeks without compounding. Directory sorting and the rewards dialog use the capped calculation. Funds with zero NAV or no OTF weight show 0% APY and zero weekly depositor rewards.
+
+Published rewards use recorded snapshot NAV and one OTF USD price chosen by the publisher for the week. The publisher tooling caps actual depositor allocations using those inputs and records the selected price with the reward artifact. Excess and rounding dust stay unallocated in the distributor, without redistribution or automatic rollover. Creator rewards retain their separate proportional allocation. The app's current-price estimate does not determine Merkle entitlements; later price changes can change realized returns.
 
 An empty vault's first mint must produce at least `0.01` shares. The quote's guaranteed minimum output must meet this threshold. There is no first-mint maximum; the minimum check ends once supply is nonzero.
 

@@ -63,7 +63,7 @@ describe("OTF incentive APY model", () => {
   const apyInput = {
     weeklyDepositorEmissionOtf: 100,
     otfPriceUsd: 2,
-    fundAumUsd: 50,
+    fundAumUsd: 500,
     fundRewardWeightOtf: 5_000_000,
     totalRewardWeightOtf: 25_000_000,
   };
@@ -72,13 +72,13 @@ describe("OTF incentive APY model", () => {
     const weights = [5_000_000, 10_000_000, 20_000_000, 0].map((balance) => cappedRewardWeightOtf(balance)!);
     const totalRewardWeightOtf = weights.reduce((total, weight) => total + weight, 0);
     const apys = weights.map((fundRewardWeightOtf) => estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf, totalRewardWeightOtf })!.percent);
-    expect(apys).toEqual([4160, 8320, 8320, 0]);
-    expect(apys.reduce((total, apy) => total + apy, 0)).toBe(20_800);
+    expect(apys).toEqual([416, 832, 832, 0]);
+    expect(apys.reduce((total, apy) => total + apy, 0)).toBe(2_080);
   });
 
   it("returns zero APY at zero NAV without a calculation baseline", () => {
-    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0 })).toEqual({ percent: 0 });
-    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0 })).toMatchObject({ percent: 0, weeklyRewardOtf: 0, weeklyRewardUsd: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 0, otfPriceUsd: NaN })).toMatchObject({ percent: 0 });
   });
 
   it("gives equal rates to different-sized funds with the same OTF-to-NAV ratio", () => {
@@ -94,13 +94,24 @@ describe("OTF incentive APY model", () => {
   });
 
   it("returns zero APY for no OTF weight, including an entirely empty directory", () => {
-    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0 })).toEqual({ percent: 0 });
-    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0, totalRewardWeightOtf: 0, otfPriceUsd: NaN })).toEqual({ percent: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0 })).toMatchObject({ percent: 0, weeklyRewardOtf: 0 });
+    expect(estimatedRewardsApy({ ...apyInput, fundRewardWeightOtf: 0, totalRewardWeightOtf: 0, otfPriceUsd: NaN })).toMatchObject({ percent: 0 });
   });
 
-  it("uses actual positive NAV even below $100", () => {
-    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 1 })).toEqual({ percent: 208_000 });
-    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 50 })).toEqual({ percent: 4160 });
+  it("caps APY and weekly rewards using actual positive NAV, including tiny funds", () => {
+    for (const fundAumUsd of [1e-12, 1, 50, 103]) {
+      const estimate = estimatedRewardsApy({ ...apyInput, fundAumUsd })!;
+      expect(estimate.capped).toBe(true);
+      expect(estimate.percent).toBeLessThanOrEqual(2000);
+      expect(estimate.weeklyRewardUsd).toBeLessThanOrEqual(fundAumUsd * 20 / 52);
+    }
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 50 })!.percent).toBeCloseTo(2000, 10);
+  });
+
+  it("keeps uncapped rates and handles the exact 2,000% boundary", () => {
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 104 })).toEqual({ percent: 2000, weeklyRewardOtf: 20, weeklyRewardUsd: 40, capped: false });
+    expect(estimatedRewardsApy({ ...apyInput, fundAumUsd: 208 })).toEqual({ percent: 1000, weeklyRewardOtf: 20, weeklyRewardUsd: 40, capped: false });
+    expect(estimatedRewardsApy({ ...apyInput, weeklyDepositorEmissionOtf: 0 })).toEqual({ percent: 0, weeklyRewardOtf: 0, weeklyRewardUsd: 0, capped: false });
   });
 
   it("does not invent APY from missing prices or invalid reward totals", () => {

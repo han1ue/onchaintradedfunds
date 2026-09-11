@@ -163,24 +163,44 @@ configurable final routes.
 
 ## Cumulative rewards
 
-The publisher MUST distribute 700 million OTF over 208 weeks: 650 million for depositors and
-50 million for fund creators. Week 1 MUST allocate 13 million to depositors and 1 million to creators.
+The publisher MUST budget 700 million OTF over 208 weeks: 650 million for depositors and
+50 million for fund creators. Week 1 MUST budget 13 million for depositors and 1 million for creators.
 Later weekly targets MUST decline by approximately 1.968%, following
 `14,000,000 × 0.9803203^(n - 1)` with `n` starting at 1.
 
-Each week MUST keep the 13-to-1 ratio and reconcile rounding to its total. The schedule MUST NOT use
+Each week's budget MUST keep the 13-to-1 ratio, subject to integer rounding and final-week reconciliation. The schedule MUST NOT use
 monthly buckets, quarterly steps, or periodic halvings, or allocate emissions after week 208.
 
-The decay factor is approximate. Publication MUST use enough precision or reconcile the final week
-to reach exactly 700 million OTF, including exactly 650 million for depositors and 50 million for
-creators. It MUST NOT use the rounded formula's approximately 699,999,574.95-OTF sum as the final total.
+The shared schedule MUST round each weekly decay down to 18-decimal OTF units and reconcile the final
+week's budgets to exactly 700 million OTF, including 650 million for depositors and 50 million for
+creators. These are budget totals. Actual allocations MAY be lower because of caps, eligibility,
+participant allocations, or rounding.
 
-Both buckets MUST allocate across funds in proportion to
+Both buckets MUST calculate each fund's initial allowance in proportion to
 `min(accounted protocol OTF balance, 10,000,000 OTF)` per fund. Funds without accounted OTF MUST receive
 zero allocation. Balances above the cap and unaccounted OTF transfers MUST NOT increase weight.
 If total weight is zero, no fund MAY receive an allocation. The publisher MUST calculate weekly
 snapshot balances, participant entitlements within each fund's allocation, rounding, and cumulative
 entitlements offchain before publishing.
+
+Each fund's weekly depositor allowance MUST be the smaller of its proportional allowance and
+`snapshot NAV USD × 20 ÷ 52 ÷ chosen OTF price USD`, rounded down to 18-decimal OTF units. This enforces
+a 2,000% annualized depositor rewards cap without compounding. Zero NAV MUST give zero depositor
+rewards. Creator rewards MUST retain their proportional allowance without this APY cap.
+
+The publisher MUST choose one positive OTF USD price for all funds in the week and record it in the
+artifact. Publication tooling MUST NOT substitute a market price. Snapshot NAV MUST remain the recorded
+valuation; the selected price values reward tokens. Missing valuation inputs MUST block generation.
+Excess and rounding dust MUST remain unallocated, without redistribution or automatic rollover.
+
+Publication tooling MUST require weekly fund and participant increments, a complete snapshot fund
+roster, and the previous artifact after week one. It MUST reduce depositor increments proportionally
+when their total exceeds the allowance, round down, and add valid increments to prior cumulative
+entitlements. Creator increments MUST NOT exceed their fund's proportional allowance. Tooling MUST
+reject duplicate funds or participants within a fund's bucket, incomplete rosters, invalid identities
+or amounts, nonconsecutive weeks, and inconsistent previous roots or cumulative totals. The publisher
+remains responsible for snapshot accuracy, roster completeness against the factory, participant
+eligibility, and supplying the latest publication artifact.
 
 Only the configured publisher MAY set a root, which MUST take effect immediately. Leaves MUST commit
 to chain ID, distributor, user, and cumulative entitlement using the documented standard-tree encoding.
@@ -190,9 +210,10 @@ less prior claims. Invalid proofs, duplicate claims, and entitlements below prio
 The publisher MUST have no direct withdrawal path for reward principal.
 
 The distributor does not enforce the schedule, bucket split, balance cap, eligibility, or APY.
-Root publication MUST enforce this policy. The Funds page MUST show combined weekly distribution
-instead of a directory-wide APY. Fund pages MAY show a variable depositor APY estimate, clearly labeled
-as an estimate, and MUST NOT present it as a Merkle entitlement or guarantee.
+Root publication MUST enforce this policy. The Funds page MUST show the combined weekly rewards budget.
+Fund APY estimates MUST use the same cap calculation with current prices, show no more than 2,000%,
+and display capped weekly rewards in the explanation. They MUST explain that published rewards use
+the publisher's selected weekly price and MUST NOT present estimates as Merkle entitlements or guarantees.
 
 ## Deployment and verification
 

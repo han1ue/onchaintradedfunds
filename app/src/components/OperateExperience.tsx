@@ -2346,8 +2346,8 @@ function FundsSurface({ detail }: { detail: boolean }) {
     ? `${formatCompactNumber(rewardsApy.weeklyEmissionOtf)} $OTF`
     : rewardsApy.state === "loading" ? "…" : "—";
   const weeklyDistributionLabel = rewardsApy.state === "ready"
-    ? `Week ${rewardsApy.week} distribution: ${weeklyEmissionText}`
-    : rewardsApy.state === "loading" ? "Weekly distribution loading" : "Weekly distribution unavailable";
+    ? `Week ${rewardsApy.week} rewards budget: ${weeklyEmissionText}`
+    : rewardsApy.state === "loading" ? "Weekly rewards budget loading" : "Weekly rewards budget unavailable";
   useEffect(() => {
     let cancelled = false;
     if (!detail) return;
@@ -2451,7 +2451,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
             <span className="fundsMetricSeparator" aria-hidden="true" />
             <div className="fundsHeadlineMetric fundsDistribution">
               <strong aria-label={weeklyDistributionLabel} title={weeklyDistributionLabel}>{weeklyEmissionText}</strong>
-              <span>{rewardsApy.week ? `Week ${rewardsApy.week} distribution` : "Weekly distribution"}</span>
+              <span>{rewardsApy.week ? `Week ${rewardsApy.week} rewards budget` : "Weekly rewards budget"}</span>
             </div>
           </div>
           <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>

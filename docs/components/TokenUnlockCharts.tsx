@@ -77,8 +77,8 @@ export function RewardsUnlockChart() {
     <figure className="tokenUnlockFigure" aria-labelledby="rewards-unlock-heading">
       <header className="tokenUnlockHeader">
         <div>
-          <h3 id="rewards-unlock-heading">Cumulative incentive unlocks</h3>
-          <p>Scheduled depositor and fund creator rewards across 208 weeks</p>
+          <h3 id="rewards-unlock-heading">Cumulative incentive budgets</h3>
+          <p>Scheduled depositor and fund creator budgets across 208 weeks</p>
         </div>
         <div className="tokenUnlockLegend" aria-label="Chart legend">
           <span><i className="depositors" aria-hidden="true" />Depositors · 650M</span>
@@ -87,8 +87,8 @@ export function RewardsUnlockChart() {
       </header>
       <div className="tokenUnlockChartScroll">
         <svg className="tokenUnlockChart" viewBox={`0 0 ${REWARD_CHART.width} ${REWARD_CHART.height}`} role="img" aria-labelledby="rewards-unlock-title rewards-unlock-description">
-          <title id="rewards-unlock-title">Cumulative scheduled OTF incentive unlocks</title>
-          <desc id="rewards-unlock-description">A stacked area chart rising from zero to 700 million OTF over four years. Depositors receive 650 million OTF and fund creators receive 50 million OTF on the same declining weekly schedule.</desc>
+          <title id="rewards-unlock-title">Cumulative scheduled OTF incentive budgets</title>
+          <desc id="rewards-unlock-description">A stacked area chart rising from zero to a 700 million OTF budget over four years: 650 million for depositors and 50 million for fund creators. Actual allocations can be lower.</desc>
           {yTicks.map((tick) => {
             const y = rewardY(tick);
             return <g key={tick}><line className="tokenUnlockGrid" x1={REWARD_CHART.left} x2={REWARD_CHART.width - REWARD_CHART.right} y1={y} y2={y} /><text className="tokenUnlockAxisLabel" x={REWARD_CHART.left - 12} y={y + 4} textAnchor="end">{tick / 1_000_000}M</text></g>;
@@ -105,7 +105,7 @@ export function RewardsUnlockChart() {
           <text className="tokenUnlockEndpoint" x={REWARD_CHART.width - REWARD_CHART.right - 6} y={rewardY(REWARD_TOTAL) + 17} textAnchor="end">700M total</text>
         </svg>
       </div>
-      <figcaption>The chart shows the publisher policy. Tokens become claimable only after the publisher includes the cumulative entitlement in an active Merkle root.</figcaption>
+      <figcaption>The chart shows scheduled budgets. Excess above the depositor APY cap stays unallocated. Tokens become claimable only after the publisher includes the cumulative entitlement in an active Merkle root.</figcaption>
       <details className="tokenUnlockData">
         <summary>View cumulative checkpoint data</summary>
         <div><table><thead><tr><th>Checkpoint</th><th>Depositors</th><th>Fund creators</th><th>Total</th></tr></thead><tbody>{rewardCheckpoints.map((point) => <tr key={point.week}><td>{point.week === 0 ? "Start" : `Week ${point.week}`}</td><td>{millions(point.depositors)}</td><td>{millions(point.creators)}</td><td>{millions(point.total)}</td></tr>)}</tbody></table></div>
