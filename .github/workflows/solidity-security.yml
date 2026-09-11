@@ -130,6 +130,8 @@ jobs:
         run: node --test scripts/lib/mainnet-routing.test.mjs
 
       - name: Run pinned Robinhood mainnet fork suite
+        env:
+          RH_MAINNET_RPC_URL: ${{ secrets.RH_MAINNET_RPC_URL }}
         run: corepack pnpm contracts:validate:mainnet-routing
 
       - name: Run V4 launch invariant suite

@@ -86,6 +86,8 @@ node scripts/verify-mainnet-routing.mjs
 
 Store `UNISWAP_API_KEY` in the ignored `app/.env.local`. Optionally set `RH_MAINNET_RPC_URL` in the process environment to override the public RPC for these commands. Preparation verifies the pinned external runtimes and writes the role plan to `test-results/mainnet/preparation.json`. The service check tests RPC simulation support, oracle freshness, stock identities and Uniswap buy/sell quotes. Missing credentials or a failed service check produce a nonzero exit. Reports under `test-results/mainnet/` are ignored by Git.
 
+The CI mainnet fork suite requires the `RH_MAINNET_RPC_URL` repository secret. Use a Robinhood mainnet RPC accessible from GitHub Actions that supports state reads at the selected fork block. The public RPC can return a Cloudflare HTTP 403 browser challenge to runners. Missing RPC configuration fails validation; it does not skip the fork suite.
+
 The service checker sends Uniswap requests sequentially with a 1.1-second pause. The app spaces provider requests by at least 210 milliseconds per server process, honors `Retry-After` on HTTP 429, and makes at most three attempts. This pacing does not coordinate separate Vercel instances sharing the API key. Sustained traffic across instances needs a shared rate limiter or a higher provider quota; exhausted retries return `PROVIDER_RATE_LIMITED`.
 
 The fork rehearsal creates contracts and exercises V3/V4 routing, stock baskets, launch graduation, vesting and administrator handoff on a local copy of mainnet state. These commands do not broadcast transactions. `deploymentPolicy.broadcastEnabled` stays false during preparation.

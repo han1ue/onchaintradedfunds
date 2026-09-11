@@ -6,6 +6,14 @@ const requiredDependencies = [
   "uniswapV4StateView", "uniswapV4PositionManager", "uniswapV4Quoter", "uniswapUniversalRouter", "permit2",
 ];
 
+export function mainnetRoutingRpcUrl(env, defaultUrl) {
+  const configured = env.RH_MAINNET_RPC_URL?.trim();
+  if (!configured && env.CI === "true") {
+    throw new Error("Mainnet fork validation requires RH_MAINNET_RPC_URL in CI. Configure the RH_MAINNET_RPC_URL repository secret with a Robinhood mainnet RPC accessible from the runner; the public endpoint can return a Cloudflare HTTP 403 challenge.");
+  }
+  return configured || defaultUrl;
+}
+
 export function mainnetRehearsalDependencies(fixture) {
   if (fixture.chainId !== 4663 || fixture.stocks?.length !== 5) {
     throw new Error("Rehearsal requires Robinhood mainnet and five pinned stock markets");

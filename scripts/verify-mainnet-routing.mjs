@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, verifyMainnetRoutingRuntime } from "./lib/mainnet-routing.mjs";
+import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, mainnetRoutingRpcUrl, verifyMainnetRoutingRuntime } from "./lib/mainnet-routing.mjs";
 import { mainnetPreparation } from "./lib/mainnet-preparation.mjs";
 import { verifyUniversalRouter } from "./lib/universal-router.mjs";
 
@@ -18,7 +18,7 @@ if (mainnet.chainId !== rehearsal.chainId
 }
 pin.dependencies = { ...pin.dependencies, ...mainnetRehearsalDependencies(rehearsal) };
 const { createPublicClient, http } = createRequire(new URL("../app/package.json", import.meta.url))("viem");
-const rpcUrl = process.env.RH_MAINNET_RPC_URL?.trim() || pin.rpcUrl;
+const rpcUrl = mainnetRoutingRpcUrl(process.env, pin.rpcUrl);
 const client = createPublicClient({ transport: http(rpcUrl) });
 await verifyUniversalRouter(client, mainnet);
 const windowsForge = process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Foundry/v1.7.1/forge.exe");

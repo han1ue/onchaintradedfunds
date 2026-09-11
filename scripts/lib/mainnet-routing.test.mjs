@@ -2,11 +2,24 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, verifyMainnetRoutingRuntime } from "./mainnet-routing.mjs";
+import { getMainnetRoutingBlockNumber, mainnetRehearsalDependencies, mainnetRoutingRpcUrl, verifyMainnetRoutingRuntime } from "./mainnet-routing.mjs";
 
 const { keccak256 } = createRequire(new URL("../../app/package.json", import.meta.url))("viem");
 const pin = JSON.parse(readFileSync(new URL("../fixtures/robinhood-mainnet-routing.json", import.meta.url)));
 const rehearsal = JSON.parse(readFileSync(new URL("../fixtures/robinhood-mainnet-rehearsal.json", import.meta.url)));
+
+test("uses the configured RPC in CI and preserves the local public default", () => {
+  const rpc = "https://rpc.example.test/mainnet";
+  assert.equal(mainnetRoutingRpcUrl({ CI: "true", RH_MAINNET_RPC_URL: ` ${rpc} ` }, pin.rpcUrl), rpc);
+  assert.equal(mainnetRoutingRpcUrl({}, pin.rpcUrl), pin.rpcUrl);
+  assert.equal(mainnetRoutingRpcUrl({ CI: "false", RH_MAINNET_RPC_URL: " " }, pin.rpcUrl), pin.rpcUrl);
+});
+
+test("requires an explicit CI RPC instead of relying on the challenged public endpoint", () => {
+  for (const value of [undefined, "", " "]) {
+    assert.throws(() => mainnetRoutingRpcUrl({ CI: "true", RH_MAINNET_RPC_URL: value }, pin.rpcUrl), /RH_MAINNET_RPC_URL repository secret/);
+  }
+});
 
 test("pins the oracle implementation and every real stock market", () => {
   const dependencies = mainnetRehearsalDependencies(rehearsal);
