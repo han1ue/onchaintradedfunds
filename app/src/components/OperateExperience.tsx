@@ -385,6 +385,7 @@ function OperateFooter() {
         {showTestnetLinks ? <a href="https://faucet.testnet.chain.robinhood.com/" target="_blank" rel="noreferrer">ETH Faucet</a> : null}
         {showTestnetLinks ? <a href="https://faucet.paxos.com/" target="_blank" rel="noreferrer">USDG Faucet</a> : null}
         {showTestnetLinks ? <Link href="/liquidity">Liquidity</Link> : null}
+        <Link href="/verified">Asset directory</Link>
         <a href={X_URL} target="_blank" rel="noreferrer" aria-label="OTF Protocol on X">@OTFProtocol</a>
         <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs<ExternalLink size={12} /></a>
       </div>
@@ -2454,7 +2455,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <span>{rewardsApy.week ? `Week ${rewardsApy.week} rewards budget` : "Weekly rewards budget"}</span>
             </div>
           </div>
-          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Registered assets</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
+          <div className="appPageActions"><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!directoryDeploymentReady ? (
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Protocol deployment unavailable</h2><p>Fund discovery will become available when the protocol is deployed and configured on this network.</p></section>
