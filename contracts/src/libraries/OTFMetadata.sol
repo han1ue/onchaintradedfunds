@@ -8,15 +8,15 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 library OTFMetadata {
     error InvalidTicker();
 
-    string internal constant SQUARE_ICON_SVG =
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect x="9" y="9" width="238" height="238" fill="#090909" stroke="#ccff00" stroke-width="16"/><text x="128" y="156" fill="#ccff00" font-family="Instrument Sans,Arial,sans-serif" font-size="76" font-weight="700" letter-spacing="-2" text-anchor="middle">OTF</text></svg>';
+    string internal constant COIN_ICON_SVG =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="470" fill="#090909" stroke="#ccff00" stroke-width="40"/><text x="512" y="620" fill="#ccff00" font-family="Instrument Sans,Arial,sans-serif" font-size="300" font-weight="700" letter-spacing="24" text-anchor="middle">OTF</text></svg>';
 
     function protocolTokenURI() internal pure returns (string memory) {
         return _tokenURI(
             "Onchain Traded Funds",
             "OTF",
             "The fixed-supply protocol token of Onchain Traded Funds.",
-            SQUARE_ICON_SVG
+            COIN_ICON_SVG
         );
     }
 

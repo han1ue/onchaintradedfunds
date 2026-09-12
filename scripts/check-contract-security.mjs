@@ -113,6 +113,7 @@ const vaultSource = readFileSync(join(contracts, "src", "ManagedOTFVault.sol"), 
 const otfTokenSource = readFileSync(join(contracts, "src", "OTFToken.sol"), "utf8");
 const otfMetadataSource = readFileSync(join(contracts, "src", "libraries", "OTFMetadata.sol"), "utf8");
 const squareIconSource = readFileSync(join(root, "packages", "brand", "assets", "otf-icon.svg"), "utf8");
+const coinIconSource = readFileSync(join(root, "packages", "brand", "assets", "otf-circular-icon.svg"), "utf8");
 assert(!existsSync(join(contracts, "src", "ERC20Base.sol")), "hand-written ERC20Base remains in production sources");
 assert(/ManagedOTFVaultStorage is ERC20Upgradeable/u.test(vaultStorageSource), "vault shares do not use OpenZeppelin ERC20Upgradeable");
 assert(
@@ -140,6 +141,13 @@ for (const fragment of [
 ]) {
   assert(otfMetadataSource.includes(fragment), `onchain OTF metadata is missing ${fragment}`);
   assert(squareIconSource.includes(fragment), `square brand SVG is missing ${fragment}`);
+}
+for (const fragment of [
+  'viewBox="0 0 1024 1024"', '<circle cx="512" cy="512" r="470"',
+  'stroke-width="40"', '<text x="512" y="620"', 'font-size="300"', 'letter-spacing="24"',
+]) {
+  assert(otfMetadataSource.includes(fragment), `onchain OTF coin metadata is missing ${fragment}`);
+  assert(coinIconSource.includes(fragment), `circular brand SVG is missing ${fragment}`);
 }
 assert(/Base64\.encode\(bytes\(iconSvg\)\)/u.test(otfMetadataSource), "onchain OTF image is not SVG base64");
 assert(/OTFMetadata\.protocolTokenURI\(\)/u.test(otfTokenSource), "OTFToken does not use canonical onchain metadata");

@@ -96,7 +96,6 @@ export function FundRewardsDialog(props: Props) {
         </header>
         <div className="rewardsDialogBody">
           <p id={descriptionId} className="rewardsDialogReason">{reason}</p>
-          <p className="rewardsDialogRule">Only OTF held through fund deposits counts. Each fund&apos;s weight is capped at <strong>10M OTF</strong>; any excess adds no reward share. This APY uses the depositor pool; creator rewards are separate.</p>
           <dl className="rewardsCalculation">
             <div><dt>OTF counted toward rewards<small>Fund holdings, capped at 10M OTF</small></dt><dd>{tokens(weight)} <span>OTF</span></dd></div>
             <div><dt>Weight-based share<small>{weight === 0 ? "No eligible OTF means no share of the pool" : `${tokens(weight)} ÷ ${tokens(props.totalWeightOtf)} eligible OTF across funds, before the APY cap`}</small></dt><dd>{shareText}</dd></div>

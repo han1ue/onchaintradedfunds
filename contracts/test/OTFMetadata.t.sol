@@ -79,7 +79,7 @@ contract OTFMetadataTest is Test {
         renderer.share("A B");
     }
 
-    function testProtocolMetadataStillUsesItsSingleLineMark() public view {
+    function testProtocolMetadataUsesTheCircularCoinMark() public view {
         string memory uri = OTFMetadata.protocolTokenURI();
         string memory json = _decode(uri, "data:application/json;base64,");
         assertEq(vm.parseJsonString(json, ".name"), "Onchain Traded Funds");
@@ -87,8 +87,15 @@ contract OTFMetadataTest is Test {
         assertEq(
             vm.parseJsonString(_decode(uri, "data:application/json;base64,"), ".symbol"), "OTF"
         );
-        assertTrue(_contains(_svg(uri), ">OTF</text>"));
-        assertFalse(_contains(_svg(uri), 'y="116.5"'));
+        string memory svg = _svg(uri);
+        assertTrue(_contains(svg, 'viewBox="0 0 1024 1024"'));
+        assertTrue(_contains(svg, '<circle cx="512" cy="512" r="470"'));
+        assertTrue(_contains(svg, 'stroke-width="40"'));
+        assertTrue(_contains(svg, '<text x="512" y="620"'));
+        assertTrue(_contains(svg, 'font-size="300"'));
+        assertTrue(_contains(svg, 'letter-spacing="24"'));
+        assertTrue(_contains(svg, ">OTF</text>"));
+        assertFalse(_contains(svg, "<rect"));
     }
 
     function _svg(string memory uri) private view returns (string memory) {
