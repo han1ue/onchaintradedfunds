@@ -184,11 +184,11 @@ snapshot balances, participant entitlements within each fund's allocation, round
 entitlements offchain before publishing.
 
 Each fund's weekly depositor allowance MUST be the smaller of its proportional allowance and
-`snapshot NAV USD × 20 ÷ 52 ÷ chosen OTF price USD`, rounded down to 18-decimal OTF units. This enforces
-a 2,000% annualized depositor rewards cap without compounding. Zero NAV MUST give zero depositor
+`snapshot NAV USD × (101^(1/52) − 1) ÷ chosen OTF price USD`, rounded down to 18-decimal OTF units. This enforces
+a 10,000% depositor rewards APY cap with weekly compounding. Zero NAV MUST give zero depositor
 rewards. Creator rewards MUST retain their proportional allowance without this APY cap.
 
-The publisher MUST choose one positive OTF USD price for all funds in the week and record it in the
+The publisher MUST supply one positive weekly average OTF USD price for all funds and record it in the
 artifact. Publication tooling MUST NOT substitute a market price. Snapshot NAV MUST remain the recorded
 valuation; the selected price values reward tokens. Missing valuation inputs MUST block generation.
 Excess and rounding dust MUST remain unallocated, without redistribution or automatic rollover.
@@ -211,7 +211,7 @@ The publisher MUST have no direct withdrawal path for reward principal.
 
 The distributor does not enforce the schedule, bucket split, balance cap, eligibility, or APY.
 Root publication MUST enforce this policy. The Funds page MUST show the combined weekly rewards budget.
-Fund APY estimates MUST use the same cap calculation with current prices, show no more than 2,000%,
+Fund APY estimates MUST use the same cap calculation with current prices, show no more than 10,000%,
 and display capped weekly rewards in the explanation. They MUST explain that published rewards use
 the publisher's selected weekly price and MUST NOT present estimates as Merkle entitlements or guarantees.
 

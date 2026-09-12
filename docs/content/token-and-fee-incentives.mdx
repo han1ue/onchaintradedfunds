@@ -141,7 +141,7 @@ The final swap uses only the canonical OTF/WETH V4 pool, enforces the deadline a
 
 `MerkleRewardsDistributor` receives 700 million OTF: 650 million for depositors and 50 million for fund creators, or 65% and 5% of the original supply. The publisher's policy sets weekly budgets over 208 weeks (four years), then ends emissions. Actual allocations can be lower than these budgets.
 
-The schedule, allocation split, eligibility rules, weight cap, and 2,000% depositor rewards APY cap below are publisher policy. The distributor enforces proof validity and cumulative claims. Its owner can publish an immediately active reward root with no delay or per-period limit, including one that allocates the entire remaining balance ahead of schedule. The owner has no function to withdraw reward principal.
+The schedule, allocation split, eligibility rules, weight cap, and 10,000% depositor rewards APY cap below are publisher policy. The distributor enforces proof validity and cumulative claims. Its owner can publish an immediately active reward root with no delay or per-period limit, including one that allocates the entire remaining balance ahead of schedule. The owner has no function to withdraw reward principal.
 
 The weekly target starts at 14 million OTF and declines by approximately 1.968% every week:
 
@@ -188,18 +188,18 @@ proportionalAllowance(fund) = bucketEmission × cappedWeight(fund) / sum(cappedW
 
 Only funds with an accounted protocol OTF balance receive an allowance. Balances above 10 million OTF receive no extra weight. Direct OTF transfers that do not enter accounted balances add no weight. If the total weight is zero, no fund receives an allocation.
 
-Each fund's depositor rewards have a **2,000% APY maximum**, calculated by annualizing one week over 52 weeks without compounding:
+Each fund's depositor rewards have a **10,000% APY maximum**, calculated by compounding the weekly return over 52 weeks:
 
 ```text
 weeklyDepositorAllowance = min(
   proportionalDepositorAllowance,
-  snapshot NAV USD × 20 ÷ 52 ÷ chosen OTF price USD
+  snapshot NAV USD × (101^(1/52) − 1) ÷ chosen OTF price USD
 )
 ```
 
-The publisher chooses one positive OTF USD price for the week and uses it across all funds. The chosen price values reward tokens; fund NAV stays at its recorded snapshot valuation. For example, a fund with $5,200 NAV and a chosen OTF price of $2 can receive at most 1,000 OTF in weekly depositor rewards. A smaller proportional allowance lowers that limit further.
+The publisher supplies one positive weekly average OTF USD price and uses it across all funds. The chosen price values reward tokens; fund NAV stays at its recorded snapshot valuation. For example, a fund with $5,200 NAV and a chosen OTF price of $2 can receive at most 241.3058779198001168 OTF in weekly depositor rewards. A smaller proportional allowance lowers that limit further.
 
-The tooling rounds allowances and participant rewards down to 18-decimal OTF units. Zero NAV or zero OTF weight gives zero depositor rewards. Excess and rounding dust remain unallocated in the distributor, without redistribution or automatic rollover. Creator rewards keep their separate proportional allowance and are outside the depositor APY cap.
+The tooling rounds the weekly rate down to 18 decimal places before calculating allowances, then rounds allowances and participant rewards down to 18-decimal OTF units. Zero NAV or zero OTF weight gives zero depositor rewards. Excess and rounding dust remain unallocated in the distributor, without redistribution or automatic rollover. Creator rewards keep their separate proportional allowance and are outside the depositor APY cap.
 
 The Funds page shows the combined weekly rewards budget. Directory values, sorting, fund details, and the explanation dialog use the shared cap calculation with current prices. Missing valuation or reward data leaves an eligible fund's estimate unavailable. These estimates do not determine claim entitlements. Published rewards use the selected weekly price, and later market movements can change realized returns.
 
@@ -236,7 +236,7 @@ Prepare a weekly JSON input using this structure. The addresses, block, and pric
 
 `snapshot.fundAddresses` must contain the full factory roster at the snapshot block. Include each fund exactly once, including funds with zero weight or no proposed rewards. Amounts and USD values are unsigned decimal strings with at most 18 decimal places. Missing NAV, balances, or the chosen positive price blocks generation; the script does not fetch a replacement price.
 
-Participant `amount` values are proposed weekly increments, not cumulative entitlements. The script reduces depositor increments proportionally if their total exceeds the fund's allowance. In this example, it allocates 250 OTF and 750 OTF to the two depositors and preserves the creator's 100 OTF. Creator increments above the proportional creator allowance are rejected. One account can receive rewards from multiple funds or both buckets; duplicate accounts within one fund's bucket are rejected.
+Participant `amount` values are proposed weekly increments, not cumulative entitlements. The script reduces depositor increments proportionally if their total exceeds the fund's allowance. In this example, it allocates 60.3264694799500292 OTF and 180.9794084398500876 OTF to the two depositors and preserves the creator's 100 OTF. Creator increments above the proportional creator allowance are rejected. One account can receive rewards from multiple funds or both buckets; duplicate accounts within one fund's bucket are rejected.
 
 Generate an artifact with:
 

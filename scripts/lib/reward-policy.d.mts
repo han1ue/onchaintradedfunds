@@ -6,6 +6,7 @@ export const OTF_WEEK_ONE_EMISSION: number;
 export const OTF_WEEKLY_DECAY_FACTOR: number;
 export const OTF_REWARD_WEIGHT_CAP: number;
 export const OTF_REWARDS_APY_CAP_PERCENT: number;
+export const OTF_REWARDS_WEEKLY_RATE_CAP_RAW: bigint;
 export const REWARD_WEEKS_PER_YEAR: number;
 export const REWARD_SCALE: bigint;
 export const UINT256_MAX: bigint;

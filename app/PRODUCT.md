@@ -45,9 +45,9 @@ The fund page reads the permanent thesis and accounted balances onchain. NAV per
 
 The Funds summary shows the combined weekly OTF rewards budget. The directory shows each fund's total NAV in dollars and estimated depositor rewards APY. Each fund's weight is its accounted protocol OTF balance, capped at 10 million OTF. Its share of the depositor budget before the APY cap is that weight divided by the sum of capped weights across factory funds.
 
-Depositor rewards APY has a 2,000% maximum. The app limits estimated weekly OTF rewards to the smaller of the proportional allocation and `NAV USD × 20 ÷ 52 ÷ current OTF price USD`. It annualizes the dollar value over 52 weeks without compounding. Directory sorting and the rewards dialog use the capped calculation. Funds with zero NAV or no OTF weight show 0% APY and zero weekly depositor rewards.
+Depositor rewards APY has a 10,000% maximum. The app limits estimated weekly OTF rewards to the smaller of the proportional allocation and `NAV USD × (101^(1/52) − 1) ÷ current OTF price USD`. It compounds the weekly return over 52 weeks. Directory sorting and the rewards dialog use the capped calculation. Funds with zero NAV or no OTF weight show 0% APY and zero weekly depositor rewards.
 
-Published rewards use recorded snapshot NAV and one OTF USD price chosen by the publisher for the week. The publisher tooling caps actual depositor allocations using those inputs and records the selected price with the reward artifact. Excess and rounding dust stay unallocated in the distributor, without redistribution or automatic rollover. Creator rewards retain their separate proportional allocation. The app's current-price estimate does not determine Merkle entitlements; later price changes can change realized returns.
+Published rewards use recorded snapshot NAV and the weekly average OTF USD price supplied by the publisher. The publisher tooling caps actual depositor allocations using those inputs and records the selected price with the reward artifact. Excess and rounding dust stay unallocated in the distributor, without redistribution or automatic rollover. Creator rewards retain their separate proportional allocation. The app's current-price estimate does not determine Merkle entitlements; later price changes can change realized returns.
 
 An empty vault's first mint must produce at least `0.01` shares. The quote's guaranteed minimum output must meet this threshold. There is no first-mint maximum; the minimum check ends once supply is nonzero.
 
@@ -71,7 +71,7 @@ Fund-to-fund swaps settle through WETH. Compatible shared exit steps combine pro
 
 Basket execution on both networks uses `mintFromToken`, `mintFromNative`, `redeemToToken`, `redeemToNative`, or `swapBasketToBasket` with ordered adapter legs. Before submission, the application simulates the exact sender, target, calldata, value, and route using `eth_call` and `estimateGas`.
 
-Postgres stores assets, verification decisions, price-source policies and approved pools. `/verified` has a Show unverified toggle, off by default. Pool approval and source approval remain independent of asset verification. The [registry operations guide](database/README.md) documents routing thresholds, freshness, migrations and production activation.
+Postgres stores assets, verification decisions, price-source policies and approved pools. The Registered Assets page at `/verified` lists all enabled registered assets with their verification status. Pool approval and source approval remain independent of asset verification. The [registry operations guide](database/README.md) documents routing thresholds, freshness, migrations and production activation.
 
 Verification labels cover identity and ordinary metadata only. An OTF receives a badge in the Funds directory and fund details when every constituent address is in the verification registry for that chain. They do not establish liquidity, route quality, price, economic safety, audit status, or investment outcome.
 

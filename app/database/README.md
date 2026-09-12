@@ -1,6 +1,6 @@
 # Asset registry, pricing and NAV
 
-Postgres is the operational registry. The initial seed contains 15 assets, six verified identities, 16 price-source policies and six approved V3 pools. Deployment manifests remain in `app/src/config`.
+Postgres is the operational registry. The initial seed contains 15 assets, eight verified identities, 16 price-source policies and six approved V3 pools. Deployment manifests remain in `app/src/config`.
 
 ## Setup and environments
 
@@ -22,7 +22,7 @@ Use environment-scoped database credentials in Vercel. For database-enforced iso
 
 ## Registry decisions
 
-Assets are identified by chain and address. Verification, enabled status, source approval and pool approval have separate fields. The UI hides unverified assets by default. Revealing them does not make them eligible for fund creation or execution.
+Assets are identified by chain and address. Verification, enabled status, source approval and pool approval have separate fields. The Registered Assets page shows all enabled assets and their verification status. Registration does not make an asset eligible for fund creation or execution.
 
 Administrative changes to assets, sources, pools and settings write before/after rows to `registry_audit`. Set the transaction-local `otf.actor` setting to an operator or job identifier. Keep source validation metadata tied to an independently checked asset identity. After changing a mapping, clear its `validated_at` until the collector validates it again.
 

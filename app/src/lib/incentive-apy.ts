@@ -84,7 +84,7 @@ export function estimatedRewardsApy(input: {
   const weeklyRewardOtf = Number(allocation.allocatedRaw) / 1e18;
   const weeklyRewardUsd = weeklyRewardOtf * input.otfPriceUsd;
   return {
-    percent: Math.min(OTF_REWARDS_APY_CAP_PERCENT, weeklyRewardUsd * REWARD_WEEKS_PER_YEAR / input.fundAumUsd * 100),
+    percent: Math.min(OTF_REWARDS_APY_CAP_PERCENT, Math.expm1(REWARD_WEEKS_PER_YEAR * Math.log1p(weeklyRewardUsd / input.fundAumUsd)) * 100),
     weeklyRewardOtf,
     weeklyRewardUsd,
     capped: allocation.capped,

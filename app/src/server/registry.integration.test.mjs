@@ -58,7 +58,7 @@ describe.skipIf(!run)('Neon isolated registry and NAV integration',()=>{
     expect((await readRegistry()).assets).toHaveLength(15);
     expect((await readRegistry()).pools).toHaveLength(6);
     const response=await registryGet(new Request('http://localhost/api/asset-registry?chainId=46630'));
-    const filtered=await response.json();expect(filtered.assets).toHaveLength(6);expect(filtered.assets.every(a=>a.verified)).toBe(true);
+    const filtered=await response.json();expect(filtered.assets).toHaveLength(8);expect(filtered.assets.every(a=>a.verified)).toBe(true);
     const all=await (await registryGet(new Request('http://localhost/api/asset-registry?chainId=46630&includeUnverified=true'))).json();
     expect(all.assets).toHaveLength(8);
     await sql.transaction([sql.query(`SELECT set_config('otf.actor','integration-test',true)`),sql.query(`UPDATE ${schema}.assets SET verified=false WHERE chain_id=46630 AND address=$1`,[token.address.toLowerCase()])]);

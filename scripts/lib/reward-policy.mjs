@@ -6,9 +6,11 @@ export const OTF_CREATOR_INCENTIVE_TOTAL = 50_000_000;
 export const OTF_WEEK_ONE_EMISSION = 14_000_000;
 export const OTF_WEEKLY_DECAY_FACTOR = 0.9803203;
 export const OTF_REWARD_WEIGHT_CAP = 10_000_000;
-export const OTF_REWARDS_APY_CAP_PERCENT = 2_000;
+export const OTF_REWARDS_APY_CAP_PERCENT = 10_000;
 export const REWARD_WEEKS_PER_YEAR = 52;
 export const REWARD_SCALE = 10n ** 18n;
+// floor(((1 + 10000 / 100)^(1 / 52) - 1) * 1e18), rounded down for allocation safety.
+export const OTF_REWARDS_WEEKLY_RATE_CAP_RAW = 92_809_953_046_076_968n;
 export const UINT256_MAX = 2n ** 256n - 1n;
 
 export function parseRewardDecimal(value, label = "amount") {
@@ -51,8 +53,7 @@ export function cappedDepositorAllocation({ weeklyDepositorEmissionRaw, fundNavU
     || otfPriceUsdRaw === 0n || fundWeightRaw > BigInt(OTF_REWARD_WEIGHT_CAP) * REWARD_SCALE
     || totalWeightRaw < fundWeightRaw) throw new Error("Invalid depositor allocation inputs.");
   const proportionalRaw = totalWeightRaw === 0n ? 0n : weeklyDepositorEmissionRaw * fundWeightRaw / totalWeightRaw;
-  const capRaw = fundNavUsdRaw * BigInt(OTF_REWARDS_APY_CAP_PERCENT) * REWARD_SCALE
-    / (100n * BigInt(REWARD_WEEKS_PER_YEAR) * otfPriceUsdRaw);
+  const capRaw = fundNavUsdRaw * OTF_REWARDS_WEEKLY_RATE_CAP_RAW / otfPriceUsdRaw;
   const capped = proportionalRaw > capRaw;
   return { proportionalRaw, capRaw, allocatedRaw: capped ? capRaw : proportionalRaw, capped };
 }

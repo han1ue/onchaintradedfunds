@@ -2454,7 +2454,7 @@ function FundsSurface({ detail }: { detail: boolean }) {
               <span>{rewardsApy.week ? `Week ${rewardsApy.week} rewards budget` : "Weekly rewards budget"}</span>
             </div>
           </div>
-          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Verified</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
+          <div className="appPageActions"><Link className="secondaryAction" href="/verified"><ShieldCheck size={14} />Registered assets</Link><Link className="primaryAction" href="/launch?from=funds">Launch OTF<ArrowUpRight size={14} /></Link></div>
         </section>
         {!directoryDeploymentReady ? (
           <section className="sectionCard depositsEmpty"><span><Network size={22} /></span><h2>Protocol deployment unavailable</h2><p>Fund discovery will become available when the protocol is deployed and configured on this network.</p></section>
@@ -2519,19 +2519,17 @@ function FundsSurface({ detail }: { detail: boolean }) {
 function VerifiedSurface() {
   const chainId = useChainId();
   const { catalog, isPending, isError, refetch } = useAssetRegistry();
-  const [showUnverified, setShowUnverified] = useState(false);
-  const assets = catalog.assets.filter(asset => showUnverified || asset.verified);
+  const assets = catalog.assets;
   const explorer = (chainId === robinhoodChainTestnet.id ? robinhoodChainTestnet : robinhoodChain).blockExplorers.default.url;
   return <DashboardPage><div className="appView">
-    <AppPageHeader title="Verified Assets" description={<>Asset identities in the <a href="/verified-assets.json" target="_blank" rel="noreferrer">verification registry</a>. Verification does not authorize fund constituents or approve prices and swap routes.</>} icon={<ShieldCheck size={18} />} />
+    <AppPageHeader title="Registered Assets" description="Assets registered on this network." icon={<ShieldCheck size={18} />} />
     <section className="sectionCard walletAssets">
-      <div className="directoryPanelHeading"><div><h2>Asset registry</h2><p>{assets.length} {showUnverified ? "assets" : "verified assets"}</p></div>
-        <label className="registryToggle"><input type="checkbox" checked={showUnverified} onChange={event => setShowUnverified(event.target.checked)} />Show unverified</label>
+      <div className="directoryPanelHeading"><div><h2>Asset registry</h2><p>{assets.length} registered assets</p></div>
       </div>
-      {isPending ? <p role="status">Loading assets…</p> : isError ? <div role="alert"><p>Asset registry unavailable.</p><button type="button" className="secondaryAction" onClick={() => void refetch()}>Retry</button></div> : !assets.length ? <p>No {showUnverified ? "assets" : "verified assets"} registered on this network.</p> :
-      <div className="directoryTableWrap"><table className="directoryTable verifiedAssetsTable"><thead><tr><th>Onchain asset</th><th>Status</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map(asset => <tr key={asset.address}>
+      {isPending ? <p role="status">Loading assets…</p> : isError ? <div role="alert"><p>Asset registry unavailable.</p><button type="button" className="secondaryAction" onClick={() => void refetch()}>Retry</button></div> : !assets.length ? <p>No assets registered on this network.</p> :
+      <div className="directoryTableWrap"><table className="directoryTable registeredAssetsTable"><thead><tr><th>Onchain asset</th><th>Status</th><th>Decimals</th><th>Token contract</th></tr></thead><tbody>{assets.map(asset => <tr key={asset.address}>
         <td><div className="rwaAssetIdentity"><AssetLogo symbol={asset.symbol} /><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div></td>
-        <td data-label="Status"><span className={asset.verified ? "stateBadge success" : "stateBadge muted"}>{asset.verified ? "Verified" : "Unverified"}</span>{!asset.verified ? <small className="registryNote">Fund creation requires eligible metadata and current pricing.</small> : null}</td>
+        <td data-label="Status"><span className={asset.verified ? "stateBadge success" : "stateBadge muted"}>{asset.verified ? "Verified" : "Unverified"}</span></td>
         <td data-label="Decimals" className="monoValue">{asset.decimals}</td><td data-label="Token contract" className="monoValue"><a className="tableAddressLink" href={explorer + "/address/" + asset.address} target="_blank" rel="noreferrer">{shortAddress(asset.address)}<ExternalLink size={11} /></a></td>
       </tr>)}</tbody></table></div>}
     </section>

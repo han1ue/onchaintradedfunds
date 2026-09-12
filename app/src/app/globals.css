@@ -1684,7 +1684,6 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .rewardsCalculation { margin: 18px 0 0; }
 .rewardsCalculation > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); padding: 13px 0; }
 .rewardsCalculation dt { min-width: 0; color: var(--text-soft); font-weight: 500; }
-.rewardsCalculation dt small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 0.7rem; font-weight: 400; }
 .rewardsCalculation dd { display: flex; align-items: baseline; gap: 6px; flex: 0 0 auto; margin: 0; color: var(--text); font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rewardsCalculation dd span { color: var(--text-muted); font-size: 0.65rem; font-weight: 500; }
 .rewardsValuationInputs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; margin: 0; border-top: 1px solid var(--border); padding: 13px 0 18px; }
@@ -2900,8 +2899,7 @@ button.settingsOption:disabled { cursor: wait; opacity: 0.7; }
 .allocationAssetVerified { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--accent-text); }
 .allocationAssetVerified svg { display: block; width: 1em; height: 1em; }
 /* Registry controls follow the existing compact application controls. */
-.registryToggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; min-height: 40px; }
-.registryToggle input { accent-color: var(--accent, #ccff00); width: 18px; height: 18px; }
-.registryNote { display: block; max-width: 32ch; margin-top: 6px; color: var(--text-muted, #999991); }
+.registeredAssetsTable th:nth-child(2),
+.registeredAssetsTable td:nth-child(2) { text-align: center; vertical-align: middle; }
 .quoteFailureNotice { padding: 12px 0; font-size: 0.85rem; }
 .quoteFailureNotice p { margin: 4px 0; }

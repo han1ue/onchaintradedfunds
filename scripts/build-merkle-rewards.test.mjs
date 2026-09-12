@@ -6,7 +6,9 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
 import { buildRewardsArtifact } from "./build-merkle-rewards.mjs";
-import { cappedDepositorAllocation, parseRewardDecimal as raw, REWARD_SCALE as WAD, weeklyEmissionBucketsRaw } from "./lib/reward-policy.mjs";
+import { cappedDepositorAllocation, OTF_REWARDS_APY_CAP_PERCENT, OTF_REWARDS_WEEKLY_RATE_CAP_RAW as weeklyRate, parseRewardDecimal as raw, REWARD_SCALE as WAD, weeklyEmissionBucketsRaw } from "./lib/reward-policy.mjs";
+
+const fundCap = 2600n * weeklyRate;
 
 const distributor = "0x00000000000000000000000000000000000000d1";
 const account = suffix => `0x${suffix.padStart(40, "0")}`;
@@ -35,12 +37,12 @@ function verifyProofs(artifact) {
 
 test("caps weekly depositor rewards, preserves creator rewards, and produces deterministic valid proofs", () => {
   const artifact = build();
-  assert.equal(artifact.allocatedRaw.depositors, raw("1000").toString());
+  assert.equal(artifact.allocatedRaw.depositors, fundCap.toString());
   assert.equal(artifact.allocatedRaw.creators, raw("100").toString());
-  assert.deepEqual(artifact.funds[0].depositors.map(row => row.allocatedRaw), [raw("250").toString(), raw("750").toString()]);
-  assert.equal(artifact.unallocatedRaw.depositors, raw("12999000").toString());
+  assert.deepEqual(artifact.funds[0].depositors.map(row => row.allocatedRaw), [(fundCap / 4n).toString(), (fundCap * 3n / 4n).toString()]);
+  assert.equal(artifact.unallocatedRaw.depositors, (raw("13000000") - fundCap).toString());
   assert.equal(artifact.otfPriceUsd, "2");
-  assert.equal(artifact.apyCapPercent, 2000);
+  assert.equal(artifact.apyCapPercent, 10000);
   const reordered = input();
   reordered.funds[0].depositors.reverse();
   assert.deepEqual(build(reordered), artifact);
@@ -56,21 +58,26 @@ test("chosen weekly price controls token amounts and is preserved exactly", () =
 });
 
 test("shared calculation handles below, exactly at, and above the cap", () => {
-  const args = { weeklyDepositorEmissionRaw: raw("10"), fundNavUsdRaw: raw("52"), otfPriceUsdRaw: raw("2"), fundWeightRaw: WAD, totalWeightRaw: WAD };
-  assert.deepEqual(cappedDepositorAllocation(args), { proportionalRaw: raw("10"), capRaw: raw("10"), allocatedRaw: raw("10"), capped: false });
-  assert.equal(cappedDepositorAllocation({ ...args, fundNavUsdRaw: raw("53") }).capped, false);
-  const over = cappedDepositorAllocation({ ...args, fundNavUsdRaw: raw("51") });
+  const args = { weeklyDepositorEmissionRaw: weeklyRate, fundNavUsdRaw: raw("2"), otfPriceUsdRaw: raw("2"), fundWeightRaw: WAD, totalWeightRaw: WAD };
+  assert.deepEqual(cappedDepositorAllocation(args), { proportionalRaw: weeklyRate, capRaw: weeklyRate, allocatedRaw: weeklyRate, capped: false });
+  assert.equal(cappedDepositorAllocation({ ...args, weeklyDepositorEmissionRaw: weeklyRate - 1n }).capped, false);
+  const over = cappedDepositorAllocation({ ...args, weeklyDepositorEmissionRaw: weeklyRate + 1n });
   assert(over.capped);
-  assert(over.allocatedRaw < raw("10"));
-  assert(over.allocatedRaw * raw("2") * 52n <= raw("51") * 20n * WAD);
+  assert.equal(over.allocatedRaw, weeklyRate);
+});
+
+test("weekly rate is the largest 18-decimal rate within the compounded APY cap", () => {
+  const limit = (1n + BigInt(OTF_REWARDS_APY_CAP_PERCENT) / 100n) * WAD ** 52n;
+  assert((WAD + weeklyRate) ** 52n <= limit);
+  assert((WAD + weeklyRate + 1n) ** 52n > limit);
 });
 
 test("tiny NAV and proportional participant rounding never exceed the cap", () => {
-  const artifact = build(input([fund("f1", { navUsd: "0.000000000000000006", depositors: [participant("a1", "1"), participant("b2", "2")], creators: [] })], 1, "1"));
+  const artifact = build(input([fund("f1", { navUsd: "0.000000000000000022", depositors: [participant("a1", "1"), participant("b2", "2")], creators: [] })], 1, "1"));
   assert.equal(artifact.funds[0].depositorLimitRaw, "2");
   assert.equal(artifact.allocatedRaw.depositors, "1");
   assert.equal(artifact.funds[0].depositors[0].allocatedRaw, "0");
-  assert(BigInt(artifact.allocatedRaw.depositors) * 52n <= 6n * 20n);
+  assert(BigInt(artifact.allocatedRaw.depositors) * WAD <= 22n * weeklyRate);
   verifyProofs(artifact);
 });
 
@@ -78,11 +85,11 @@ test("caps each fund independently without redistributing excess or changing the
   const funds = [fund("f1"), fund("f2", { accountedOtf: "20000000" }), fund("f3", { navUsd: "1000000000", depositors: [participant("e4", "13000000")] })];
   const artifact = build(input(funds));
   assert.equal(artifact.totalWeightRaw, raw("30000000").toString());
-  assert.equal(total(artifact.funds[0].depositors), raw("1000"));
-  assert.equal(total(artifact.funds[1].depositors), raw("1000"));
+  assert.equal(total(artifact.funds[0].depositors), fundCap);
+  assert.equal(total(artifact.funds[1].depositors), fundCap);
   assert.equal(total(artifact.funds[2].depositors), raw("13000000") / 3n);
   assert(BigInt(artifact.unallocatedRaw.depositors) > raw("8000000"));
-  assert.equal(artifact.entries.find(row => row.address === account("a1")).cumulativeEntitlementRaw, raw("500").toString());
+  assert.equal(artifact.entries.find(row => row.address === account("a1")).cumulativeEntitlementRaw, (fundCap / 2n).toString());
 });
 
 test("does not increase proposed allocations that are below the allowance", () => {
@@ -106,14 +113,14 @@ test("zero NAV, zero OTF weight, and an empty roster allocate zero depositor rew
 test("adds weekly increments to cumulative claims, retains past recipients, and never rolls unused rewards forward", () => {
   const first = build();
   const second = build(input([fund("f1", { depositors: [participant("a1", "10000")], creators: [] })], 2, "4"), first);
-  assert.equal(second.entries.find(row => row.address === account("a1")).cumulativeEntitlementRaw, raw("750").toString());
-  assert.equal(second.entries.find(row => row.address === account("b2")).cumulativeEntitlementRaw, raw("750").toString());
-  assert.equal(second.cumulativeAllocatedRaw.depositors, raw("1500").toString());
+  assert.equal(second.entries.find(row => row.address === account("a1")).cumulativeEntitlementRaw, (fundCap * 3n / 4n).toString());
+  assert.equal(second.entries.find(row => row.address === account("b2")).cumulativeEntitlementRaw, (fundCap * 3n / 4n).toString());
+  assert.equal(second.cumulativeAllocatedRaw.depositors, (fundCap * 3n / 2n).toString());
   assert.equal(second.budgetRaw.depositors, weeklyEmissionBucketsRaw(2).depositors.toString());
   assert.equal(second.previousRoot, first.root);
   verifyProofs(second);
   // A later claim pays the new cumulative entitlement less what was claimed before.
-  assert.equal(BigInt(second.entries[0].cumulativeEntitlementRaw) - BigInt(first.entries[0].cumulativeEntitlementRaw), raw("500"));
+  assert.equal(BigInt(second.entries[0].cumulativeEntitlementRaw) - BigInt(first.entries[0].cumulativeEntitlementRaw), fundCap / 2n);
 });
 
 test("requires a chosen positive decimal price and complete valuation data", () => {
@@ -199,7 +206,7 @@ test("the documented weekly JSON example generates the stated payouts", () => {
   const match = prose.match(/```json\r?\n([\s\S]*?)\r?\n```/u);
   assert(match, "Weekly JSON example is missing.");
   const artifact = build(JSON.parse(match[1]));
-  assert.equal(artifact.allocatedRaw.depositors, raw("1000").toString());
+  assert.equal(artifact.allocatedRaw.depositors, fundCap.toString());
   assert.equal(artifact.allocatedRaw.creators, raw("100").toString());
   verifyProofs(artifact);
 });

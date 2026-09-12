@@ -37,6 +37,9 @@ function findForge() {
 }
 
 const forge = findForge();
+const coverageNote = "Coverage uses fully optimized IR to compile Universal Router; "
+  + "source mappings are approximate.";
+console.log(coverageNote);
 // Keep node_modules inside Foundry's root so Solar can resolve dependency-relative imports.
 // Test correctness is enforced by the preceding workflow gates; this pass is advisory coverage.
 const result = spawnSync(
@@ -57,6 +60,14 @@ const result = spawnSync(
     "contracts/cache/coverage",
     "--lib-paths",
     "contracts/lib",
+    "--remappings",
+    "@uniswap/universal-router/=node_modules/@uniswap/universal-router/",
+    "--remappings",
+    "@uniswap/v3-core/=node_modules/@uniswap/v3-core/",
+    "--remappings",
+    "@uniswap/v3-periphery/=node_modules/universal-router-v3-periphery/",
+    "--remappings",
+    "@uniswap/v2-core/=node_modules/@uniswap/v2-core/",
     "--remappings",
     "@openzeppelin/=node_modules/@openzeppelin/",
     "--remappings",
@@ -100,6 +111,14 @@ const result = spawnSync(
     env: {
       ...process.env,
       FOUNDRY_TEST: "contracts/test",
+      // The upstream Universal Router exceeds the stack limit with --ir-minimum.
+      // Use one optimized profile for the entire graph: mixing profiles in Foundry
+      // v1.7.1 coverage loses files through overlapping source IDs. Two runs select
+      // this profile instead of the one-run --ir-minimum default above.
+      FOUNDRY_ADDITIONAL_COMPILER_PROFILES:
+        '[{name="coverage-optimized",via_ir=true,optimizer=true,optimizer_runs=2}]',
+      FOUNDRY_COMPILATION_RESTRICTIONS:
+        '[{paths="**",min_optimizer_runs=2}]',
       FOUNDRY_SKIP: JSON.stringify([
         "contracts/test/fork/**", "contracts/test/audit/**",
         ...(process.env.COVERAGE_PROFILE === "integration" ? [] : [
@@ -139,8 +158,8 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     [
       "### Solidity coverage",
       "",
-      "> Advisory gap-finding signal generated with Foundry v1.7.1 `--ir-minimum`. "
-        + "IR source mappings are approximate and are not a proof of protocol safety.",
+      `> Advisory gap-finding signal generated with Foundry v1.7.1. ${coverageNote} `
+        + "Coverage is not a proof of protocol safety.",
       "",
       "```text",
       result.stdout.trim(),
